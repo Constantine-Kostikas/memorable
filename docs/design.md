@@ -1,0 +1,462 @@
+# memorable v1 Design
+
+Status: draft for confirmation (grilled, rounds 1 to 5)
+Date: 2026-11-14
+
+## 1. Purpose
+
+memorable is a persistent memory service for Claude Code. Claude stores and retrieves memories through MCP tools instead of reading files. Retrieval combines semantic (vector) search and keyword search, ranked by relevance with small usage-based boosts.
+
+### Goals
+
+- Store, retrieve, update, and delete memories through MCP tools.
+- Hybrid search (pgvector + Postgres full-text + trigram) with relevance cutoffs.
+- Token-efficient access: two-step retrieval, readable keys, automatic scoping.
+- Strong defenses against memory poisoning and secret leakage.
+- Hard isolation between contexts (work, personal, clients).
+- A polished CLI and a guided `memorable setup` so colleagues can run their own instance on Linux or macOS.
+
+### Non-goals (v1)
+
+- Multi-user or shared servers, HTTP transport, per-user auth (v2).
+- Metrics endpoints, tracing, and pprof endpoints (a local stdio tool must not open listeners).
+- Column-level encryption (full-disk encryption is the at-rest control).
+- Windows support.
+- A web UI.
+
+### v2 readiness
+
+Every table carries an `owner` column (defaults to the OS username), the MCP transport sits behind an interface, and every embedding records its model and dimension. v2 must decide between Postgres row-level security and owner filtering in Go (the Go database skill discourages row-level security).
+
+## 2. Architecture
+
+```
+Claude Code ──stdio──> memorable serve ──TCP 127.0.0.1:5434──> Docker: pgvector/pgvector (Postgres 18)
+                            │                                     schemas: mem_<context>, mem_profile
+                            └──HTTP 127.0.0.1:11434──> Ollama (native install)
+
+You ──> memorable <command>        (same binary: CLI, setup, admin operations)
+Claude Code SessionStart hook ──> memorable hook session-start   (opt-in)
+```
+
+One Go binary provides the MCP server, the CLI, the setup wizard, and the hook command.
+
+### Style
+
+- Pragmatic layering: the `memory` package holds all business rules; the store, embedder, scanners, MCP server, and CLI are adapters around it.
+- Interfaces are defined in `memory`, where they are consumed. Concrete types are returned from constructors.
+- Manual constructor injection wired in `cmd/memorable`. Functional options only for constructors with optional settings. No DI library, no `init()` for setup, no mutable globals.
+- Domain enums (status, type, source, feedback kind) are Go types whose zero value is `Unknown`. The database stores text with CHECK constraints; conversion lives in one place.
+
+### Stack
+
+| Concern | Choice |
+|---|---|
+| Language | Go 1.25 |
+| Module path | `github.com/constantine-kostikas/memorable` |
+| MCP | `github.com/modelcontextprotocol/go-sdk` |
+| Database driver | `github.com/jackc/pgx/v5` + `github.com/pgvector/pgvector-go` |
+| Migrations | `github.com/pressly/goose/v3`, embedded; Go migrations where SQL is not enough |
+| CLI framework | `github.com/spf13/cobra` + `github.com/charmbracelet/fang` (styled help, errors, version, completions, man pages) |
+| CLI presentation | `github.com/charmbracelet/lipgloss` (tables, panels), `github.com/charmbracelet/huh` (forms, spinners) |
+| Config | TOML via `github.com/BurntSushi/toml` + explicit env overrides (no Viper) |
+| Secrets | `github.com/zalando/go-keyring` with a 0600 file fallback |
+| Secret scanning | gitleaks default rule file (embedded, evaluated in-house) + entropy check; the gitleaks module itself is not imported because of its dependency tree |
+| Logging | `log/slog`, JSON, **stderr only** |
+| Tests | `testing`, testify, testcontainers-go, `go.uber.org/goleak`, `testing/synctest` |
+| Database | PostgreSQL 18 + pgvector 0.8.7 (image `pgvector/pgvector:0.8.7-pg18-trixie`) + pg_trgm |
+| Embeddings | Ollama `/api/embed` (batch input, L2-normalized output); default model `embeddinggemma` (768 dimensions) |
+
+### Package layout
+
+```
+cmd/memorable/          main.go plus one thin file per command; wiring only
+internal/config/        TOML loading, env overrides, validation
+internal/scope/         context, fallback, and project resolution
+internal/memory/        service layer, domain types, sentinel errors, consumer interfaces
+internal/store/         Postgres repository; embedded migrations
+internal/embed/         Ollama embedder (remote providers behind allow_remote)
+internal/scan/          secret and injection scanners
+internal/rank/          RRF fusion, boosts, decay math
+internal/worker/        async embedding job runner
+internal/mcpserver/     tools, resources, transport interface
+internal/secret/        keyring with file fallback
+internal/dockerpg/      container lifecycle for setup and backup
+internal/claudecfg/     MCP registration, settings.json, CLAUDE.md, hook edits (diff + confirm)
+internal/backup/        pg_dump via the container, rotation
+internal/ui/            lipgloss styles, TTY and NO_COLOR detection, output formats
+internal/hook/          SessionStart output
+testdata/eval/          search evaluation set
+```
+
+## 3. Infrastructure
+
+### PostgreSQL (Docker on every platform)
+
+```sh
+read -rs "PGPW?memorable admin password: " && echo
+docker run -d --name memorable-postgres --restart unless-stopped \
+  -p 127.0.0.1:5434:5432 \
+  -e POSTGRES_USER=memorable_admin \
+  -e POSTGRES_PASSWORD="$PGPW" \
+  -e POSTGRES_DB=memorable \
+  -v memorable-pgdata:/var/lib/postgresql \
+  pgvector/pgvector:0.8.7-pg18-trixie
+unset PGPW
+```
+
+- Bound to `127.0.0.1` only. Port 5434 by default (5432 and 5433 are commonly taken); override in config or `MEMORABLE_DB_PORT`.
+- Postgres 18 images mount the volume at `/var/lib/postgresql`, not `/var/lib/postgresql/data`.
+- pgvector 0.8+ is required: filtered HNSW queries use `SET hnsw.iterative_scan = relaxed_order` so scope and status filters still return k results.
+- `memorable setup` runs this for colleagues, generating passwords so no interactive shell prompt is involved.
+- Status on the author's machine: running, `vector` 0.8.7 and `pg_trgm` 1.6 enabled.
+
+### Ollama (native on every platform)
+
+- Linux: official install script (systemd service on `127.0.0.1:11434`). macOS: native app (Metal acceleration; Docker on macOS has no GPU access).
+- Local models only. Cloud models would send memory content off the machine.
+- `memorable setup` pulls the configured model.
+
+## 4. Contexts and scoping
+
+### Contexts
+
+A context is the hard isolation boundary. Each context has its own schema `mem_<context>`.
+
+- The server resolves the context once at startup and sets `search_path` on every pooled connection (`AfterConnect`). No tool parameter can choose a context.
+- Resolution order: MCP client roots, then process working directory, then path-prefix match in config.
+- **Unmatched directory:** writes are refused with `ErrReadOnly`. Reads use `fallback_context` if configured (read-only); otherwise every tool returns a clear "no context for this directory" error that names `memorable context add`.
+- Author's machine: one context, `personal` = `~/development/projects`, `~/development/OBSIDIAN`; `fallback_context = "personal"`. Colleagues: `fallback_context` unset by default.
+
+### Profile schema
+
+`mem_profile` holds memories about the user that apply everywhere (preferences, conventions).
+
+- Readable from every context; included in search, top, and preload with `scope="profile"`.
+- Writable **only through the CLI** (`memorable profile add/edit/delete`). The app role used by `serve` has SELECT only on `mem_profile`. Claude can never write there.
+
+### Projects
+
+Within a context, a memory is project-scoped or context-global (`project IS NULL`).
+
+- Project identity: normalized git remote `origin` URL, else git repository root path, else working directory.
+- Search defaults to current project + context-global + profile, with a boost for current-project matches. `all_projects: true` widens it.
+
+## 5. Data model
+
+Tables in each `mem_<context>` schema (and the same `memories`/`memory_versions` shape in `mem_profile`). Every table has `owner text NOT NULL`. No triggers, views, or stored procedures. Generated columns are allowed.
+
+### memories
+
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid PK | UUIDv7, generated in Go |
+| owner | text | OS username |
+| slug | text NULL | `[a-z0-9][a-z0-9/-]{1,79}`; partial unique on `(owner, slug) WHERE status <> 'deleted'` |
+| project | text NULL | NULL = context-global |
+| type | text | `user`, `feedback`, `project`, `reference` |
+| title | text | max 120 chars |
+| content | text | max 2,000 chars; one memory, one vector, no chunking |
+| tags | text[] | max 10, each `[a-z0-9-]{1,40}`; GIN index |
+| source | text | `user_stated`, `claude_inferred`, `tool_output`, `imported` |
+| status | text | lifecycle below |
+| pinned | bool | always in preload |
+| expires_at | timestamptz NULL | expired memories drop out of search |
+| version | int | increments on every change |
+| content_hash | bytea | sha256 of normalized title + content |
+| fts | tsvector | generated from title (weight A) and content (weight B); GIN index |
+| embedding | vector(768) NULL | HNSW, cosine ops |
+| embedding_model | text NULL | |
+| embedded_at | timestamptz NULL | |
+| access_count | bigint | lifetime counted accesses |
+| access_score | float8 | decayed score at `score_updated_at` |
+| score_updated_at | timestamptz | |
+| rank_key | float8 | `ln(access_score) + λ·epoch(score_updated_at)`; B-tree index |
+| created_at, updated_at, last_accessed_at | timestamptz | |
+| deleted_at | timestamptz NULL | |
+
+Trigram GIN index on `title`.
+
+`rank_key` makes "top by decayed score" indexable: effective score is `s·e^(−λ(now−t))`, so `ln(effective) = ln s + λt − λ·now`; the last term is shared by all rows, so ordering by `ln s + λt` equals ordering by effective score at any moment.
+
+### Status lifecycle
+
+| Status | Searchable | Preload | Meaning |
+|---|---|---|---|
+| `active` | yes | yes, unless source is `tool_output` | normal |
+| `unverified` | yes, labeled | no | written with source `tool_output` |
+| `flagged` | only with `include_flagged` | no | feedback said wrong or outdated |
+| `quarantined` | no; content never returned over MCP | no | injection scanner hit; approve or purge via CLI |
+| `superseded` | only with `include_superseded` | no | replaced by a newer memory |
+| `deleted` | no | no | soft delete; restorable |
+
+### Supporting tables
+
+- **memory_versions** `(memory_id, version)` PK: title, content, tags, type, change kind (`create`, `update`, `supersede`, `delete`, `restore`), changed_at.
+- **memory_links** `(from_id, to_id, kind)` PK: `related`, `supersedes`, `contradicts`; soft removal via `removed_at`.
+- **memory_project_access** `(memory_id, project)` PK: count, decayed score, score_updated_at, rank_key.
+- **memory_feedback**: memory_id, kind (`useful`, `wrong`, `outdated`), note, project, created_at.
+- **access_events**: kind (`search`, `get`), query, project, returned ids, fetched id, search_id, created_at. 90-day retention.
+- **audit_log**: append-only; action, memory_id, content hash (never content), cwd, process id + start time, details jsonb.
+- **embedding_jobs**: memory_id, target version, attempts, next_attempt_at, last_error, done_at.
+
+### Migrations
+
+Written by Claude and verified by integration tests (author waived manual review): schema applies cleanly on an empty database and on the previous version, grants are correct, and `EXPLAIN` on a 10,000-row seeded dataset confirms the search queries use the HNSW, GIN, and B-tree indexes. Applied only by `memorable migrate` (or setup), never automatically on `serve` startup.
+
+## 6. MCP interface
+
+### Output format
+
+Every returned memory is wrapped and labeled as data:
+
+```
+<memory id="0193..." slug="memorable/db-choice" type="project" source="user_stated" status="active" scope="project">
+...content...
+</memory>
+```
+
+Results also carry structured JSON. Total tool description budget: under 1,500 tokens.
+
+### Tools
+
+| Tool | Purpose |
+|---|---|
+| `memory_write` | Create 1 to 20 memories: title, content, type, tags, slug, source, project (`current` or `global`), pinned, expires_at, supersedes, `on_similar` (`ask` default, or `keep_both`). |
+| `memory_get` | Fetch by ids or slugs (up to 20); optional `search_id`. Counted access. Returns related link ids. |
+| `memory_update` | Change title, content, tags, type, pinned, expires_at; optional `expected_version`. Rescans and re-embeds. |
+| `memory_delete` | Soft delete. |
+| `memory_restore` | Undelete, or restore a prior version. |
+| `memory_history` | List versions. |
+| `memory_search` | Hybrid search: query, k (default 5, max 20), tags, types, all_projects, include_flagged, include_superseded. Returns `search_id` and compact results (id, slug, title, 200-char snippet, type, tags, scope, status, score). |
+| `memory_list` | Browse by tags, type, project, or status; paginated; compact. |
+| `memory_top` | Top by decayed score for current project + context-global + profile; compact. |
+| `memory_feedback` | `useful`, `wrong`, or `outdated`, optional note. |
+| `memory_link` | Add or remove a link. |
+| `memory_review` | Flagged, expired, stale, unverified, and conflict links; quarantined count only. |
+
+### Resources
+
+- `memorable://top`: the preload set.
+- `memorable://memory/{slug}`: one memory by slug.
+
+### Errors
+
+Sentinel errors in `memory`: `ErrNotFound`, `ErrConflict`, `ErrValidation`, `ErrSecretDetected`, `ErrQuarantined`, `ErrReadOnly`, `ErrNoContext`. Inner layers wrap with `%w`. The MCP boundary maps them to tool errors with short safe messages (database internals never reach Claude) and logs each error once, there.
+
+### Recommended Claude Code permissions
+
+- Allow: `memory_search`, `memory_get`, `memory_list`, `memory_top`, `memory_history`, `memory_review`, `memory_write`, `memory_update`, `memory_feedback`, `memory_link`.
+- Ask: `memory_delete`, `memory_restore`.
+- Deny (Bash): `memorable purge*`, `memorable approve*`, `memorable profile*`, `docker exec memorable-postgres*`, `docker inspect memorable-postgres*`, `psql*`.
+- Deny (Read): the credential fallback file.
+
+## 7. Core flows
+
+### Write
+
+1. Validate sizes, formats, slug uniqueness, batch limits.
+2. Secret scan: reject the item with the rule name, never echoing the secret.
+3. Injection scan: store as `quarantined`; tell Claude it needs human approval.
+4. Exact duplicate by content_hash: return the existing memory.
+5. Embed synchronously (2-second timeout); on failure write anyway and queue a job.
+6. Similarity check (vector, else trigram on content): ≥ 0.95 duplicate (return existing); 0.80 to 0.95 with `on_similar: ask` returns candidates with `needs_decision` and writes nothing.
+7. Insert memory, version 1, and audit entry in one transaction. Source `tool_output` sets `unverified`.
+8. `supersedes`: mark the old memory `superseded` and link, same transaction.
+
+### Search
+
+1. Candidate lists (50 each), filtered by status, expiry, scope: vector (HNSW with iterative scan), full text (`websearch_to_tsquery`, `ts_rank_cd`), title trigram.
+2. Reciprocal rank fusion: `rrf = Σ 1/(60 + rank_i)`.
+3. `final = rrf × (1 + 0.20·project_match + 0.10·pinned + min(0.15, 0.05·ln(1 + effective_score)))`; per-project score when present, else global.
+4. Relevance cutoff: drop results with cosine similarity below `min_similarity` (default 0.35) and no full-text match. Empty results are valid.
+5. Return top k with a new `search_id`; log an access event.
+
+### Access counting
+
+- Counted access: `score = score·2^(−Δt/half_life) + weight` (half-life 30 days) on global and per-project scores; update `rank_key`.
+- `memory_get`: weight 1. `memory_feedback useful`: weight 2.
+- Search hits, preload, and resource reads are never counted.
+
+### Feedback
+
+- `useful`: counted access, weight 2.
+- `wrong`: `flagged`; out of preload and default search; into review.
+- `outdated`: `flagged`; review suggests update, supersede, or expiry.
+
+### Preload (hook and `memorable://top`)
+
+Pinned first, then highest `rank_key` among `active` memories whose source is not `tool_output`, across current project, context-global, and profile. Budget: 10 items, 4,000 characters. Titles, slugs, and snippets only.
+
+### Embedding worker
+
+Goroutine inside each `serve` process; claims jobs with `SELECT ... FOR UPDATE SKIP LOCKED`; exponential backoff, max 10 attempts; leftovers handled by the next session or `memorable reembed --pending`. Stops cleanly on context cancellation (goleak-verified).
+
+## 8. Security
+
+### Threat model
+
+Primary: memory poisoning and secret leakage. Secondary: context leakage, destructive actions by a misbehaving agent, local network exposure.
+
+### Controls
+
+| Threat | Control |
+|---|---|
+| Poisoning | Provenance, `unverified` status for tool output, injection scanner with quarantine, quarantined content never sent over MCP, data-labeled output, preload limited to trusted sources, profile writable only via CLI, CLAUDE.md rule that memory is data. |
+| Secret leakage | Secret scan on write, update, import; reject with rule name. Embeddings treated as sensitive. |
+| Context leakage | Schema per context, context fixed per process, no context parameter, fallback context read-only and opt-in. |
+| Destructive actions | App role has no DELETE; soft delete; full history; purge only via CLI as admin. |
+| Agent escalating through Docker | **Soft boundary (accepted):** anyone who can run `docker` has superuser access through `docker exec`, and `docker inspect` shows the admin password. Mitigated by Claude Code deny rules, soft deletes, history, and daily backups. |
+| Credentials | App password generated by setup, stored in the OS keyring (Secret Service, Keychain); 0600 file fallback with a Read deny rule. Admin password shown once at setup and never stored by memorable. |
+| Network | stdio only; Postgres and Ollama on `127.0.0.1`; remote embedding providers require `allow_remote = true`. |
+| SQL injection | Parameterized queries only; `websearch_to_tsquery`; identifiers via `pgx.Identifier`. |
+| Runaway agent | Content 2,000 chars, title 120, 10 tags, batch 20, query 500 chars, k 20, 60 writes per minute per process. |
+| Forensics | Append-only audit log with content hashes. |
+| Dependencies | Minimal set, pinned; `govulncheck` and `gosec` via `tool` directives and CI. |
+
+### Database roles
+
+| Role | Auth | Privileges |
+|---|---|---|
+| `memorable_admin` | password (user-held) | superuser in the container; migrations, purge, prune, approve, profile writes |
+| `memorable_app` | password (keyring) | SELECT, INSERT, UPDATE on context memory tables; INSERT and SELECT on versions, feedback, access_events, audit_log; SELECT only on `mem_profile`; no DELETE anywhere |
+
+### Injection heuristics (initial set)
+
+Imperatives aimed at the agent ("ignore previous", "you must always", "system prompt"), command patterns (`curl ... | sh`, `rm -rf`, base64 piped to a shell), URLs combined with commands, hidden or zero-width Unicode. False positives are expected; approval is one CLI command.
+
+## 9. CLI
+
+### Presentation
+
+- `fang` styles help, usage, errors, and version; `memorable --help` shows grouped commands with examples.
+- `lipgloss` tables and panels for lists, search results, stats, doctor checks; `huh` forms and spinners for setup and slow steps.
+- Plain text automatically when stdout is not a terminal (including when Claude runs the CLI) or `NO_COLOR` is set. `--output text|json` on every read command.
+- Exit codes: 0 success, 1 runtime error, 2 usage error. Logs on stderr; program output on stdout; commands write through `cmd.OutOrStdout()` for testability.
+
+### Commands
+
+| Command | Purpose |
+|---|---|
+| `memorable setup` | Guided setup (below); `--dry-run` previews everything |
+| `memorable serve` | MCP server over stdio |
+| `memorable doctor` | Checks config, keyring, container, port, roles, extensions, schema versions, Ollama, model, dimension match |
+| `memorable context` / `context add <path> <name>` | Show resolution for the current directory; map a path |
+| `memorable migrate` | Apply migrations (admin) |
+| `memorable search / get / list / top` | Human versions of the MCP tools |
+| `memorable edit <id or slug>` | Edit in `$EDITOR`; rescans and re-embeds |
+| `memorable review` | Interactive review queue |
+| `memorable approve <id>` | Release from quarantine (admin) |
+| `memorable purge <id>` | Irreversible erase across all tables (admin) |
+| `memorable profile add/edit/list/delete` | Manage profile memories (admin) |
+| `memorable prune` | Apply retention (admin) |
+| `memorable reembed [--pending] [--all]` | Process jobs or re-embed after a model change; handles dimension changes |
+| `memorable backup` | `pg_dump -Fc` inside the container; keeps the last 14 in `~/.local/share/memorable/backups` |
+| `memorable export [--format json or md]` / `import <path>` | Portable export; import JSON or Claude Code `memory/*.md` files with full scanning |
+| `memorable hook session-start` | Reads hook JSON on stdin; prints the preload set |
+| `memorable stats` | Counts per status, type, project; embedding coverage |
+| `memorable version` | Version, commit, build date (ldflags) |
+
+### `memorable setup`
+
+Interactive only (refuses without a TTY). Each step shows what will change, as a diff for file edits, and asks before applying:
+
+1. Check Docker and Ollama are installed (Ollama install stays manual: it needs sudo).
+2. Start `memorable-postgres` with generated passwords; show the admin password once; store the app password in the keyring.
+3. Create roles, schemas, and run migrations.
+4. Pull the embedding model.
+5. Define contexts and an optional fallback context; write the config.
+6. Register the MCP server: `claude mcp add --scope user memorable -- memorable serve`.
+7. Append the CLAUDE.md snippet to `~/.claude/CLAUDE.md`.
+8. Add permission rules to `~/.claude/settings.json`.
+9. Optional: SessionStart hook.
+10. Optional: daily backup via systemd user timer (Linux) or launchd agent (macOS).
+11. Run `doctor` and show the result.
+
+## 10. Configuration
+
+Location: `$XDG_CONFIG_HOME/memorable/config.toml` (Linux) or `~/Library/Application Support/memorable/config.toml` (macOS), overridable by `--config` or `MEMORABLE_CONFIG`. Env overrides: `MEMORABLE_CONTEXT`, `MEMORABLE_DB_HOST`, `MEMORABLE_DB_PORT`, `MEMORABLE_DB_NAME`.
+
+```toml
+fallback_context = "personal"   # read-only; omit to disable
+
+[database]
+host = "127.0.0.1"
+port = 5434
+name = "memorable"
+app_user = "memorable_app"
+admin_user = "memorable_admin"
+container = "memorable-postgres"
+
+[embedding]
+provider = "ollama"
+url = "http://127.0.0.1:11434"
+model = "embeddinggemma"
+dimensions = 768
+allow_remote = false
+
+[contexts.personal]
+paths = ["~/development/projects", "~/development/OBSIDIAN"]
+
+[search]
+min_similarity = 0.35
+duplicate_threshold = 0.95
+conflict_threshold = 0.80
+half_life_days = 30
+
+[preload]
+max_items = 10
+max_chars = 4000
+
+[limits]
+writes_per_minute = 60
+
+[retention]
+access_events_days = 90
+backups_keep = 14
+```
+
+## 11. Observability
+
+- slog JSON to stderr only; a test asserts `serve` writes nothing to stdout except protocol frames.
+- No metrics, tracing, or pprof endpoints in v1 (no listeners).
+- `memorable stats`, `doctor`, and the access_events table cover runtime health and tuning.
+
+## 12. Testing
+
+- **Unit** (default `go test`, no Docker): scope resolution, scanners, RRF and boost math, decay and `rank_key` ordering, validation, config, CLI rendering in TTY and plain modes.
+- **Fuzz:** scanners, slug and tag validation, config parsing.
+- **Time:** decay and backoff with `testing/synctest`.
+- **Goroutines:** `goleak.VerifyTestMain` in worker and mcpserver packages.
+- **Integration** (`//go:build integration`): testcontainers with the same pgvector image; every MCP tool, status transitions, grants (app role cannot DELETE or write profile), context isolation, migrations up from empty and from the previous version, `EXPLAIN` index usage on 10,000 seeded rows.
+- **MCP end-to-end:** go-sdk in-memory transport; output wrapping; quarantined content never appears.
+- **Search evaluation** (`//go:build eval`): about 50 synthetic memories and 100 queries authored by Claude, real cases added later; runs against real Ollama; reports recall@5 and MRR; compares `embeddinggemma` and `qwen3-embedding:0.6b` before the default is frozen.
+
+## 13. Repository, CI, and releases
+
+- Private GitHub repository `constantine-kostikas/memorable` (created with author approval at the first commit).
+- Root files: `Makefile`, `.golangci.yml`, `.gitignore`, `CLAUDE.md` (with the always-load directive for the `golang-how-to` skill), `README.md`.
+- **CI** (`.github/workflows/ci.yml`, push and PR to main): build, `go test -race`, golangci-lint, govulncheck, gosec, integration tests.
+- **Release** (`.github/workflows/release.yml`, `v*` tags only): GoReleaser v2, `CGO_ENABLED=0`, linux and darwin on amd64 and arm64, archive names matching `uname`, GPG-signed checksums (`GPG_PRIVATE_KEY`, `GPG_PASSPHRASE` secrets), conventional-commit changelog groups, version via ldflags. Mirrors GitQuick's setup without its push-to-main trigger.
+- **Homebrew tap:** configured in `.goreleaser.yaml` but commented out until the repository is made public.
+- **Install while private** (colleagues are collaborators):
+  ```sh
+  gh release download -R constantine-kostikas/memorable -p "memorable_$(uname -s)_$(uname -m).tar.gz" -O - | tar -xz memorable
+  sudo mv memorable /usr/local/bin/
+  ```
+
+## 14. Deliverables
+
+- The binary with every command above.
+- `README.md`: prerequisites (Docker, Ollama), install, `memorable setup`, manual setup equivalent, CLAUDE.md snippet, permissions, hook, backups and restore, importing existing memory files, troubleshooting with `doctor`.
+- `docs/claude-md-snippet.md`.
+
+## 15. Open items
+
+| Item | Resolution |
+|---|---|
+| Claude Code MCP working directory and roots support | Verify during implementation |
+| Whether MCP requests carry a Claude Code session id | Verify; fall back to process id + start time |
+| `embeddinggemma` query and document prompt prefixes | 768 dimensions and L2-normalized output verified locally (Ollama 0.40.16); prefixes taken from the model card, effect measured by the evaluation set |
+| Gatekeeper behavior for `gh release download` on macOS | Verify on a colleague's Mac before relying on it |
+| Threshold defaults | Tune per model with the evaluation set |
