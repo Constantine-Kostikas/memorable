@@ -1,0 +1,39 @@
+version: "2"
+
+run:
+  build-tags:
+    - integration
+    - eval
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - errorlint
+    - gosec
+    - misspell
+    - nilerr
+    - paralleltest
+    - revive
+    - sqlclosecheck
+    - testifylint
+    - thelper
+    - unconvert
+    - wrapcheck
+  settings:
+    wrapcheck:
+      ignore-package-globs:
+        - github.com/constantine-kostikas/memorable/*
+    paralleltest:
+      ignore-missing-subtests: true
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - wrapcheck
+          - gosec
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

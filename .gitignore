@@ -1,0 +1,17 @@
+# Binaries and build output
+/memorable
+/bin/
+/dist/
+*.test
+*.out
+coverage.*
+
+# Tooling scratch
+/.superpowers/
+/vendor/
+
+# Editors and OS
+.idea/
+.vscode/
+*.swp
+.DS_Store

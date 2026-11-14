@@ -19,7 +19,7 @@
 - Errors: wrap with `fmt.Errorf("<context>: %w", err)`, lowercase, no punctuation; log once at the boundary (MCP handler or CLI `main`), never log-and-return.
 - Enums: Go types with `Unknown` as zero value; DB stores text.
 - Limits (runes, not bytes): title 120, content 2,000, tags 10 each `^[a-z0-9-]{1,40}$`, slug `^[a-z0-9][a-z0-9/-]{1,79}$`, batch 20, query 500, k default 5 max 20, writes 60 per minute per process.
-- Thresholds: `min_similarity` 0.35, duplicate 0.95, conflict 0.80, half-life 30 days, RRF k 60, preload 10 items / 4,000 chars, access_events retention 90 days, backups keep 14.
+- Thresholds: `min_similarity` 0.30, duplicate 0.95, conflict 0.75 (tuned in Task 22; originally 0.35 and 0.80), half-life 30 days, RRF k 60, preload 10 items / 4,000 chars, access_events retention 90 days, backups keep 14.
 - Postgres image `pgvector/pgvector:0.8.7-pg18-trixie`, default port 5434, container `memorable-postgres`, db `memorable`, roles `memorable_admin`, `memorable_app`. Schemas `mem_<context>` and `mem_profile`.
 - Embeddings: Ollama `POST /api/embed` with batched `input`; model `embeddinggemma`, 768 dimensions (verified locally, vectors are L2-normalized). Prompt prefixes per the EmbeddingGemma model card: query `task: search result | query: {text}`, document `title: {title} | text: {content}`.
 - No network listeners. Remote embedding URLs (non-loopback host) rejected unless `allow_remote = true`.

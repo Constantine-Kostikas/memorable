@@ -260,7 +260,7 @@ Sentinel errors in `memory`: `ErrNotFound`, `ErrConflict`, `ErrValidation`, `Err
 3. Injection scan: store as `quarantined`; tell Claude it needs human approval.
 4. Exact duplicate by content_hash: return the existing memory.
 5. Embed synchronously (2-second timeout); on failure write anyway and queue a job.
-6. Similarity check (vector, else trigram on content): ≥ 0.95 duplicate (return existing); 0.80 to 0.95 with `on_similar: ask` returns candidates with `needs_decision` and writes nothing.
+6. Similarity check (vector, else trigram on content): ≥ 0.95 duplicate (return existing); 0.75 to 0.95 with `on_similar: ask` returns candidates with `needs_decision` and writes nothing.
 7. Insert memory, version 1, and audit entry in one transaction. Source `tool_output` sets `unverified`.
 8. `supersedes`: mark the old memory `superseded` and link, same transaction.
 
@@ -269,7 +269,7 @@ Sentinel errors in `memory`: `ErrNotFound`, `ErrConflict`, `ErrValidation`, `Err
 1. Candidate lists (50 each), filtered by status, expiry, scope: vector (HNSW with iterative scan), full text (`websearch_to_tsquery`, `ts_rank_cd`), title trigram.
 2. Reciprocal rank fusion: `rrf = Σ 1/(60 + rank_i)`.
 3. `final = rrf × (1 + 0.20·project_match + 0.10·pinned + min(0.15, 0.05·ln(1 + effective_score)))`; per-project score when present, else global.
-4. Relevance cutoff: drop results with cosine similarity below `min_similarity` (default 0.35) and no full-text match. Empty results are valid.
+4. Relevance cutoff: drop results with cosine similarity below `min_similarity` (default 0.30) and no full-text match. Empty results are valid.
 5. Return top k with a new `search_id`; log an access event.
 
 ### Access counting
@@ -399,9 +399,9 @@ allow_remote = false
 paths = ["~/development/projects", "~/development/OBSIDIAN"]
 
 [search]
-min_similarity = 0.35
+min_similarity = 0.30
 duplicate_threshold = 0.95
-conflict_threshold = 0.80
+conflict_threshold = 0.75
 half_life_days = 30
 
 [preload]
