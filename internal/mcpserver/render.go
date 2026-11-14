@@ -76,4 +76,6 @@ func renderSummaries(tag string, attrs map[string]string, items []memory.Summary
 }
 
 // RenderSummaries wraps compact results in a data element; stored text cannot break out of it.
-func RenderSummaries(tag string, items []memory.Summary) string { return renderSummaries(tag, nil, items) }
+func RenderSummaries(tag string, items []memory.Summary) string {
+	return renderSummaries(tag, nil, items)
+}
