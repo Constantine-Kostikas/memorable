@@ -264,6 +264,8 @@ type Patch struct {
 	Type      *Type
 	Pinned    *bool
 	ExpiresAt **time.Time
+	// Status is set by the service (for example to quarantine an edit) and is not exposed to tools.
+	Status *Status
 }
 
 // Summary is the compact form returned by search and listings.

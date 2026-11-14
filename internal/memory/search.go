@@ -58,10 +58,12 @@ func (s *Service) Search(ctx context.Context, r SearchRequest) (SearchResponse, 
 	f.Tags, f.Types, f.AllProjects = r.Tags, r.Types, r.AllProjects
 	f.IncludeFlagged, f.IncludeSuperseded = r.IncludeFlagged, r.IncludeSuperseded
 
+	// Vector search is best effort: an unavailable embedder or a vector query error (for example a
+	// dimension mismatch after a model change) falls back to text retrieval.
 	var vecHits []Candidate
 	if vec, err := s.embedOne(ctx, EmbedQuery, r.Query); err == nil {
-		if vecHits, err = s.repo.CandidatesVector(ctx, vec, f, candidateLimit); err != nil {
-			return SearchResponse{}, err //nolint:wrapcheck // repository errors are already contextual
+		if hits, err := s.repo.CandidatesVector(ctx, vec, f, candidateLimit); err == nil {
+			vecHits = hits
 		}
 	}
 	ftsHits, err := s.repo.CandidatesFTS(ctx, r.Query, f, candidateLimit)

@@ -39,6 +39,10 @@ type Repo struct {
 	Err error
 	// Audits records audit actions in order.
 	Audits []string
+	// OnGet, when set, runs after GetByIDs returns (outside the lock), to simulate a concurrent writer.
+	OnGet func()
+	// VectorErr, when set, fails vector queries only.
+	VectorErr error
 }
 
 var (
@@ -187,6 +191,14 @@ func (r *Repo) lookup(id uuid.UUID) (*memory.Memory, bool) {
 
 // GetByIDs implements memory.Repository.
 func (r *Repo) GetByIDs(_ context.Context, ids []uuid.UUID) ([]memory.Memory, error) {
+	out, err := r.getByIDs(ids)
+	if r.OnGet != nil {
+		r.OnGet()
+	}
+	return out, err
+}
+
+func (r *Repo) getByIDs(ids []uuid.UUID) ([]memory.Memory, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.Err != nil {
@@ -271,6 +283,9 @@ func (r *Repo) Update(_ context.Context, id uuid.UUID, expected *int, p memory.P
 	}
 	if p.ExpiresAt != nil {
 		m.ExpiresAt = *p.ExpiresAt
+	}
+	if p.Status != nil {
+		m.Status = *p.Status
 	}
 	if hash == nil {
 		hash = memory.ContentHash(m.Title, m.Content)
@@ -536,6 +551,9 @@ func Cosine(a, b []float32) float64 {
 func (r *Repo) CandidatesVector(_ context.Context, vec []float32, f memory.Filter, limit int) ([]memory.Candidate, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.VectorErr != nil {
+		return nil, r.VectorErr
+	}
 	var cs []memory.Candidate
 	r.each(f, func(m *memory.Memory) {
 		if v, ok := r.vecs[m.ID]; ok {
@@ -596,6 +614,9 @@ func (r *Repo) NearestByVector(_ context.Context, owner string, vec []float32, l
 	defer r.mu.Unlock()
 	if r.NearestOverride != nil {
 		return r.NearestOverride(), r.Err
+	}
+	if r.VectorErr != nil {
+		return nil, r.VectorErr
 	}
 	var cs []memory.Candidate
 	for id, m := range r.mems {

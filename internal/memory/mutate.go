@@ -50,17 +50,19 @@ func (s *Service) Update(ctx context.Context, id uuid.UUID, expected *int, p Pat
 	if len(secrets) > 0 {
 		return Memory{}, fmt.Errorf("%w: %s", ErrSecretDetected, ruleList(secrets))
 	}
+	if len(injections) > 0 {
+		quarantined := StatusQuarantined
+		p.Status = &quarantined
+	}
+	// The scans and hash cover the text read above, so the write must apply to exactly that version.
+	if expected == nil {
+		v := cur.Version
+		expected = &v
+	}
 	hash := ContentHash(next.Title, next.Content)
 	out, err := s.repo.Update(ctx, id, expected, p, hash, s.audit("update"))
 	if err != nil {
 		return Memory{}, err //nolint:wrapcheck // repository errors are already contextual
-	}
-	if len(injections) > 0 && out.Status != StatusQuarantined {
-		if err := s.repo.SetStatus(ctx, id, StatusQuarantined, "status", s.audit("quarantine")); err != nil {
-			return Memory{}, err //nolint:wrapcheck // repository errors are already contextual
-		}
-		out.Status = StatusQuarantined
-		out.Version++
 	}
 	if next.Title != cur.Title || next.Content != cur.Content {
 		s.reembed(ctx, out)

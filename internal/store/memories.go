@@ -129,7 +129,7 @@ func (s *Store) Update(ctx context.Context, id uuid.UUID, expectedVersion *int, 
 		if hash == nil {
 			hash = memory.ContentHash(next.Title, next.Content)
 		}
-		out, err = writeMemory(ctx, tx, next, hash, textChanged, nil)
+		out, err = writeMemory(ctx, tx, next, hash, textChanged, p.Status)
 		if err != nil {
 			return err
 		}

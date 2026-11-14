@@ -147,7 +147,8 @@ func (s *Service) checkSimilar(ctx context.Context, n NewMemory, m Memory, vec [
 	var err error
 	if haveVec {
 		near, err = s.repo.NearestByVector(ctx, s.settings.Owner, vec, 5)
-	} else {
+	}
+	if !haveVec || err != nil {
 		near, err = s.repo.NearestByTrigram(ctx, s.settings.Owner, m.Content, 5)
 	}
 	if err != nil {

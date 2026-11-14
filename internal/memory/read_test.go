@@ -2,6 +2,7 @@ package memory_test
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -173,4 +174,17 @@ func TestReview(t *testing.T) {
 	q, err := e.svc.Review(context.Background())
 	require.NoError(t, err)
 	assert.Len(t, q.Unverified, 1)
+}
+
+func TestSearch_VectorQueryErrorFallsBack(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, nil)
+	m := created(t, e, note("Ports", "postgres listens on 5434"))
+	e.repo.VectorErr = errors.New("different vector dimensions 768 and 1024")
+	res, err := e.svc.Search(context.Background(), memory.SearchRequest{Query: "postgres"})
+	require.NoError(t, err)
+	assert.Equal(t, []uuid.UUID{m.ID}, resultIDs(res.Results))
+
+	r := writeOne(t, e, note("Other", "a different fact"))
+	assert.Equal(t, memory.OutcomeCreated, r.Outcome, "writes fall back to trigram duplicate checks")
 }

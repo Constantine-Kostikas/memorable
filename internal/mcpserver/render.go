@@ -74,3 +74,6 @@ func renderSummaries(tag string, attrs map[string]string, items []memory.Summary
 	b.WriteString("</" + tag + ">")
 	return b.String()
 }
+
+// RenderSummaries wraps compact results in a data element; stored text cannot break out of it.
+func RenderSummaries(tag string, items []memory.Summary) string { return renderSummaries(tag, nil, items) }
