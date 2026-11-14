@@ -99,7 +99,7 @@ func MergePermissions(settings []byte, allow, ask, deny []string) ([]byte, error
 			return nil, err
 		}
 	}
-	return pretty.PrettyOptions(doc, &pretty.Options{Indent: "  ", Width: 120}), nil
+	return pretty.PrettyOptions(doc, &pretty.Options{Indent: "  ", Width: 1}), nil
 }
 
 // AddSessionStartHook registers command as a SessionStart hook unless it already is.
@@ -111,7 +111,7 @@ func AddSessionStartHook(settings []byte, command string) ([]byte, error) {
 	for _, entry := range gjson.GetBytes(doc, "hooks.SessionStart").Array() {
 		for _, h := range entry.Get("hooks").Array() {
 			if h.Get("command").String() == command {
-				return pretty.PrettyOptions(doc, &pretty.Options{Indent: "  ", Width: 120}), nil
+				return pretty.PrettyOptions(doc, &pretty.Options{Indent: "  ", Width: 1}), nil
 			}
 		}
 	}
@@ -120,7 +120,7 @@ func AddSessionStartHook(settings []byte, command string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("adding hook: %w", err)
 	}
-	return pretty.PrettyOptions(out, &pretty.Options{Indent: "  ", Width: 120}), nil
+	return pretty.PrettyOptions(out, &pretty.Options{Indent: "  ", Width: 1}), nil
 }
 
 // Change is a planned file edit.
@@ -154,24 +154,54 @@ func Diff(c Change) string {
 			}
 		}
 	}
-	var out strings.Builder
-	fmt.Fprintf(&out, "--- %s\n+++ %s\n", c.Path, c.Path)
+	var lines []string
 	i, j := 0, 0
 	for i < len(a) || j < len(b) {
 		switch {
 		case i < len(a) && j < len(b) && a[i] == b[j]:
-			out.WriteString(" " + a[i] + "\n")
+			lines = append(lines, " "+a[i])
 			i++
 			j++
 		case j < len(b) && (i == len(a) || lcs[i][j+1] >= lcs[i+1][j]):
-			out.WriteString("+" + b[j] + "\n")
+			lines = append(lines, "+"+b[j])
 			j++
 		default:
-			out.WriteString("-" + a[i] + "\n")
+			lines = append(lines, "-"+a[i])
 			i++
 		}
 	}
+	var out strings.Builder
+	fmt.Fprintf(&out, "--- %s\n+++ %s\n", c.Path, c.Path)
+	for _, l := range withContext(lines, diffContext) {
+		out.WriteString(l + "\n")
+	}
 	return out.String()
+}
+
+const diffContext = 3
+
+// withContext keeps changed lines and n unchanged lines around each change, eliding the rest.
+func withContext(lines []string, n int) []string {
+	keep := make([]bool, len(lines))
+	for i, l := range lines {
+		if !strings.HasPrefix(l, " ") {
+			for k := max(0, i-n); k <= min(len(lines)-1, i+n); k++ {
+				keep[k] = true
+			}
+		}
+	}
+	var out []string
+	elided := false
+	for i, l := range lines {
+		if keep[i] {
+			out = append(out, l)
+			elided = false
+		} else if !elided {
+			out = append(out, "  ...")
+			elided = true
+		}
+	}
+	return out
 }
 
 // Rules returns the recommended Claude Code permission rules; credentialsPath is denied to Read.

@@ -13,6 +13,7 @@ import (
 	"github.com/constantine-kostikas/memorable/internal/config"
 	"github.com/constantine-kostikas/memorable/internal/doctor"
 	"github.com/constantine-kostikas/memorable/internal/store"
+	"github.com/constantine-kostikas/memorable/internal/ui"
 )
 
 func runDocker(ctx context.Context, args ...string) ([]byte, error) {
@@ -75,23 +76,7 @@ func newDoctorCmd(d deps, flags *rootFlags) *cobra.Command {
 					return err
 				}
 			} else {
-				rows := make([][]string, 0, len(checks))
-				for _, c := range checks {
-					mark := "✓"
-					switch c.Status {
-					case doctor.StatusFail:
-						mark = "✗"
-					case doctor.StatusSkipped:
-						mark = "-"
-					}
-					rows = append(rows, []string{mark, c.Name, c.Detail})
-				}
-				p.Table([]string{"", "CHECK", "DETAIL"}, rows)
-				for _, c := range checks {
-					if c.Status == doctor.StatusFail {
-						p.Warn(c.Name + ": " + c.Hint)
-					}
-				}
+				printChecks(p, checks)
 			}
 			if doctor.Failed(checks) {
 				return errors.New("some checks failed")
@@ -101,5 +86,25 @@ func newDoctorCmd(d deps, flags *rootFlags) *cobra.Command {
 			}
 			return nil
 		},
+	}
+}
+
+func printChecks(p *ui.Printer, checks []doctor.Check) {
+	rows := make([][]string, 0, len(checks))
+	for _, c := range checks {
+		mark := "✓"
+		switch c.Status {
+		case doctor.StatusFail:
+			mark = "✗"
+		case doctor.StatusSkipped:
+			mark = "-"
+		}
+		rows = append(rows, []string{mark, c.Name, c.Detail})
+	}
+	p.Table([]string{"", "CHECK", "DETAIL"}, rows)
+	for _, c := range checks {
+		if c.Status == doctor.StatusFail {
+			p.Warn(c.Name + ": " + c.Hint)
+		}
 	}
 }

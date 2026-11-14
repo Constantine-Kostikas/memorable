@@ -115,3 +115,12 @@ func TestSnippetMatchesDocs(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(doc), strings.TrimSpace(Snippet))
 }
+
+func TestDiff_ElidesUnchangedLines(t *testing.T) {
+	t.Parallel()
+	before := strings.Repeat("same\n", 20)
+	d := Diff(Change{Path: "f", Before: before, After: before + "new\n"})
+	assert.Equal(t, 3, strings.Count(d, " same"), d)
+	assert.Contains(t, d, "  ...")
+	assert.Contains(t, d, "+new")
+}
