@@ -132,7 +132,7 @@ func (c *Config) Validate() error {
 	if c.Embedding.Dimensions <= 0 {
 		errs = append(errs, errors.New("embedding dimensions must be positive"))
 	}
-	if err := checkEmbeddingURL(c.Embedding); err != nil {
+	if err := CheckEmbeddingURL(c.Embedding); err != nil {
 		errs = append(errs, err)
 	}
 	s := c.Search
@@ -154,7 +154,8 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-func checkEmbeddingURL(e Embedding) error {
+// CheckEmbeddingURL rejects non-local embedding URLs unless remote use is allowed.
+func CheckEmbeddingURL(e Embedding) error {
 	u, err := url.Parse(e.URL)
 	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
 		return fmt.Errorf("embedding url %q is not a valid http(s) URL", e.URL)

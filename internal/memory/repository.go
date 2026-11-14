@@ -117,3 +117,25 @@ type JobRepository interface {
 	CompleteJob(ctx context.Context, id uuid.UUID) error
 	FailJob(ctx context.Context, id uuid.UUID, errText string, next time.Time, giveUp bool) error
 }
+
+// EmbedKind selects the prompt format for an embedding.
+type EmbedKind uint8
+
+// Embed kinds.
+const (
+	EmbedUnknown EmbedKind = iota
+	EmbedQuery
+	EmbedDocument
+)
+
+// Embedder turns text into vectors. Implemented by embed.Ollama.
+type Embedder interface {
+	Embed(ctx context.Context, kind EmbedKind, texts []string) ([][]float32, error)
+	Model() string
+	Dimensions() int
+}
+
+// DocumentText formats a memory for document embedding.
+func DocumentText(title, content string) string {
+	return "title: " + title + " | text: " + content
+}
