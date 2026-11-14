@@ -17,6 +17,7 @@ func TestPreload_Budget(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	e := newEnv(t, nil)
+	e.repo.NearestOverride = func() []memory.Candidate { return nil } // fixtures share words; similarity is not under test
 	var pinned memory.Memory
 	for i := range 12 {
 		n := note(fmt.Sprintf("Memory %02d", i), fmt.Sprintf("content number %d", i))
@@ -47,6 +48,7 @@ func TestPreload_Budget(t *testing.T) {
 func TestPreload_CharBudget(t *testing.T) {
 	t.Parallel()
 	e := newEnv(t, func(s *memory.Settings) { s.Preload.MaxChars = 500 })
+	e.repo.NearestOverride = func() []memory.Candidate { return nil } // fixtures share words; similarity is not under test
 	for i := range 5 {
 		created(t, e, note(fmt.Sprintf("Long %d", i), strings.Repeat(fmt.Sprintf("word%d ", i), 60)))
 	}

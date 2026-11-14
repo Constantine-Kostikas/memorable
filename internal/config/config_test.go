@@ -27,7 +27,8 @@ func TestLoad_MissingFileReturnsDefaults(t *testing.T) {
 	assert.Equal(t, 5434, c.Database.Port)
 	assert.Equal(t, "embeddinggemma", c.Embedding.Model)
 	assert.Equal(t, 768, c.Embedding.Dimensions)
-	assert.InDelta(t, 0.35, c.Search.MinSimilarity, 1e-9)
+	assert.InDelta(t, 0.30, c.Search.MinSimilarity, 1e-9)
+	assert.InDelta(t, 0.75, c.Search.ConflictThreshold, 1e-9)
 	assert.Equal(t, 30, c.Search.HalfLifeDays)
 	assert.Equal(t, 14, c.Retention.BackupsKeep)
 }

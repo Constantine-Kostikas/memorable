@@ -85,7 +85,7 @@ func Default() Config {
 			Provider: "ollama", URL: "http://127.0.0.1:11434", Model: "embeddinggemma", Dimensions: 768,
 		},
 		Contexts:  map[string]Context{},
-		Search:    Search{MinSimilarity: 0.35, DuplicateThreshold: 0.95, ConflictThreshold: 0.80, HalfLifeDays: 30},
+		Search:    Search{MinSimilarity: 0.30, DuplicateThreshold: 0.95, ConflictThreshold: 0.75, HalfLifeDays: 30},
 		Preload:   Preload{MaxItems: 10, MaxChars: 4000},
 		Limits:    Limits{WritesPerMinute: 60},
 		Retention: Retention{AccessEventsDays: 90, BackupsKeep: 14},
