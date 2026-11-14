@@ -3,8 +3,11 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
+
+	"github.com/constantine-kostikas/memorable/internal/ui"
 )
 
 const (
@@ -25,6 +28,21 @@ type rootFlags struct {
 }
 
 func newRootCmd(info buildInfo) *cobra.Command {
+	return newRootCmdWith(info, defaultDeps())
+}
+
+func newPrinter(cmd *cobra.Command, flags *rootFlags, getenv func(string) string) (*ui.Printer, error) {
+	if getenv == nil {
+		getenv = os.Getenv
+	}
+	p, err := ui.NewPrinter(cmd.OutOrStdout(), flags.output, getenv)
+	if err != nil {
+		return nil, usageError{err}
+	}
+	return p, nil
+}
+
+func newRootCmdWith(info buildInfo, d deps) *cobra.Command {
 	flags := &rootFlags{}
 	root := &cobra.Command{
 		Use:           "memorable",
@@ -48,7 +66,12 @@ func newRootCmd(info buildInfo) *cobra.Command {
 	root.PersistentFlags().StringVarP(&flags.output, "output", "o", "text", "output format: text or json")
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return usageError{err} })
 
-	root.AddCommand(newVersionCmd(info, flags))
+	root.AddCommand(
+		newVersionCmd(info, flags),
+		newServeCmd(d, flags, info),
+		newHookCmd(d, flags),
+		newContextCmd(d, flags),
+	)
 	return root
 }
 

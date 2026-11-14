@@ -21,12 +21,23 @@ const service = "memorable"
 // Store reads and writes secrets.
 type Store struct {
 	fallbackPath string
+	noKeyring    bool
 	mu           sync.Mutex
 }
 
+// Option configures a Store.
+type Option func(*Store)
+
+// WithoutKeyring stores secrets only in the fallback file (headless machines and tests).
+func WithoutKeyring() Option { return func(s *Store) { s.noKeyring = true } }
+
 // New returns a Store using fallbackPath when the keyring is unavailable.
-func New(fallbackPath string) *Store {
-	return &Store{fallbackPath: fallbackPath}
+func New(fallbackPath string, opts ...Option) *Store {
+	s := &Store{fallbackPath: fallbackPath}
+	for _, o := range opts {
+		o(s)
+	}
+	return s
 }
 
 // DefaultFallbackPath returns the platform path for the credentials fallback file.
@@ -45,9 +56,10 @@ func Account(user, host string, port int, db string) string {
 
 // Get returns the secret for account or memory.ErrNotFound.
 func (s *Store) Get(account string) (string, error) {
-	v, err := keyring.Get(service, account)
-	if err == nil {
-		return v, nil
+	if !s.noKeyring {
+		if v, err := keyring.Get(service, account); err == nil {
+			return v, nil
+		}
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -63,8 +75,10 @@ func (s *Store) Get(account string) (string, error) {
 
 // Set stores the secret, using the fallback file when the keyring fails.
 func (s *Store) Set(account, value string) error {
-	if err := keyring.Set(service, account, value); err == nil {
-		return nil
+	if !s.noKeyring {
+		if err := keyring.Set(service, account, value); err == nil {
+			return nil
+		}
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -79,7 +93,9 @@ func (s *Store) Set(account, value string) error {
 // Delete removes the secret from both the keyring and the fallback file.
 func (s *Store) Delete(account string) error {
 	// The keyring may be unavailable or hold nothing for account; the fallback file is cleaned either way.
-	_ = keyring.Delete(service, account)
+	if !s.noKeyring {
+		_ = keyring.Delete(service, account)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	m, err := s.readFile()

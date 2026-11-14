@@ -66,3 +66,14 @@ func TestAccount(t *testing.T) {
 	t.Parallel()
 	assert.Equal(t, "memorable_app@127.0.0.1:5434/memorable", Account("memorable_app", "127.0.0.1", 5434, "memorable"))
 }
+
+func TestStore_WithoutKeyring(t *testing.T) {
+	t.Parallel()
+	fallback := filepath.Join(t.TempDir(), "credentials.json")
+	s := New(fallback, WithoutKeyring())
+	require.NoError(t, s.Set("acct", "pw"))
+	assert.FileExists(t, fallback)
+	got, err := s.Get("acct")
+	require.NoError(t, err)
+	assert.Equal(t, "pw", got)
+}
