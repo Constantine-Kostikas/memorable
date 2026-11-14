@@ -6,7 +6,9 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"os/exec"
 	"os/user"
+	"runtime"
 	"strings"
 	"time"
 
@@ -45,10 +47,16 @@ type deps struct {
 	build         func(ctx context.Context, cfgPath string, dirs []string, logger *slog.Logger) (*app, error)
 	isTTY         func(*cobra.Command) bool
 	adminPassword func(*cobra.Command) (string, error)
+	docker        func(ctx context.Context, args ...string) ([]byte, error)
+	run           func(ctx context.Context, name string, args ...string) ([]byte, error)
+	lookPath      func(string) (string, error)
+	executable    func() (string, error)
+	goos          string
 }
 
 func defaultDeps() deps {
-	d := deps{getenv: os.Getenv, cwd: os.Getwd, isTTY: stdinIsTTY}
+	d := deps{getenv: os.Getenv, cwd: os.Getwd, isTTY: stdinIsTTY, docker: runDocker, run: runCommand,
+		lookPath: exec.LookPath, executable: os.Executable, goos: runtime.GOOS}
 	d.adminPassword = func(cmd *cobra.Command) (string, error) {
 		return promptAdminPassword(cmd.InOrStdin(), cmd.ErrOrStderr(), d.isTTY(cmd))
 	}
@@ -180,4 +188,15 @@ func buildApp(ctx context.Context, d deps, cfgPath string, dirs []string, logger
 	})
 	logger.DebugContext(ctx, "session ready", "context", res.Context, "read_only", res.ReadOnly)
 	return &app{cfg: cfg, cfgPath: path, res: res, store: st, emb: emb, svc: svc, secrets: secrets}, nil
+}
+
+func runCommand(ctx context.Context, name string, args ...string) ([]byte, error) {
+	c := exec.CommandContext(ctx, name, args...) //nolint:gosec // fixed binaries chosen by memorable, arguments without a shell
+	var stderr strings.Builder
+	c.Stderr = &stderr
+	out, err := c.Output()
+	if err != nil {
+		return out, fmt.Errorf("%s %s: %w: %s", name, strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
+	}
+	return out, nil
 }

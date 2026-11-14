@@ -14,11 +14,12 @@ import (
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 
 	"github.com/constantine-kostikas/memorable/internal/config"
+	"github.com/constantine-kostikas/memorable/internal/dockerpg"
 	"github.com/constantine-kostikas/memorable/internal/store"
 )
 
 // Image is the Postgres image used in production and tests.
-const Image = "pgvector/pgvector:0.8.7-pg18-trixie"
+const Image = dockerpg.Image
 
 const (
 	adminUser = "memorable_admin"
