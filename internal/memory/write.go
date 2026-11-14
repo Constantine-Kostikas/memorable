@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -107,6 +108,9 @@ func (s *Service) writeOne(ctx context.Context, n NewMemory) (WriteResult, error
 	}
 
 	if err := s.insert(ctx, &m, n.Supersedes); err != nil {
+		if errors.Is(err, ErrConflict) && m.Slug != nil {
+			return WriteResult{Outcome: OutcomeRejected, Reason: fmt.Sprintf("slug %q is already used by another memory", *m.Slug)}, nil
+		}
 		return WriteResult{}, err
 	}
 	s.storeEmbedding(ctx, m, vec)

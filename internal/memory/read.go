@@ -19,6 +19,8 @@ type GetRequest struct {
 	IDs      []uuid.UUID
 	Slugs    []string
 	SearchID *uuid.UUID
+	// Passive reads (resources, previews) are not counted as accesses.
+	Passive bool
 }
 
 // Fetched is one requested memory. Ref is the id or slug that was asked for; Err is set when it
@@ -96,7 +98,7 @@ func (s *Service) Get(ctx context.Context, r GetRequest) ([]Fetched, error) {
 				out[i].Links = append(out[i].Links, l)
 			}
 		}
-		if m.Scope == ScopeProfile {
+		if m.Scope == ScopeProfile || r.Passive {
 			continue
 		}
 		if err := s.repo.RecordAccess(ctx, m.ID, s.settings.Scope.Project, 1, now, s.halfLife()); err != nil {
