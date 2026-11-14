@@ -2,6 +2,8 @@ module github.com/constantine-kostikas/memorable
 
 go 1.26.7
 
+toolchain go1.26.11
+
 require (
 	charm.land/huh/v2 v2.0.3
 	charm.land/lipgloss/v2 v2.1.0

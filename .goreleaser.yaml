@@ -75,6 +75,8 @@ changelog:
       order: 999
 
 release:
+  # Tags like v0.1.0-alpha.1 are published as pre-releases.
+  prerelease: auto
   footer: >-
 
     ---
