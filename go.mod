@@ -3,6 +3,7 @@ module github.com/constantine-kostikas/memorable
 go 1.25.10
 
 require (
+	github.com/BurntSushi/toml v1.6.0
 	github.com/charmbracelet/fang v1.0.0
 	github.com/google/uuid v1.6.0
 	github.com/spf13/cobra v1.10.2
