@@ -61,4 +61,59 @@ type Repository interface {
 	LinksFor(ctx context.Context, ids []uuid.UUID) ([]Link, error)
 	LogSearch(ctx context.Context, query string, project *string, returned []uuid.UUID) (uuid.UUID, error)
 	LogGet(ctx context.Context, id uuid.UUID, searchID *uuid.UUID, project *string) error
+
+	CandidatesVector(ctx context.Context, vec []float32, f Filter, limit int) ([]Candidate, error)
+	CandidatesFTS(ctx context.Context, query string, f Filter, limit int) ([]Candidate, error)
+	CandidatesTrigram(ctx context.Context, query string, f Filter, limit int) ([]Candidate, error)
+	NearestByVector(ctx context.Context, owner string, vec []float32, limit int) ([]Candidate, error)
+	NearestByTrigram(ctx context.Context, owner, content string, limit int) ([]Candidate, error)
+	Hydrate(ctx context.Context, ids []uuid.UUID, project *string) ([]Memory, error)
+	Top(ctx context.Context, f Filter, limit int) ([]Memory, error)
+	List(ctx context.Context, f Filter, statuses []Status, cursor *uuid.UUID, limit int) ([]Memory, *uuid.UUID, error)
+	Review(ctx context.Context, now time.Time, staleAfter, halfLife time.Duration) (ReviewQueue, error)
+}
+
+// Filter scopes candidate and listing queries.
+type Filter struct {
+	Owner             string
+	Project           *string
+	AllProjects       bool
+	Tags              []string
+	Types             []Type
+	IncludeFlagged    bool
+	IncludeSuperseded bool
+	Now               time.Time
+}
+
+// Candidate is a search hit before fusion.
+type Candidate struct {
+	ID         uuid.UUID
+	Similarity float64
+}
+
+// ReviewQueue groups memories that need human attention.
+type ReviewQueue struct {
+	Flagged          []Memory
+	Expired          []Memory
+	Stale            []Memory
+	Unverified       []Memory
+	Conflicts        []Link
+	QuarantinedCount int
+}
+
+// Job is a pending embedding job with the text to embed.
+type Job struct {
+	MemoryID uuid.UUID
+	Version  int
+	Attempts int
+	Title    string
+	Content  string
+}
+
+// JobRepository queues embedding work. Implemented by store.Store.
+type JobRepository interface {
+	EnqueueEmbedding(ctx context.Context, id uuid.UUID, version int) error
+	ClaimJobs(ctx context.Context, n int, now time.Time) ([]Job, error)
+	CompleteJob(ctx context.Context, id uuid.UUID) error
+	FailJob(ctx context.Context, id uuid.UUID, errText string, next time.Time, giveUp bool) error
 }
