@@ -1,6 +1,10 @@
 package store
 
-import "context"
+import (
+	"context"
+
+	"github.com/jackc/pgx/v5"
+)
 
 // Stats summarizes the context schema.
 type Stats struct {
@@ -41,4 +45,37 @@ func (s *Store) Stats(ctx context.Context) (Stats, error) {
 		}
 	}
 	return st, nil
+}
+
+// Extensions returns installed extension versions by name.
+func (s *Store) Extensions(ctx context.Context) (map[string]string, error) {
+	rows, err := s.pool.Query(ctx, `SELECT extname, extversion FROM pg_extension`)
+	if err != nil {
+		return nil, mapErr("extensions", err)
+	}
+	defer rows.Close()
+	out := map[string]string{}
+	for rows.Next() {
+		var name, version string
+		if err := rows.Scan(&name, &version); err != nil {
+			return nil, mapErr("extensions", err)
+		}
+		out[name] = version
+	}
+	return out, mapErr("extensions", rows.Err())
+}
+
+// SchemaVersion returns the newest applied migration of schema, or 0 when it has none.
+func (s *Store) SchemaVersion(ctx context.Context, schema string) (int64, error) {
+	var exists bool
+	if err := s.pool.QueryRow(ctx, `SELECT to_regclass($1) IS NOT NULL`, schema+".goose_db_version").Scan(&exists); err != nil {
+		return 0, mapErr("schema version", err)
+	}
+	if !exists {
+		return 0, nil
+	}
+	var v int64
+	err := s.pool.QueryRow(ctx, `SELECT coalesce(max(version_id), 0) FROM `+pgx.Identifier{schema, "goose_db_version"}.Sanitize()+
+		` WHERE is_applied`).Scan(&v)
+	return v, mapErr("schema version", err)
 }

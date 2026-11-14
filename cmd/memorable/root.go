@@ -84,6 +84,7 @@ func newRootCmdWith(info buildInfo, d deps) *cobra.Command {
 		newPruneCmd(d, flags),
 		newProfileCmd(d, flags),
 		newReembedCmd(d, flags),
+		newDoctorCmd(d, flags),
 	)
 	return root
 }

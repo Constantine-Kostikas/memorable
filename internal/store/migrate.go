@@ -124,7 +124,7 @@ func grant(ctx context.Context, db *sql.DB, schema string, kind SchemaKind, appU
 			"GRANT USAGE ON ALL SEQUENCES IN SCHEMA " + s + " TO " + app,
 		}
 	}
-	stmts = append(stmts, "REVOKE ALL ON "+s+".goose_db_version FROM "+app)
+	stmts = append(stmts, "GRANT SELECT ON "+s+".goose_db_version TO "+app)
 	for _, stmt := range stmts {
 		if _, err := db.ExecContext(ctx, stmt); err != nil {
 			return fmt.Errorf("granting on %s: %w", schema, err)

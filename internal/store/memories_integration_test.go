@@ -318,3 +318,21 @@ func TestStats(t *testing.T) {
 	assert.Equal(t, 1, st.ByProject["(global)"])
 	assert.Equal(t, 1, st.ByProject[project])
 }
+
+func TestExtensionsAndSchemaVersion(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f := newFixture(t)
+	ext, err := f.store.Extensions(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, "0.8.7", ext["vector"])
+	assert.NotEmpty(t, ext["pg_trgm"])
+	for _, schema := range []string{"mem_personal", store.ProfileSchema} {
+		v, err := f.store.SchemaVersion(ctx, schema)
+		require.NoError(t, err)
+		assert.Equal(t, store.LatestVersion(store.SchemaContext), v, schema)
+	}
+	v, err := f.store.SchemaVersion(ctx, "mem_missing")
+	require.NoError(t, err)
+	assert.Zero(t, v)
+}
