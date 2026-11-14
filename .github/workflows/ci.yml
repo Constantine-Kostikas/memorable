@@ -16,7 +16,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          # Latest 1.26 patch directly, so the go.mod toolchain line never triggers a second download.
+          go-version: "1.26.x"
+          check-latest: true
       - uses: golangci/golangci-lint-action@v8
         with:
           version: v2.15.0
@@ -27,7 +29,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          # Latest 1.26 patch directly, so the go.mod toolchain line never triggers a second download.
+          go-version: "1.26.x"
+          check-latest: true
       - run: go test -race ./...
 
   integration:
@@ -36,7 +40,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          # Latest 1.26 patch directly, so the go.mod toolchain line never triggers a second download.
+          go-version: "1.26.x"
+          check-latest: true
       - run: go test -race -tags=integration ./...
 
   security:
@@ -45,6 +51,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          # Latest 1.26 patch directly, so the go.mod toolchain line never triggers a second download.
+          go-version: "1.26.x"
+          check-latest: true
       # gosec runs inside golangci-lint (lint job), which honors the justified //nolint:gosec annotations.
       - run: go tool govulncheck ./...
