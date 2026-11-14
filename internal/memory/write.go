@@ -86,13 +86,19 @@ func (s *Service) writeOne(ctx context.Context, n NewMemory) (WriteResult, error
 	m := s.buildMemory(n)
 	if len(injections) > 0 {
 		m.Status = StatusQuarantined
-		if err := s.insert(ctx, &m, n.Supersedes); err != nil {
+		// A quarantined write never hides another memory: supersedes is ignored until a human approves it.
+		if err := s.insert(ctx, &m, nil); err != nil {
 			return WriteResult{}, err
 		}
 		return WriteResult{Outcome: OutcomeQuarantined, Memory: &m,
 			Reason: "quarantined pending human review: " + ruleList(injections)}, nil
 	}
 
+	if n.Supersedes != nil {
+		if reason, err := s.checkSupersedable(ctx, *n.Supersedes); err != nil || reason != "" {
+			return WriteResult{Outcome: OutcomeRejected, Reason: reason}, err
+		}
+	}
 	existing, err := s.repo.FindByHash(ctx, s.settings.Owner, m.ContentHash)
 	if err != nil {
 		return WriteResult{}, err //nolint:wrapcheck // repository errors are already contextual
@@ -201,4 +207,21 @@ func (s *Service) storeEmbedding(ctx context.Context, m Memory, vec []float32) {
 	}
 	// A failed enqueue leaves the memory searchable by text; reembed --pending or a later update repairs it.
 	_ = s.jobs.EnqueueEmbedding(ctx, m.ID, m.Version)
+}
+
+// checkSupersedable returns a rejection reason when target cannot be superseded.
+func (s *Service) checkSupersedable(ctx context.Context, target uuid.UUID) (string, error) {
+	ms, err := s.repo.GetByIDs(ctx, []uuid.UUID{target})
+	if err != nil {
+		return "", err //nolint:wrapcheck // repository errors are already contextual
+	}
+	switch {
+	case len(ms) == 0:
+		return fmt.Sprintf("supersedes %s: memory not found", target), nil
+	case ms[0].Scope == ScopeProfile:
+		return "profile memories cannot be superseded from Claude Code", nil
+	case ms[0].Status == StatusQuarantined:
+		return "a quarantined memory cannot be superseded; it awaits human review", nil
+	}
+	return "", nil
 }

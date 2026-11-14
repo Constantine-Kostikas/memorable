@@ -29,7 +29,7 @@ func (s *Store) InsertSuperseding(ctx context.Context, m *memory.Memory, old uui
 		oldAudit.Action = "supersede"
 		oldAudit.MemoryID = old
 		oldAudit.ContentHash = nil
-		if err := setStatus(ctx, tx, s.owner, old, memory.StatusSuperseded, "supersede", oldAudit); err != nil {
+		if err := setStatus(ctx, tx, s.owner, old, memory.StatusSuperseded, "supersede", oldAudit, false); err != nil {
 			return err
 		}
 		_, err := tx.Exec(ctx, `INSERT INTO memory_links (from_id, to_id, kind, owner) VALUES ($1, $2, $3, $4)
@@ -118,6 +118,9 @@ func (s *Store) Update(ctx context.Context, id uuid.UUID, expectedVersion *int, 
 		if err != nil {
 			return err
 		}
+		if cur.Status == memory.StatusQuarantined {
+			return fmt.Errorf("memory %s: %w", id, memory.ErrQuarantined)
+		}
 		if expectedVersion != nil && *expectedVersion != cur.Version {
 			return fmt.Errorf("memory %s is at version %d, not %d: %w", id, cur.Version, *expectedVersion, memory.ErrConflict)
 		}
@@ -191,14 +194,18 @@ func writeMemory(ctx context.Context, tx pgx.Tx, m memory.Memory, hash []byte, c
 // SetStatus changes the lifecycle status, recording a version and an audit entry.
 func (s *Store) SetStatus(ctx context.Context, id uuid.UUID, st memory.Status, changeKind string, a memory.AuditEntry) error {
 	return s.withTx(ctx, func(tx pgx.Tx) error {
-		return setStatus(ctx, tx, s.owner, id, st, changeKind, a)
+		return setStatus(ctx, tx, s.owner, id, st, changeKind, a, false)
 	})
 }
 
-func setStatus(ctx context.Context, tx pgx.Tx, owner string, id uuid.UUID, st memory.Status, changeKind string, a memory.AuditEntry) error {
+// setStatus changes a memory's status. Only the admin path may move a memory out of quarantine.
+func setStatus(ctx context.Context, tx pgx.Tx, owner string, id uuid.UUID, st memory.Status, changeKind string, a memory.AuditEntry, allowQuarantined bool) error {
 	cur, err := lockMemory(ctx, tx, id)
 	if err != nil {
 		return err
+	}
+	if cur.Status == memory.StatusQuarantined && !allowQuarantined {
+		return fmt.Errorf("memory %s: %w", id, memory.ErrQuarantined)
 	}
 	out, err := writeMemory(ctx, tx, cur, cur.ContentHash, false, &st)
 	if err != nil {
@@ -222,6 +229,9 @@ func (s *Store) Restore(ctx context.Context, id uuid.UUID, version *int, a memor
 		cur, err := lockMemory(ctx, tx, id)
 		if err != nil {
 			return err
+		}
+		if cur.Status == memory.StatusQuarantined {
+			return fmt.Errorf("memory %s: %w", id, memory.ErrQuarantined)
 		}
 		next := cur
 		textChanged := false

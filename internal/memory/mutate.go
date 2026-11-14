@@ -18,6 +18,9 @@ func (s *Service) loadOwn(ctx context.Context, id uuid.UUID) (Memory, error) {
 	if ms[0].Scope == ScopeProfile {
 		return Memory{}, fmt.Errorf("%w: profile memories are managed with `memorable profile`", ErrReadOnly)
 	}
+	if ms[0].Status == StatusQuarantined {
+		return Memory{}, fmt.Errorf("memory %s: %w; only `memorable approve` can release it", id, ErrQuarantined)
+	}
 	return ms[0], nil
 }
 
@@ -89,6 +92,9 @@ func (s *Service) Restore(ctx context.Context, id uuid.UUID, version *int) (Memo
 	if err := s.writable(); err != nil {
 		return Memory{}, err
 	}
+	if _, err := s.loadOwn(ctx, id); err != nil {
+		return Memory{}, err
+	}
 	out, err := s.repo.Restore(ctx, id, version, s.audit("restore"))
 	if err != nil {
 		return Memory{}, err //nolint:wrapcheck // repository errors are already contextual
@@ -100,7 +106,15 @@ func (s *Service) Restore(ctx context.Context, id uuid.UUID, version *int) (Memo
 }
 
 // History lists versions of a memory.
+// Quarantined memories have no visible history: their versions hold the suspicious text.
 func (s *Service) History(ctx context.Context, id uuid.UUID) ([]Version, error) {
+	ms, err := s.repo.GetByIDs(ctx, []uuid.UUID{id})
+	if err != nil {
+		return nil, err //nolint:wrapcheck // repository errors are already contextual
+	}
+	if len(ms) == 1 && ms[0].Status == StatusQuarantined {
+		return nil, fmt.Errorf("memory %s: %w", id, ErrQuarantined)
+	}
 	return s.repo.History(ctx, id) //nolint:wrapcheck // repository errors are already contextual
 }
 

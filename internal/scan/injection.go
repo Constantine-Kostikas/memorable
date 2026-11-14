@@ -4,17 +4,17 @@ import "regexp"
 
 var (
 	agentOverride = []*regexp.Regexp{
-		regexp.MustCompile(`(?i)\bignore (?:all |any )?(?:previous|prior|above) (?:instructions|prompts?)\b`),
-		regexp.MustCompile(`(?i)\bdisregard (?:the )?(?:system|previous)\b`),
-		regexp.MustCompile(`(?i)\byou must always\b`),
-		regexp.MustCompile(`(?i)\bsystem prompt\b`),
+		regexp.MustCompile(`(?i)\bignore\s+(?:(?:all|any|the|of|these|those)\s+)*(?:previous|prior|above|earlier)\s+(?:instructions|prompts?|rules)\b`),
+		regexp.MustCompile(`(?i)\bdisregard\s+(?:(?:all|any|the)\s+)*(?:system|previous|prior)\b`),
+		regexp.MustCompile(`(?i)\byou\s+must\s+always\b`),
+		regexp.MustCompile(`(?i)\bsystem\s+prompt\b`),
 	}
 	pipeToShell = []*regexp.Regexp{
 		regexp.MustCompile(`(?i)\b(?:curl|wget)\b[^\n|]*\|\s*(?:ba|z)?sh\b`),
 		regexp.MustCompile(`(?i)\bbase64\s+(?:-d|--decode)\b[^\n]*\|\s*(?:ba|z)?sh\b`),
 	}
 	destructive   = regexp.MustCompile(`\brm\s+-rf\s+[/~*]`)
-	hiddenUnicode = regexp.MustCompile(`[\x{200B}-\x{200F}\x{202A}-\x{202E}\x{2060}-\x{2064}\x{FEFF}]`)
+	hiddenUnicode = regexp.MustCompile(`[\x{00AD}\x{200B}-\x{200F}\x{202A}-\x{202E}\x{2060}-\x{2064}\x{FEFF}\x{E0000}-\x{E007F}]`)
 	anyURL        = regexp.MustCompile(`(?i)\bhttps?://\S+`)
 	shellCommand  = regexp.MustCompile(`(?i)\b(?:curl|wget|bash|sh -c|powershell|iex)\b`)
 )

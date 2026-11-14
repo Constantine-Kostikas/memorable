@@ -164,6 +164,9 @@ func (r *Repo) InsertSuperseding(_ context.Context, m *memory.Memory, old uuid.U
 	if !ok {
 		return memory.ErrNotFound
 	}
+	if o.Status == memory.StatusQuarantined {
+		return memory.ErrQuarantined
+	}
 	if err := r.insertLocked(m, a); err != nil {
 		return err
 	}
@@ -244,6 +247,9 @@ func (r *Repo) Update(_ context.Context, id uuid.UUID, expected *int, p memory.P
 	if !ok {
 		return memory.Memory{}, memory.ErrNotFound
 	}
+	if m.Status == memory.StatusQuarantined {
+		return memory.Memory{}, memory.ErrQuarantined
+	}
 	if expected != nil && *expected != m.Version {
 		return memory.Memory{}, memory.ErrConflict
 	}
@@ -291,6 +297,9 @@ func (r *Repo) SetStatus(_ context.Context, id uuid.UUID, s memory.Status, kind 
 	if !ok {
 		return memory.ErrNotFound
 	}
+	if m.Status == memory.StatusQuarantined {
+		return memory.ErrQuarantined
+	}
 	m.Status = s
 	m.Version++
 	if s == memory.StatusDeleted {
@@ -314,6 +323,9 @@ func (r *Repo) Restore(_ context.Context, id uuid.UUID, version *int, a memory.A
 	m, ok := r.mems[id]
 	if !ok {
 		return memory.Memory{}, memory.ErrNotFound
+	}
+	if m.Status == memory.StatusQuarantined {
+		return memory.Memory{}, memory.ErrQuarantined
 	}
 	if version == nil && m.Status != memory.StatusDeleted {
 		return memory.Memory{}, memory.ErrValidation

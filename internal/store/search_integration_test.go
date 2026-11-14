@@ -279,6 +279,10 @@ func TestAdmin_PurgeApproveProfile(t *testing.T) {
 	got, err := f.store.GetByIDs(ctx, []uuid.UUID{q.ID})
 	require.NoError(t, err)
 	assert.Equal(t, memory.StatusActive, got[0].Status)
+	jobs, err := f.store.ClaimJobs(ctx, 10, time.Now())
+	require.NoError(t, err)
+	require.Len(t, jobs, 1, "approval queues an embedding")
+	assert.Equal(t, q.ID, jobs[0].MemoryID)
 
 	victim := insertWith(t, f, "secret", "leaked", nil, 1)
 	_, err = f.store.LogSearch(ctx, "leaked", nil, []uuid.UUID{victim.ID})

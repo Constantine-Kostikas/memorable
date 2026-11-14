@@ -69,7 +69,15 @@ func (a *Admin) Approve(ctx context.Context, id uuid.UUID) error {
 		if cur.Source == memory.SourceToolOutput {
 			st = memory.StatusUnverified
 		}
-		return setStatus(ctx, tx, a.owner, id, st, "status", memory.AuditEntry{Action: "approve"})
+		if err := setStatus(ctx, tx, a.owner, id, st, "status", memory.AuditEntry{Action: "approve"}, true); err != nil {
+			return err
+		}
+		// Quarantined writes were never embedded; queue it now that it is searchable.
+		_, err = tx.Exec(ctx, `INSERT INTO embedding_jobs (memory_id, owner, target_version)
+			SELECT id, owner, version FROM memories WHERE id = $1
+			ON CONFLICT (memory_id) DO UPDATE SET target_version = EXCLUDED.target_version, attempts = 0,
+				next_attempt_at = now(), last_error = NULL, done_at = NULL`, id)
+		return mapErr("approve enqueue", err)
 	})
 }
 
