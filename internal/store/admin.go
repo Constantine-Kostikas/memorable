@@ -191,3 +191,10 @@ func (a *Admin) ProfileList(ctx context.Context) ([]memory.Memory, error) {
 	}
 	return collectMemories(rows, "profile list")
 }
+
+// ProfileSetEmbedding stores a profile memory's embedding.
+func (a *Admin) ProfileSetEmbedding(ctx context.Context, id uuid.UUID, vec []float32, model string) error {
+	_, err := a.pool.Exec(ctx, `UPDATE mem_profile.memories SET embedding = $2, embedding_model = $3, embedded_at = now()
+		WHERE id = $1`, id, pgvector.NewVector(vec), model)
+	return mapErr("profile embedding", err)
+}

@@ -143,3 +143,36 @@ func qualify(schema string, tables ...string) string {
 	}
 	return out
 }
+
+// ResizeEmbeddings replaces the embedding column of schema with vector(dims), dropping existing vectors.
+// It needs the admin role; callers re-embed afterwards.
+func ResizeEmbeddings(ctx context.Context, adminDSN, schema string, dims int) error {
+	if dims <= 0 || dims > 16000 {
+		return fmt.Errorf("embedding dimensions %d out of range", dims)
+	}
+	db, err := openSchemaDB(adminDSN, schema)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = db.Close() }()
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("resizing embeddings: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	for _, stmt := range []string{
+		"DROP INDEX IF EXISTS memories_embedding_idx",
+		"ALTER TABLE memories DROP COLUMN IF EXISTS embedding",
+		fmt.Sprintf("ALTER TABLE memories ADD COLUMN embedding vector(%d)", dims),
+		"CREATE INDEX memories_embedding_idx ON memories USING hnsw (embedding vector_cosine_ops)",
+		"UPDATE memories SET embedding_model = NULL, embedded_at = NULL",
+	} {
+		if _, err := tx.ExecContext(ctx, stmt); err != nil {
+			return fmt.Errorf("resizing embeddings in %s: %w", schema, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("resizing embeddings in %s: %w", schema, err)
+	}
+	return nil
+}

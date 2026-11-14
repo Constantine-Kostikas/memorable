@@ -136,3 +136,17 @@ func TestUpdate_ProfileIsNotWritable(t *testing.T) {
 	_, err := e.svc.Update(context.Background(), p.ID, nil, memory.Patch{Title: &title})
 	require.ErrorIs(t, err, memory.ErrReadOnly)
 }
+
+func TestActivate(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	e := newEnv(t, nil)
+	n := note("Readme", "port 8080")
+	n.Source = memory.SourceToolOutput
+	m := created(t, e, n)
+	require.NoError(t, e.svc.Activate(ctx, m.ID))
+	got, err := e.repo.GetByIDs(ctx, []uuid.UUID{m.ID})
+	require.NoError(t, err)
+	assert.Equal(t, memory.StatusActive, got[0].Status)
+	require.ErrorIs(t, e.svc.Activate(ctx, m.ID), memory.ErrValidation)
+}

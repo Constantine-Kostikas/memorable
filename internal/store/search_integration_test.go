@@ -14,6 +14,7 @@ import (
 
 	"github.com/constantine-kostikas/memorable/internal/memory"
 	"github.com/constantine-kostikas/memorable/internal/store"
+	"github.com/constantine-kostikas/memorable/internal/store/storetest"
 )
 
 func ids(cs []memory.Candidate) []uuid.UUID {
@@ -266,7 +267,7 @@ func TestAdmin_PurgeApproveProfile(t *testing.T) {
 	f := newFixture(t)
 	cfg := testConfig().Database
 	cfg.Host, cfg.Port, cfg.Name = f.db.Host, f.db.Port, f.db.Name
-	admin, err := store.OpenAdmin(ctx, cfg, "admin-test-password", "mem_personal", "dev")
+	admin, err := store.OpenAdmin(ctx, cfg, storetest.AdminPassword, "mem_personal", "dev")
 	require.NoError(t, err)
 	t.Cleanup(admin.Close)
 
@@ -329,4 +330,38 @@ func vecLiteral(dims, hot int) string {
 		}
 	}
 	return string(append(b, ']'))
+}
+
+func TestEnqueueAllAndDimensions(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f := newFixture(t)
+	insertWith(t, f, "a", "a", nil, 0)
+	insertWith(t, f, "b", "b", nil, -1)
+	del := insertWith(t, f, "c", "c", nil, -1)
+	require.NoError(t, f.store.SetStatus(ctx, del.ID, memory.StatusDeleted, "delete", audit("delete")))
+
+	n, err := f.store.EnqueueAll(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), n, "deleted memories are not re-embedded")
+	dims, err := f.store.EmbeddingDimensions(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 768, dims)
+}
+
+func TestResizeEmbeddings(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f := newFixture(t)
+	m := insertWith(t, f, "a", "a", nil, 0)
+	for _, schema := range []string{"mem_personal", store.ProfileSchema} {
+		require.NoError(t, store.ResizeEmbeddings(ctx, f.db.AdminDSN, schema, 1024))
+	}
+	dims, err := f.store.EmbeddingDimensions(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 1024, dims)
+	require.NoError(t, f.store.SetEmbedding(ctx, m.ID, 1, unitVec(1024, 1), "big"))
+	vec, err := f.store.CandidatesVector(ctx, unitVec(1024, 1), memory.Filter{Owner: "dev", Now: time.Now()}, 5)
+	require.NoError(t, err)
+	assert.Equal(t, []uuid.UUID{m.ID}, ids(vec))
 }

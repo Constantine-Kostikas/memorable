@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"github.com/constantine-kostikas/memorable/internal/config"
 	"github.com/constantine-kostikas/memorable/internal/embed"
 	"github.com/constantine-kostikas/memorable/internal/memory"
@@ -38,13 +40,18 @@ func (a *app) Close() {
 
 // deps holds process-level dependencies so commands can be tested without real infrastructure.
 type deps struct {
-	getenv func(string) string
-	cwd    func() (string, error)
-	build  func(ctx context.Context, cfgPath string, dirs []string, logger *slog.Logger) (*app, error)
+	getenv        func(string) string
+	cwd           func() (string, error)
+	build         func(ctx context.Context, cfgPath string, dirs []string, logger *slog.Logger) (*app, error)
+	isTTY         func(*cobra.Command) bool
+	adminPassword func(*cobra.Command) (string, error)
 }
 
 func defaultDeps() deps {
-	d := deps{getenv: os.Getenv, cwd: os.Getwd}
+	d := deps{getenv: os.Getenv, cwd: os.Getwd, isTTY: stdinIsTTY}
+	d.adminPassword = func(cmd *cobra.Command) (string, error) {
+		return promptAdminPassword(cmd.InOrStdin(), cmd.ErrOrStderr(), d.isTTY(cmd))
+	}
 	d.build = func(ctx context.Context, cfgPath string, dirs []string, logger *slog.Logger) (*app, error) {
 		return buildApp(ctx, d, cfgPath, dirs, logger)
 	}

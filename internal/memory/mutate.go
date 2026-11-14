@@ -142,3 +142,18 @@ func (s *Service) Link(ctx context.Context, l Link, remove bool) error {
 	}
 	return s.repo.AddLink(ctx, l) //nolint:wrapcheck // repository errors are already contextual
 }
+
+// Activate marks a flagged or unverified memory as active after review.
+func (s *Service) Activate(ctx context.Context, id uuid.UUID) error {
+	if err := s.writable(); err != nil {
+		return err
+	}
+	m, err := s.loadOwn(ctx, id)
+	if err != nil {
+		return err
+	}
+	if m.Status != StatusFlagged && m.Status != StatusUnverified {
+		return fmt.Errorf("%w: only flagged or unverified memories can be activated", ErrValidation)
+	}
+	return s.repo.SetStatus(ctx, id, StatusActive, "status", s.audit("activate")) //nolint:wrapcheck // contextual
+}

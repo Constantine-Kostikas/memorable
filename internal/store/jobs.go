@@ -2,7 +2,9 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -68,4 +70,36 @@ func (s *Store) FailJob(ctx context.Context, id uuid.UUID, errText string, next 
 	_, err := s.pool.Exec(ctx, `UPDATE embedding_jobs SET attempts = attempts + 1, last_error = $2, next_attempt_at = $3,
 		done_at = CASE WHEN $4 THEN now() ELSE NULL END WHERE memory_id = $1`, id, errText, next, giveUp)
 	return mapErr("fail job", err)
+}
+
+// EnqueueAll schedules a fresh embedding for every non-deleted memory and returns how many were queued.
+func (s *Store) EnqueueAll(ctx context.Context) (int64, error) {
+	tag, err := s.pool.Exec(ctx, `INSERT INTO embedding_jobs (memory_id, owner, target_version)
+		SELECT id, owner, version FROM memories WHERE status NOT IN ('deleted', 'superseded')
+		ON CONFLICT (memory_id) DO UPDATE SET target_version = EXCLUDED.target_version, attempts = 0,
+			next_attempt_at = now(), last_error = NULL, done_at = NULL`)
+	if err != nil {
+		return 0, mapErr("enqueue all", err)
+	}
+	return tag.RowsAffected(), nil
+}
+
+// EmbeddingDimensions returns the vector size of the embedding column.
+func (s *Store) EmbeddingDimensions(ctx context.Context) (int, error) {
+	var typ string
+	err := s.pool.QueryRow(ctx, `SELECT format_type(a.atttypid, a.atttypmod) FROM pg_attribute a
+		WHERE a.attrelid = 'memories'::regclass AND a.attname = 'embedding' AND NOT a.attisdropped`).Scan(&typ)
+	if err != nil {
+		return 0, mapErr("embedding dimensions", err)
+	}
+	return parseVectorType(typ)
+}
+
+func parseVectorType(typ string) (int, error) {
+	inner := strings.TrimSuffix(strings.TrimPrefix(typ, "vector("), ")")
+	n, err := strconv.Atoi(inner)
+	if err != nil {
+		return 0, fmt.Errorf("unexpected embedding column type %q", typ)
+	}
+	return n, nil
 }

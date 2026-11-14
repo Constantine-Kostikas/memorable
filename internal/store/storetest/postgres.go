@@ -21,8 +21,9 @@ import (
 const Image = "pgvector/pgvector:0.8.7-pg18-trixie"
 
 const (
-	adminUser     = "memorable_admin"
-	adminPassword = "admin-test-password"
+	adminUser = "memorable_admin"
+	// AdminPassword is the admin role password used by tests.
+	AdminPassword = "admin-test-password"
 	// AppPassword is the app role password used by tests.
 	AppPassword = "app-test-password"
 )
@@ -49,7 +50,7 @@ func start() {
 	c, err := postgres.Run(ctx, Image,
 		postgres.WithDatabase("memorable"),
 		postgres.WithUsername(adminUser),
-		postgres.WithPassword(adminPassword),
+		postgres.WithPassword(AdminPassword),
 		postgres.BasicWaitStrategies(),
 	)
 	if err != nil {
