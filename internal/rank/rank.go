@@ -44,9 +44,9 @@ func Bump(score float64, updatedAt, now time.Time, halfLife time.Duration, weigh
 	return Decay(score, updatedAt, now, halfLife) + weight
 }
 
-// RankKey returns ln(score) + λ·t, which orders rows exactly like their decayed score at any common instant.
+// Key returns ln(score) + λ·t, which orders rows exactly like their decayed score at any common instant.
 // A zero score returns -Inf.
-func RankKey(score float64, updatedAt time.Time, halfLife time.Duration) float64 {
+func Key(score float64, updatedAt time.Time, halfLife time.Duration) float64 {
 	if score <= 0 {
 		return math.Inf(-1)
 	}

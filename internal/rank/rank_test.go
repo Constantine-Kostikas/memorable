@@ -43,7 +43,7 @@ func TestDecay(t *testing.T) {
 	assert.InDelta(t, 1.5, Bump(1, t0, t0.Add(halfLife), halfLife, 1), 1e-9)
 }
 
-func TestRankKey_OrderMatchesEffectiveScore(t *testing.T) {
+func TestKey_OrderMatchesEffectiveScore(t *testing.T) {
 	t.Parallel()
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	r := rand.New(rand.NewPCG(1, 2))
@@ -62,7 +62,7 @@ func TestRankKey_OrderMatchesEffectiveScore(t *testing.T) {
 			byKey[i], byEff[i] = i, i
 		}
 		sort.SliceStable(byKey, func(i, j int) bool {
-			return RankKey(rows[byKey[i]].score, rows[byKey[i]].updated, halfLife) > RankKey(rows[byKey[j]].score, rows[byKey[j]].updated, halfLife)
+			return Key(rows[byKey[i]].score, rows[byKey[i]].updated, halfLife) > Key(rows[byKey[j]].score, rows[byKey[j]].updated, halfLife)
 		})
 		sort.SliceStable(byEff, func(i, j int) bool {
 			return Decay(rows[byEff[i]].score, rows[byEff[i]].updated, now, halfLife) > Decay(rows[byEff[j]].score, rows[byEff[j]].updated, now, halfLife)
@@ -71,10 +71,10 @@ func TestRankKey_OrderMatchesEffectiveScore(t *testing.T) {
 	}
 }
 
-func TestRankKey_ZeroScoreSortsLast(t *testing.T) {
+func TestKey_ZeroScoreSortsLast(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	zero := RankKey(0, now, halfLife)
+	zero := Key(0, now, halfLife)
 	assert.True(t, math.IsInf(zero, -1))
-	assert.Less(t, zero, RankKey(1e-9, now.Add(-1000*24*time.Hour), halfLife))
+	assert.Less(t, zero, Key(1e-9, now.Add(-1000*24*time.Hour), halfLife))
 }
