@@ -46,5 +46,5 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      # gosec runs inside golangci-lint (lint job), which honors the justified //nolint:gosec annotations.
       - run: go tool govulncheck ./...
-      - run: go tool gosec -quiet ./...

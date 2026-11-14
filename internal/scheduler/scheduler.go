@@ -40,13 +40,15 @@ Persistent=true
 [Install]
 WantedBy=timers.target
 `
-		return []File{
-				{Path: filepath.Join(dir, unitName+".service"), Content: service},
-				{Path: filepath.Join(dir, unitName+".timer"), Content: timer},
-			}, [][]string{
-				{"systemctl", "--user", "daemon-reload"},
-				{"systemctl", "--user", "enable", "--now", unitName + ".timer"},
-			}, nil
+		files := []File{
+			{Path: filepath.Join(dir, unitName+".service"), Content: service},
+			{Path: filepath.Join(dir, unitName+".timer"), Content: timer},
+		}
+		cmds := [][]string{
+			{"systemctl", "--user", "daemon-reload"},
+			{"systemctl", "--user", "enable", "--now", unitName + ".timer"},
+		}
+		return files, cmds, nil
 	case "darwin":
 		path := filepath.Join(home, "Library", "LaunchAgents", plistName)
 		logPath := filepath.Join(home, "Library", "Logs", "memorable-backup.log")
