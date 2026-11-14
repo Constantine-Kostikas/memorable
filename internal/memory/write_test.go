@@ -240,3 +240,19 @@ func TestWrite_RateLimited(t *testing.T) {
 	_, err = e.svc.Write(context.Background(), []memory.NewMemory{note("one", "after refill")})
 	require.NoError(t, err)
 }
+
+func TestWrite_WithoutRateLimit(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, nil)
+	sec, err := scan.NewSecretScanner()
+	require.NoError(t, err)
+	svc := memory.NewService(e.repo, e.repo, e.emb, sec, scan.Injection, e.svc.Settings(), memory.WithClock(e.clock), memory.WithoutRateLimit())
+	for i := range 5 {
+		items := make([]memory.NewMemory, 20)
+		for j := range items {
+			items[j] = note("n", string(rune('a'+i))+string(rune('a'+j)))
+		}
+		_, err := svc.Write(context.Background(), items)
+		require.NoError(t, err)
+	}
+}

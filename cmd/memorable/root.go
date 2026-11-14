@@ -85,6 +85,9 @@ func newRootCmdWith(info buildInfo, d deps) *cobra.Command {
 		newProfileCmd(d, flags),
 		newReembedCmd(d, flags),
 		newDoctorCmd(d, flags),
+		newExportCmd(d, flags),
+		newImportCmd(d, flags),
+		newBackupCmd(d, flags),
 	)
 	return root
 }

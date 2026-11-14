@@ -34,14 +34,15 @@ type Settings struct {
 
 // Service implements memorable's business rules.
 type Service struct {
-	repo     Repository
-	jobs     JobRepository
-	emb      Embedder
-	secrets  SecretScanner
-	inject   InjectionScanner
-	settings Settings
-	now      func() time.Time
-	limiter  *rate.Limiter
+	repo      Repository
+	jobs      JobRepository
+	emb       Embedder
+	secrets   SecretScanner
+	inject    InjectionScanner
+	settings  Settings
+	now       func() time.Time
+	limiter   *rate.Limiter
+	unlimited bool
 }
 
 // Option customizes a Service.
@@ -52,6 +53,11 @@ func WithClock(now func() time.Time) Option {
 	return func(s *Service) { s.now = now }
 }
 
+// WithoutRateLimit disables the per-minute write limit; for human-driven bulk imports only.
+func WithoutRateLimit() Option {
+	return func(s *Service) { s.unlimited = true }
+}
+
 // NewService wires a Service.
 func NewService(repo Repository, jobs JobRepository, emb Embedder, secrets SecretScanner, inject InjectionScanner, s Settings, opts ...Option) *Service {
 	svc := &Service{repo: repo, jobs: jobs, emb: emb, secrets: secrets, inject: inject, settings: s, now: time.Now}
@@ -60,6 +66,9 @@ func NewService(repo Repository, jobs JobRepository, emb Embedder, secrets Secre
 	}
 	perMinute := max(s.WritesPerMinute, 1)
 	svc.limiter = rate.NewLimiter(rate.Limit(float64(perMinute)/60.0), perMinute)
+	if svc.unlimited {
+		svc.limiter = rate.NewLimiter(rate.Inf, 0)
+	}
 	return svc
 }
 
