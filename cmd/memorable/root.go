@@ -71,6 +71,11 @@ func newRootCmdWith(info buildInfo, d deps) *cobra.Command {
 		newServeCmd(d, flags, info),
 		newHookCmd(d, flags),
 		newContextCmd(d, flags),
+		newSearchCmd(d, flags),
+		newGetCmd(d, flags),
+		newListCmd(d, flags),
+		newTopCmd(d, flags),
+		newStatsCmd(d, flags),
 	)
 	return root
 }

@@ -297,3 +297,24 @@ func TestOpen_DatabaseDown(t *testing.T) {
 	defer s.Close()
 	require.ErrorIs(t, s.Ping(ctx), memory.ErrUnavailable)
 }
+
+func TestStats(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f := newFixture(t)
+	a := newMem("a", "a")
+	project := "github.com/a/b"
+	a.Project = &project
+	require.NoError(t, f.store.Insert(ctx, a, audit("create")))
+	require.NoError(t, f.store.Insert(ctx, newMem("b", "b"), audit("create")))
+	require.NoError(t, f.store.SetEmbedding(ctx, a.ID, 1, unitVec(768, 0), "t"))
+	require.NoError(t, f.store.EnqueueEmbedding(ctx, a.ID, 1))
+	st, err := f.store.Stats(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 2, st.Total)
+	assert.Equal(t, 1, st.Embedded)
+	assert.Equal(t, 1, st.PendingJobs)
+	assert.Equal(t, 2, st.ByStatus["active"])
+	assert.Equal(t, 1, st.ByProject["(global)"])
+	assert.Equal(t, 1, st.ByProject[project])
+}

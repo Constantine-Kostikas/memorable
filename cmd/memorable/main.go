@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strings"
 	"syscall"
 
 	"github.com/charmbracelet/fang"
@@ -34,7 +35,7 @@ func exitCode(err error) int {
 	if err == nil {
 		return 0
 	}
-	if ue := (usageError{}); errors.As(err, &ue) {
+	if ue := (usageError{}); errors.As(err, &ue) || strings.HasPrefix(err.Error(), "unknown command") {
 		return 2
 	}
 	return 1
