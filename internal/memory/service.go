@@ -66,6 +66,14 @@ func NewService(repo Repository, jobs JobRepository, emb Embedder, secrets Secre
 // Settings returns the session settings.
 func (s *Service) Settings() Settings { return s.settings }
 
+func (s *Service) halfLife() time.Duration {
+	return time.Duration(s.settings.Search.HalfLifeDays) * 24 * time.Hour
+}
+
+func (s *Service) filter() Filter {
+	return Filter{Owner: s.settings.Owner, Project: s.settings.Scope.Project, Now: s.now()}
+}
+
 func (s *Service) audit(action string) AuditEntry {
 	return AuditEntry{Action: action, Cwd: s.settings.Cwd, Process: s.settings.Process}
 }
