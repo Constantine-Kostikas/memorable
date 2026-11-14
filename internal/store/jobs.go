@@ -59,17 +59,33 @@ func (s *Store) ClaimJobs(ctx context.Context, n int, now time.Time) ([]memory.J
 	return jobs, err
 }
 
-// CompleteJob marks a job done.
-func (s *Store) CompleteJob(ctx context.Context, id uuid.UUID) error {
-	_, err := s.pool.Exec(ctx, `UPDATE embedding_jobs SET done_at = now(), last_error = NULL WHERE memory_id = $1`, id)
+// CompleteJob marks the job for version done; a newer queued version is left alone.
+func (s *Store) CompleteJob(ctx context.Context, id uuid.UUID, version int) error {
+	_, err := s.pool.Exec(ctx, `UPDATE embedding_jobs SET done_at = now(), last_error = NULL
+		WHERE memory_id = $1 AND target_version = $2`, id, version)
 	return mapErr("complete job", err)
 }
 
-// FailJob records a failure and schedules the next attempt, or gives up.
-func (s *Store) FailJob(ctx context.Context, id uuid.UUID, errText string, next time.Time, giveUp bool) error {
-	_, err := s.pool.Exec(ctx, `UPDATE embedding_jobs SET attempts = attempts + 1, last_error = $2, next_attempt_at = $3,
-		done_at = CASE WHEN $4 THEN now() ELSE NULL END WHERE memory_id = $1`, id, errText, next, giveUp)
+// FailJob records a failure for version and schedules the next attempt, or gives up.
+func (s *Store) FailJob(ctx context.Context, id uuid.UUID, version int, errText string, next time.Time, giveUp bool) error {
+	_, err := s.pool.Exec(ctx, `UPDATE embedding_jobs SET attempts = attempts + 1, last_error = $3, next_attempt_at = $4,
+		done_at = CASE WHEN $5 THEN now() ELSE NULL END WHERE memory_id = $1 AND target_version = $2`,
+		id, version, errText, next, giveUp)
 	return mapErr("fail job", err)
+}
+
+// RequeueMissing queues every searchable memory that has no embedding, including jobs that gave up,
+// and makes pending jobs due now. It returns how many memories were queued.
+func (s *Store) RequeueMissing(ctx context.Context) (int64, error) {
+	tag, err := s.pool.Exec(ctx, `INSERT INTO embedding_jobs (memory_id, owner, target_version)
+		SELECT id, owner, version FROM memories
+		WHERE embedding IS NULL AND status IN ('active', 'unverified', 'flagged')
+		ON CONFLICT (memory_id) DO UPDATE SET target_version = EXCLUDED.target_version, attempts = 0,
+			next_attempt_at = now(), last_error = NULL, done_at = NULL`)
+	if err != nil {
+		return 0, mapErr("requeue missing embeddings", err)
+	}
+	return tag.RowsAffected(), nil
 }
 
 // EnqueueAll schedules a fresh embedding for every non-deleted memory and returns how many were queued.

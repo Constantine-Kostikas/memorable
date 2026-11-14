@@ -86,8 +86,10 @@ func (w *Worker) RunOnce(ctx context.Context) (int, error) {
 	var errs []error
 	for i, j := range jobs {
 		if embedErr == nil {
-			if err := w.store.SetEmbedding(ctx, j.MemoryID, j.Version, vecs[i], w.emb.Model()); err == nil {
-				errs = append(errs, w.jobs.CompleteJob(ctx, j.MemoryID))
+			err := w.store.SetEmbedding(ctx, j.MemoryID, j.Version, vecs[i], w.emb.Model())
+			// A stale version is done too: completing it by version leaves any newer job queued.
+			if err == nil || errors.Is(err, memory.ErrConflict) {
+				errs = append(errs, w.jobs.CompleteJob(ctx, j.MemoryID, j.Version))
 				continue
 			}
 		}
@@ -96,7 +98,7 @@ func (w *Worker) RunOnce(ctx context.Context) (int, error) {
 			reason = embedErr.Error()
 		}
 		giveUp := j.Attempts+1 >= maxAttempts
-		errs = append(errs, w.jobs.FailJob(ctx, j.MemoryID, reason, time.Now().Add(backoff(j.Attempts)), giveUp))
+		errs = append(errs, w.jobs.FailJob(ctx, j.MemoryID, j.Version, reason, time.Now().Add(backoff(j.Attempts)), giveUp))
 	}
 	return len(jobs), errors.Join(errs...)
 }

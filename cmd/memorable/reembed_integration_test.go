@@ -30,7 +30,7 @@ func TestReembed_DimensionChange(t *testing.T) {
 	db := storetest.NewDatabase(t)
 	cfg := config.Default()
 	cfg.Database = storetest.DatabaseConfig(db)
-	cfg.Contexts = map[string]config.Context{"personal": {Paths: []string{t.TempDir()}}}
+	cfg.Contexts = map[string]config.Context{"personal": {Paths: []string{t.TempDir()}}, "work": {Paths: []string{t.TempDir()}}}
 	require.NoError(t, storetest.Bootstrap(ctx, t, db, &cfg))
 
 	st, err := store.Open(ctx, cfg.Database, storetest.AppPassword, "mem_personal", "dev")
@@ -81,4 +81,8 @@ func TestReembed_DimensionChange(t *testing.T) {
 	var embedded int
 	require.NoError(t, admin.QueryRow(ctx, "SELECT count(embedding) FROM mem_personal.memories").Scan(&embedded))
 	assert.Equal(t, 3, embedded)
+	var workType string
+	require.NoError(t, admin.QueryRow(ctx, `SELECT format_type(a.atttypid, a.atttypmod) FROM pg_attribute a
+		WHERE a.attrelid = 'mem_work.memories'::regclass AND a.attname = 'embedding' AND NOT a.attisdropped`).Scan(&workType))
+	assert.Equal(t, "vector(1024)", workType, "every context is resized, not only the current one")
 }

@@ -354,6 +354,8 @@ func newReembedCmd(d deps, flags *rootFlags) *cobra.Command {
 					if err := reembedAll(ctx, cmd, d, flags, p, a); err != nil {
 						return err
 					}
+				} else if _, err := a.store.RequeueMissing(ctx); err != nil {
+					return err //nolint:wrapcheck // shown to the user as is
 				}
 				w := worker.New(a.store, a.store, a.emb, newLogger(cmd.ErrOrStderr(), d.getenv))
 				total := 0
@@ -388,7 +390,13 @@ func reembedAll(ctx context.Context, cmd *cobra.Command, d deps, flags *rootFlag
 			return err
 		}
 		defer t.Close()
-		for _, schema := range []string{config.SchemaName(a.res.Context), store.ProfileSchema} {
+		schemas := []string{store.ProfileSchema}
+		for _, name := range a.cfg.ContextNames() {
+			schemas = append(schemas, config.SchemaName(name))
+		}
+		// Every context shares the configured model, so every schema is resized; other contexts
+		// re-embed when their next session starts (serve requeues missing embeddings).
+		for _, schema := range schemas {
 			if err := store.ResizeEmbeddings(ctx, t.dsn, schema, a.cfg.Embedding.Dimensions); err != nil {
 				return err //nolint:wrapcheck // shown to the user as is
 			}

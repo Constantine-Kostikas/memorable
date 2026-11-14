@@ -166,9 +166,9 @@ func TestUpdate_ClearsEmbeddingOnContentChange(t *testing.T) {
 	require.NoError(t, f.admin.QueryRow(ctx, "SELECT embedding IS NOT NULL FROM mem_personal.memories WHERE id=$1", m.ID).Scan(&has))
 	assert.False(t, has, "content change clears the embedding")
 
-	require.NoError(t, f.store.SetEmbedding(ctx, m.ID, 1, unitVec(768, 2), "embeddinggemma"))
+	require.ErrorIs(t, f.store.SetEmbedding(ctx, m.ID, 1, unitVec(768, 2), "embeddinggemma"), memory.ErrConflict)
 	require.NoError(t, f.admin.QueryRow(ctx, "SELECT embedding IS NOT NULL FROM mem_personal.memories WHERE id=$1", m.ID).Scan(&has))
-	assert.False(t, has, "a stale version's embedding is ignored")
+	assert.False(t, has, "a stale version's embedding is rejected")
 }
 
 func TestSetStatus_SoftDeleteAndRestore(t *testing.T) {

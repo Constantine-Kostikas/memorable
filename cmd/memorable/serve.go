@@ -94,7 +94,9 @@ func newServeCmd(d deps, flags *rootFlags, info buildInfo) *cobra.Command {
 		GroupID: groupSetup,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			ctx := cmd.Context()
+			// Canceled when the client disconnects, so the worker stops and the process exits.
+			ctx, cancel := context.WithCancel(cmd.Context())
+			defer cancel()
 			logger := newLogger(cmd.ErrOrStderr(), d.getenv)
 			var wg sync.WaitGroup
 			s := &session{cwd: d.cwd, logger: logger, runCtx: ctx, ready: make(chan struct{})}
@@ -105,11 +107,15 @@ func newServeCmd(d deps, flags *rootFlags, info buildInfo) *cobra.Command {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
+					if _, err := a.store.RequeueMissing(ctx); err != nil {
+						logger.WarnContext(ctx, "requeue missing embeddings failed", "error", err.Error())
+					}
 					_ = worker.New(a.store, a.store, a.emb, logger).Run(ctx)
 				}()
 			}
 			srv := mcpserver.New(s.service, mcpserver.Info{Version: info.Version, OnInitialized: s.onInitialized}, logger)
 			err := srv.Run(ctx, &mcp.StdioTransport{})
+			cancel()
 			wg.Wait()
 			s.mu.Lock()
 			if s.app != nil {

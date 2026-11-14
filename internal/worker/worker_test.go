@@ -61,14 +61,14 @@ func (f *fakeJobs) ClaimJobs(_ context.Context, n int, now time.Time) ([]memory.
 	return out, nil
 }
 
-func (f *fakeJobs) CompleteJob(_ context.Context, id uuid.UUID) error {
+func (f *fakeJobs) CompleteJob(_ context.Context, id uuid.UUID, _ int) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.done[id] = true
 	return nil
 }
 
-func (f *fakeJobs) FailJob(_ context.Context, id uuid.UUID, _ string, next time.Time, giveUp bool) error {
+func (f *fakeJobs) FailJob(_ context.Context, id uuid.UUID, _ int, _ string, next time.Time, giveUp bool) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.failTimes = append(f.failTimes, time.Until(next))

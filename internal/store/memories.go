@@ -311,7 +311,13 @@ func (s *Store) SetEmbedding(ctx context.Context, id uuid.UUID, version int, vec
 	if err != nil {
 		return mapErr("load embedded version", err)
 	}
-	_, err = s.pool.Exec(ctx, `UPDATE memories SET embedding = $1, embedding_model = $2, embedded_at = now()
+	tag, err := s.pool.Exec(ctx, `UPDATE memories SET embedding = $1, embedding_model = $2, embedded_at = now()
 		WHERE id = $3 AND content_hash = $4`, pgvector.NewVector(vec), model, id, memory.ContentHash(title, content))
-	return mapErr("set embedding", err)
+	if err != nil {
+		return mapErr("set embedding", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("embedding for %s version %d is stale: %w", id, version, memory.ErrConflict)
+	}
+	return nil
 }

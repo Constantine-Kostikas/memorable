@@ -250,12 +250,12 @@ func TestJobs_Lifecycle(t *testing.T) {
 	assert.Equal(t, "Title", jobs[0].Title)
 	assert.Equal(t, "Body", jobs[0].Content)
 
-	require.NoError(t, f.store.FailJob(ctx, m.ID, "ollama down", time.Now().Add(-time.Second), false))
+	require.NoError(t, f.store.FailJob(ctx, m.ID, 1, "ollama down", time.Now().Add(-time.Second), false))
 	jobs, err = f.store.ClaimJobs(ctx, 10, time.Now())
 	require.NoError(t, err)
 	require.Len(t, jobs, 1)
 	assert.Equal(t, 1, jobs[0].Attempts)
-	require.NoError(t, f.store.CompleteJob(ctx, m.ID))
+	require.NoError(t, f.store.CompleteJob(ctx, m.ID, 1))
 	jobs, err = f.store.ClaimJobs(ctx, 10, time.Now().Add(time.Hour))
 	require.NoError(t, err)
 	assert.Empty(t, jobs)
@@ -368,4 +368,46 @@ func TestResizeEmbeddings(t *testing.T) {
 	vec, err := f.store.CandidatesVector(ctx, unitVec(1024, 1), memory.Filter{Owner: "dev", Now: time.Now()}, 5)
 	require.NoError(t, err)
 	assert.Equal(t, []uuid.UUID{m.ID}, ids(vec))
+}
+
+func TestJobs_StaleVersionNotCompleted(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f := newFixture(t)
+	m := insertWith(t, f, "Ports", "postgres on 5433", nil, -1)
+	require.NoError(t, f.store.EnqueueEmbedding(ctx, m.ID, 1))
+	jobs, err := f.store.ClaimJobs(ctx, 10, time.Now())
+	require.NoError(t, err)
+	require.Len(t, jobs, 1)
+
+	c := "postgres on 5434"
+	updated, err := f.store.Update(ctx, m.ID, nil, memory.Patch{Content: &c}, nil, audit("update"))
+	require.NoError(t, err)
+	require.NoError(t, f.store.EnqueueEmbedding(ctx, m.ID, updated.Version))
+
+	require.ErrorIs(t, f.store.SetEmbedding(ctx, m.ID, 1, unitVec(768, 0), "t"), memory.ErrConflict, "stale vector is reported")
+	require.NoError(t, f.store.CompleteJob(ctx, m.ID, 1))
+	jobs, err = f.store.ClaimJobs(ctx, 10, time.Now())
+	require.NoError(t, err)
+	require.Len(t, jobs, 1, "completing the old version must not finish the new job")
+	assert.Equal(t, updated.Version, jobs[0].Version)
+}
+
+func TestRequeueMissing(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f := newFixture(t)
+	lost := insertWith(t, f, "lost", "lost", nil, -1)
+	insertWith(t, f, "embedded", "embedded", nil, 0)
+	insertWith(t, f, "q", "q", func(m *memory.Memory) { m.Status = memory.StatusQuarantined }, -1)
+	require.NoError(t, f.store.EnqueueEmbedding(ctx, lost.ID, 1))
+	require.NoError(t, f.store.FailJob(ctx, lost.ID, 1, "ollama down", time.Now().Add(time.Hour), true))
+
+	n, err := f.store.RequeueMissing(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), n)
+	jobs, err := f.store.ClaimJobs(ctx, 10, time.Now())
+	require.NoError(t, err)
+	require.Len(t, jobs, 1)
+	assert.Equal(t, lost.ID, jobs[0].MemoryID)
 }

@@ -114,8 +114,8 @@ type Job struct {
 type JobRepository interface {
 	EnqueueEmbedding(ctx context.Context, id uuid.UUID, version int) error
 	ClaimJobs(ctx context.Context, n int, now time.Time) ([]Job, error)
-	CompleteJob(ctx context.Context, id uuid.UUID) error
-	FailJob(ctx context.Context, id uuid.UUID, errText string, next time.Time, giveUp bool) error
+	CompleteJob(ctx context.Context, id uuid.UUID, version int) error
+	FailJob(ctx context.Context, id uuid.UUID, version int, errText string, next time.Time, giveUp bool) error
 }
 
 // EmbedKind selects the prompt format for an embedding.

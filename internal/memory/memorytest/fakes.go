@@ -397,9 +397,10 @@ func (r *Repo) SetEmbedding(_ context.Context, id uuid.UUID, version int, vec []
 		if v.Version == version && string(memory.ContentHash(v.Title, v.Content)) == string(m.ContentHash) {
 			r.vecs[id] = vec
 			m.EmbeddingModel = &model
+			return nil
 		}
 	}
-	return nil
+	return memory.ErrConflict
 }
 
 // RecordAccess implements memory.Repository.
@@ -763,15 +764,17 @@ func (r *Repo) ClaimJobs(_ context.Context, n int, _ time.Time) ([]memory.Job, e
 }
 
 // CompleteJob implements memory.JobRepository.
-func (r *Repo) CompleteJob(_ context.Context, id uuid.UUID) error {
+func (r *Repo) CompleteJob(_ context.Context, id uuid.UUID, version int) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.jobDone[id] = true
+	if j, ok := r.jobs[id]; ok && j.Version == version {
+		r.jobDone[id] = true
+	}
 	return r.Err
 }
 
 // FailJob implements memory.JobRepository.
-func (r *Repo) FailJob(_ context.Context, id uuid.UUID, _ string, _ time.Time, giveUp bool) error {
+func (r *Repo) FailJob(_ context.Context, id uuid.UUID, _ int, _ string, _ time.Time, giveUp bool) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if j, ok := r.jobs[id]; ok {
