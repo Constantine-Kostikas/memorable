@@ -4,9 +4,20 @@ on:
   push:
     tags:
       - "v*"
+  # The "Run workflow" button: tags the head of main with the given version, then releases it.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to tag, such as v0.1.0-alpha.3 or v0.2.0"
+        required: true
+        type: string
 
 permissions:
   contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   goreleaser:
@@ -20,6 +31,26 @@ jobs:
           # Latest 1.26 patch directly, so the go.mod toolchain line never triggers a second download.
           go-version: "1.26.x"
           check-latest: true
+      # A tag pushed with GITHUB_TOKEN does not start another workflow run, so this job releases it itself.
+      - name: Create and push the tag
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Releases are cut from main; run this workflow on main."
+            exit 1
+          fi
+          if ! printf '%s' "$VERSION" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$'; then
+            echo "::error::'$VERSION' is not a version like v1.2.3 or v1.2.3-alpha.1."
+            exit 1
+          fi
+          if git rev-parse -q --verify "refs/tags/$VERSION" >/dev/null; then
+            echo "::error::Tag $VERSION already exists."
+            exit 1
+          fi
+          git tag "$VERSION"
+          git push origin "refs/tags/$VERSION"
       - name: Import GPG key
         id: import_gpg
         uses: crazy-max/ghaction-import-gpg@v6
