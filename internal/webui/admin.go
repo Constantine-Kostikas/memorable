@@ -183,8 +183,8 @@ func (s *Server) registerAdminRoutes(mux *http.ServeMux) {
 
 // adminRouteAbsent answers admin routes without --admin. It is registered explicitly because
 // "POST /c/{context}/profile" would otherwise be a 405 next to the profile page's GET route.
-func (s *Server) adminRouteAbsent(w http.ResponseWriter, _ *http.Request) {
-	s.renderError(w, http.StatusNotFound, s.authenticatedPage("Not found", "Page not found."))
+func (s *Server) adminRouteAbsent(w http.ResponseWriter, r *http.Request) {
+	s.renderErrorFor(w, r, http.StatusNotFound, s.authenticatedPage("Not found", "Page not found."))
 }
 
 func (s *Server) withAdmin(h adminHandler) func(http.ResponseWriter, *http.Request, requestContext) {

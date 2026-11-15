@@ -19,6 +19,7 @@ import (
 type Admin struct {
 	pool         *pgxpool.Pool
 	owner        string
+	auditProcess string
 	auditDetails map[string]any
 }
 
@@ -28,6 +29,11 @@ type AdminOption func(*Admin)
 // WithAuditDetails attaches d to every audit entry the Admin writes, for example {"via": "ui"}.
 func WithAuditDetails(d map[string]any) AdminOption {
 	return func(a *Admin) { a.auditDetails = maps.Clone(d) }
+}
+
+// WithAuditProcess records p as the process of every audit entry the Admin writes, for example "ui:<pid>@<start>".
+func WithAuditProcess(p string) AdminOption {
+	return func(a *Admin) { a.auditProcess = p }
 }
 
 // OpenAdmin opens an admin-role pool bound to schema.
@@ -46,6 +52,7 @@ func OpenAdmin(ctx context.Context, db config.Database, password, schema, owner 
 }
 
 func (a *Admin) audit(e memory.AuditEntry) memory.AuditEntry {
+	e.Process = a.auditProcess
 	e.Details = maps.Clone(a.auditDetails)
 	return e
 }

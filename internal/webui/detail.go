@@ -90,6 +90,8 @@ type detailView struct {
 	CanActivate bool
 	CanDelete   bool
 	CanRestore  bool
+	CanPurge    bool
+	Confirm     string
 	Versions    []versionView
 	Links       []linkView
 	Feedback    []feedbackView
@@ -193,6 +195,8 @@ func (s *Server) loadDetail(r *http.Request, rc requestContext, id uuid.UUID) (d
 	}
 	m := fetched.Memory
 	fillMemory(&view, m)
+	view.CanPurge = !view.ReadOnly && s.admin.minutesLeft() > 0
+	view.Confirm = purgeConfirmation(m)
 	history, err := rc.Backend.Memories.History(r.Context(), id)
 	if err != nil {
 		return view, fmt.Errorf("load history: %w", err)

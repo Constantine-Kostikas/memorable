@@ -362,6 +362,72 @@ func TestPurgeActiveMemoryLoadedFromContext(t *testing.T) {
 	assert.Len(t, f.ops("personal").called("Purge"), 1)
 }
 
+func TestDetailPurgeFormOnlyWhenUnlocked(t *testing.T) {
+	t.Parallel()
+	slug := "port-map"
+	withSlug := memory.Memory{ID: uuid.New(), Slug: &slug, Title: "Port map", Status: memory.StatusActive, Scope: memory.ScopeProject}
+	noSlug := memory.Memory{ID: uuid.New(), Title: "No slug", Status: memory.StatusDeleted, Scope: memory.ScopeProject}
+	profile := memory.Memory{ID: uuid.New(), Title: "Style", Status: memory.StatusActive, Scope: memory.ScopeProfile}
+	quarantinedID := uuid.New()
+	seed := func(_ *Config, _ *adminFactory, mem *detailMemories, _ *pageStore) {
+		for _, m := range []memory.Memory{withSlug, noSlug, profile} {
+			mem.byID[m.ID] = memory.Fetched{Ref: m.ID.String(), Memory: m}
+		}
+		mem.byID[quarantinedID] = memory.Fetched{
+			Ref: quarantinedID.String(), Memory: memory.Memory{ID: quarantinedID, Status: memory.StatusQuarantined}, Err: memory.ErrQuarantined,
+		}
+	}
+	purgeAction := func(id uuid.UUID) string { return `action="/c/personal/memories/` + id.String() + `/purge"` }
+	hint := func(confirm string) string {
+		return `Type <span class="font-mono">` + confirm + `</span> to purge permanently`
+	}
+
+	t.Run("unlocked shows the form with the confirm hint", func(t *testing.T) {
+		t.Parallel()
+		f := newAdminFixture(t, seed)
+		for _, tt := range []struct {
+			m       memory.Memory
+			confirm string
+		}{{withSlug, slug}, {noSlug, noSlug.ID.String()}} {
+			body := getPage(f.h, f.c, "/c/personal/memories/"+tt.m.ID.String()).Body.String()
+			assert.Contains(t, body, purgeAction(tt.m.ID), tt.m.Title)
+			assert.Contains(t, body, hint(tt.confirm), tt.m.Title)
+			assert.Contains(t, body, `name="confirm"`, tt.m.Title)
+		}
+		assert.Empty(t, f.factory.openedNames(), "rendering the form opens no admin handle")
+	})
+
+	t.Run("profile and quarantined memories get no form", func(t *testing.T) {
+		t.Parallel()
+		f := newAdminFixture(t, seed)
+		for _, id := range []uuid.UUID{profile.ID, quarantinedID} {
+			rec := getPage(f.h, f.c, "/c/personal/memories/"+id.String())
+			require.Equal(t, http.StatusOK, rec.Code)
+			assert.NotContains(t, rec.Body.String(), "/purge", id.String())
+		}
+	})
+
+	t.Run("locked shows no form", func(t *testing.T) {
+		t.Parallel()
+		synctest.Test(t, func(t *testing.T) {
+			f := newAdminFixture(t, seed)
+			time.Sleep(defaultAdminIdle)
+			rec := getPage(f.h, f.c, "/c/personal/memories/"+withSlug.ID.String())
+			require.Equal(t, http.StatusOK, rec.Code)
+			assert.Contains(t, rec.Body.String(), lockedText)
+			assert.NotContains(t, rec.Body.String(), "/purge")
+		})
+	})
+
+	t.Run("without --admin shows no form", func(t *testing.T) {
+		t.Parallel()
+		f := newDetailFixture(t, nil)
+		rec := getPage(f.h, f.c, f.path(""))
+		require.Equal(t, http.StatusOK, rec.Code)
+		assert.NotContains(t, rec.Body.String(), "/purge")
+	})
+}
+
 func TestPruneShowsCount(t *testing.T) {
 	t.Parallel()
 	f := newAdminFixture(t, func(_ *Config, a *adminFactory, _ *detailMemories, _ *pageStore) {

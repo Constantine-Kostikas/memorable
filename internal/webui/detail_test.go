@@ -332,6 +332,7 @@ func TestHtmxConfigMeta(t *testing.T) {
 	var cfg struct {
 		IncludeIndicatorStyles bool `json:"includeIndicatorStyles"`
 		AllowEval              bool `json:"allowEval"`
+		HistoryCacheSize       *int `json:"historyCacheSize"`
 		ResponseHandling       []struct {
 			Code  string `json:"code"`
 			Swap  bool   `json:"swap"`
@@ -341,6 +342,8 @@ func TestHtmxConfigMeta(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(m[1]), &cfg))
 	assert.False(t, cfg.IncludeIndicatorStyles)
 	assert.False(t, cfg.AllowEval)
+	require.NotNil(t, cfg.HistoryCacheSize, "historyCacheSize must be set")
+	assert.Zero(t, *cfg.HistoryCacheSize, "no page snapshots, memory content, or CSRF tokens in sessionStorage")
 	swapped := func(status string) (swap, isErr bool) {
 		for _, rule := range cfg.ResponseHandling {
 			if regexp.MustCompile("^(?:" + rule.Code + ")$").MatchString(status) {
@@ -349,11 +352,11 @@ func TestHtmxConfigMeta(t *testing.T) {
 		}
 		return false, false
 	}
-	for _, status := range []string{"404", "409", "422", "429", "503"} {
+	for _, status := range []string{"404", "409", "422", "429", "500", "503"} {
 		swap, isErr := swapped(status)
 		assert.True(t, swap && isErr, status)
 	}
-	for _, status := range []string{"403", "500"} {
+	for _, status := range []string{"403"} {
 		swap, isErr := swapped(status)
 		assert.False(t, swap, status)
 		assert.True(t, isErr, status)

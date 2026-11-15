@@ -78,8 +78,11 @@ type Config struct {
 	// handle is closed then, or by Server.Close.
 	Admin     func(ctx context.Context, name string) (AdminOps, error)
 	AdminIdle time.Duration
-	Now       func() time.Time
-	Logger    *slog.Logger
+	// OnExchange, if set, is called once, right after the launch token is exchanged for the
+	// session cookie, so the caller can delete anything that still holds the spent token.
+	OnExchange func()
+	Now        func() time.Time
+	Logger     *slog.Logger
 }
 
 // Server is the web UI for one `memorable ui` launch.
@@ -143,14 +146,15 @@ func (s *Server) Handler(port int) http.Handler {
 
 // handler builds the routed, secured handler; extra registers additional routes (tests only).
 func (s *Server) handler(port int, extra func(*http.ServeMux)) http.Handler {
+	cookieName := sessionCookieName(port)
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /{$}", s.handleRoot)
+	mux.HandleFunc("GET /{$}", s.handleRoot(cookieName))
 	mux.HandleFunc("GET /static/{file}", s.handleStatic)
 	s.routes(mux)
 	if extra != nil {
 		extra(mux)
 	}
-	return s.secure(port, mux)
+	return s.secure(port, cookieName, mux)
 }
 
 // routes registers the page and action routes, all under /c/{context}/.
@@ -185,18 +189,23 @@ func (s *Server) contextHome(name string) string {
 }
 
 // handleRoot exchanges the launch token for the session cookie, or sends an existing session home.
-func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
-	home := s.contextHome(s.cfg.Initial)
-	if s.session.authenticated(r) {
+func (s *Server) handleRoot(cookieName string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		home := s.contextHome(s.cfg.Initial)
+		if s.session.authenticated(r, cookieName) {
+			http.Redirect(w, r, home, http.StatusSeeOther)
+			return
+		}
+		if !s.session.exchange(r.URL.Query().Get("token")) {
+			s.forbidden(w, r, "launch token missing, invalid, or already used")
+			return
+		}
+		if s.cfg.OnExchange != nil {
+			s.cfg.OnExchange()
+		}
+		http.SetCookie(w, s.session.sessionCookie(cookieName))
 		http.Redirect(w, r, home, http.StatusSeeOther)
-		return
 	}
-	if !s.session.exchange(r.URL.Query().Get("token")) {
-		s.forbidden(w, r, "launch token missing, invalid, or already used")
-		return
-	}
-	http.SetCookie(w, s.session.sessionCookie())
-	http.Redirect(w, r, home, http.StatusSeeOther)
 }
 
 func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
@@ -219,7 +228,7 @@ func (s *Server) inContext(h func(http.ResponseWriter, *http.Request, requestCon
 	return func(w http.ResponseWriter, r *http.Request) {
 		name := r.PathValue("context")
 		if !slices.Contains(s.cfg.Contexts, name) {
-			s.renderError(w, http.StatusNotFound, s.authenticatedPage("Not found", "Unknown context."))
+			s.renderErrorFor(w, r, http.StatusNotFound, s.authenticatedPage("Not found", "Unknown context."))
 			return
 		}
 		backend, err := s.cfg.Backend(r.Context(), name)
@@ -228,7 +237,7 @@ func (s *Server) inContext(h func(http.ResponseWriter, *http.Request, requestCon
 			page := s.authenticatedPage("Context unavailable",
 				"The "+name+" context could not be opened; other contexts still work. Run memorable doctor.")
 			page.Context = name
-			s.renderError(w, http.StatusServiceUnavailable, page)
+			s.renderErrorFor(w, r, http.StatusServiceUnavailable, page)
 			return
 		}
 		h(w, r, requestContext{Name: name, Backend: backend})
@@ -243,6 +252,16 @@ func (s *Server) authenticatedPage(title, message string) pageData {
 		page.AdminLockedMessage = adminLockedMessage
 	}
 	return page
+}
+
+// renderErrorFor answers an htmx swap with only the error box and any other request with the full page.
+func (s *Server) renderErrorFor(w http.ResponseWriter, r *http.Request, status int, data pageData) {
+	w.Header().Set("Vary", "HX-Request")
+	if isFragmentRequest(r) {
+		s.renderStatus(w, status, "error.html", data)
+		return
+	}
+	s.renderError(w, status, data)
 }
 
 func (s *Server) renderError(w http.ResponseWriter, status int, data pageData) {

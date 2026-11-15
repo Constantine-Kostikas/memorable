@@ -6,13 +6,20 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
+	"strconv"
 	"sync"
 )
 
 const (
-	sessionCookieName = "memorable_session"
-	secretBytes       = 32
+	sessionCookiePrefix = "memorable_session_"
+	secretBytes         = 32
 )
+
+// sessionCookieName is the cookie name for a listener on port. Browsers do not scope cookies by
+// port, so a fixed name would let a second `memorable ui` overwrite the first one's session.
+func sessionCookieName(port int) string {
+	return sessionCookiePrefix + strconv.Itoa(port)
+}
 
 // session holds the launch secrets of one `memorable ui` run: the single-use launch token,
 // the session cookie value it is exchanged for, and the session's CSRF token.
@@ -69,11 +76,11 @@ func (s *session) active() bool {
 
 // authenticated reports whether r carries the session cookie. Every cookie with the session name
 // is checked, because another server on 127.0.0.1 can plant a same-name cookie that sorts first.
-func (s *session) authenticated(r *http.Request) bool {
+func (s *session) authenticated(r *http.Request, cookieName string) bool {
 	if !s.active() {
 		return false
 	}
-	for _, c := range r.CookiesNamed(sessionCookieName) {
+	for _, c := range r.CookiesNamed(cookieName) {
 		if secretEqual(c.Value, s.cookie) {
 			return true
 		}
@@ -85,9 +92,9 @@ func (s *session) csrfValid(given string) bool {
 	return given != "" && secretEqual(given, s.csrf)
 }
 
-func (s *session) sessionCookie() *http.Cookie {
+func (s *session) sessionCookie(name string) *http.Cookie {
 	return &http.Cookie{ //nolint:gosec // G124: the UI is plain HTTP on loopback, so Secure is not set; HttpOnly and SameSite=Strict are.
-		Name:     sessionCookieName,
+		Name:     name,
 		Value:    s.cookie,
 		Path:     "/",
 		HttpOnly: true,

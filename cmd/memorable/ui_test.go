@@ -305,6 +305,64 @@ func TestUILaunchFileNotInArgv(t *testing.T) {
 	assert.ErrorIs(t, err, os.ErrNotExist, "launch directory removed on shutdown")
 }
 
+func TestUILaunchFileRemovedAfterExchange(t *testing.T) {
+	t.Parallel()
+	d, _ := uiDeps(t)
+	opened := make(chan string, 1)
+	d.openBrowser = func(path string) error {
+		opened <- path
+		return nil
+	}
+	run := startUI(t, d, "--config", uiConfigFile(t), "ui")
+	launch := run.launchURL(t)
+	var path string
+	select {
+	case path = <-opened:
+	case <-time.After(5 * time.Second):
+		t.Fatal("browser was not opened")
+	}
+	client := uiClient(t)
+
+	status, _ := get(t, client, baseURL(launch)+"/?token=wrong")
+	require.Equal(t, http.StatusForbidden, status)
+	_, err := os.Stat(path)
+	require.NoError(t, err, "a failed exchange keeps the launch file")
+
+	status, _ = get(t, client, launch)
+	require.Equal(t, http.StatusSeeOther, status)
+	assert.Eventually(t, func() bool {
+		_, err := os.Stat(filepath.Dir(path))
+		return errors.Is(err, os.ErrNotExist)
+	}, 5*time.Second, 10*time.Millisecond, "launch directory removed once the token is exchanged")
+
+	require.NoError(t, run.stop(t))
+}
+
+func TestLaunchDirRemovedWhicheverComesSecond(t *testing.T) {
+	t.Parallel()
+	logger := slog.New(slog.DiscardHandler)
+	tests := []struct {
+		name  string
+		steps func(l *launchDir, dir string)
+	}{
+		{name: "exchange after the file is written", steps: func(l *launchDir, dir string) { l.set(dir); l.tokenSpent() }},
+		{name: "exchange before the file is known", steps: func(l *launchDir, dir string) { l.tokenSpent(); l.set(dir) }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			l := &launchDir{logger: logger}
+
+			tt.steps(l, dir)
+
+			_, err := os.Stat(dir)
+			require.ErrorIs(t, err, os.ErrNotExist)
+			l.remove()
+		})
+	}
+}
+
 func TestUINoBrowserStillPrintsURL(t *testing.T) {
 	t.Parallel()
 	d, _ := uiDeps(t)

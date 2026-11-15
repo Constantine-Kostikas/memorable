@@ -93,7 +93,9 @@ func runUI(cmd *cobra.Command, d deps, flags *rootFlags, opts *uiFlags) error {
 	}, logger)
 	defer backends.close()
 
-	srv, err := newUIServer(cmd, d, cfg, contexts, initial, opts.admin, backends, logger)
+	launchFile := &launchDir{logger: logger}
+	defer launchFile.remove()
+	srv, err := newUIServer(cmd, d, cfg, contexts, initial, opts.admin, backends, launchFile.tokenSpent, logger)
 	if err != nil {
 		return err
 	}
@@ -126,10 +128,10 @@ func runUI(cmd *cobra.Command, d deps, flags *rootFlags, opts *uiFlags) error {
 	}
 	if !opts.noBrowser {
 		dir, err := launchInBrowser(d.openBrowser, launch, logger)
+		launchFile.set(dir)
 		if err != nil {
 			logger.WarnContext(ctx, "could not prepare the browser launch file; open the URL above", "error", err)
 		}
-		defer removeLaunchDir(dir, logger)
 	}
 
 	var runErr error
@@ -168,7 +170,7 @@ func initialUIContext(cfg *config.Config, contexts []string, flag string, d deps
 // newUIServer prompts for and verifies the admin password when asked, and builds the server. The
 // password lives on only inside the admin opener, which webui.New takes over.
 func newUIServer(cmd *cobra.Command, d deps, cfg *config.Config, contexts []string, initial string, admin bool,
-	backends *uiBackends, logger *slog.Logger,
+	backends *uiBackends, onExchange func(), logger *slog.Logger,
 ) (*webui.Server, error) {
 	var adminOpener func(ctx context.Context, name string) (webui.AdminOps, error)
 	if admin {
@@ -185,11 +187,12 @@ func newUIServer(cmd *cobra.Command, d deps, cfg *config.Config, contexts []stri
 		adminOpener = newUIAdminOpener(cfg, password, owner)
 	}
 	return webui.New(webui.Config{ //nolint:wrapcheck // webui errors are already contextual
-		Contexts: contexts,
-		Initial:  initial,
-		Backend:  backends.get,
-		Admin:    adminOpener,
-		Logger:   logger,
+		Contexts:   contexts,
+		Initial:    initial,
+		Backend:    backends.get,
+		Admin:      adminOpener,
+		OnExchange: onExchange,
+		Logger:     logger,
 	})
 }
 
@@ -228,7 +231,8 @@ func newUIAdminOpener(cfg *config.Config, password, owner string) func(ctx conte
 // openUIAdmin opens and pings an admin pool for schema. Its errors are fixed messages: driver errors
 // can name the role, host, and database, and nothing about the admin connection belongs in a log.
 func openUIAdmin(ctx context.Context, db config.Database, password, schema, owner string) (*store.Admin, error) {
-	admin, err := store.OpenAdmin(ctx, db, password, schema, owner, store.WithAuditDetails(map[string]any{"via": "ui"}))
+	admin, err := store.OpenAdmin(ctx, db, password, schema, owner,
+		store.WithAuditProcess("ui:"+processID()), store.WithAuditDetails(map[string]any{"via": "ui"}))
 	if err != nil {
 		return nil, errAdminConnect
 	}
@@ -389,7 +393,7 @@ func openBrowserWith(run func(ctx context.Context, name string, args ...string) 
 
 // launchInBrowser writes a private redirect file to the launch URL and opens it in the background,
 // so a browser launcher that stays in the foreground never holds up the UI. It returns the
-// directory to remove on shutdown.
+// directory to remove once the token is spent, or on shutdown.
 func launchInBrowser(openBrowser func(path string) error, launchURL string, logger *slog.Logger) (string, error) {
 	dir, path, err := writeLaunchFile(launchURL)
 	if err != nil {
@@ -423,6 +427,43 @@ func writeLaunchFile(launchURL string) (string, string, error) {
 		return dir, "", fmt.Errorf("writing launch file: %w", err)
 	}
 	return dir, path, nil
+}
+
+// launchDir owns the browser launch directory. The token in it is spent once exchanged, and the
+// exchange can happen before the directory is known, so whichever comes second removes it.
+type launchDir struct {
+	logger *slog.Logger
+
+	mu    sync.Mutex
+	dir   string
+	spent bool
+}
+
+func (l *launchDir) set(dir string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.dir = dir
+	if l.spent {
+		l.removeLocked()
+	}
+}
+
+func (l *launchDir) tokenSpent() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.spent = true
+	l.removeLocked()
+}
+
+func (l *launchDir) remove() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.removeLocked()
+}
+
+func (l *launchDir) removeLocked() {
+	removeLaunchDir(l.dir, l.logger)
+	l.dir = ""
 }
 
 func removeLaunchDir(dir string, logger *slog.Logger) {

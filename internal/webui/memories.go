@@ -70,7 +70,7 @@ type memoriesView struct {
 func (s *Server) handleMemories(w http.ResponseWriter, r *http.Request, rc requestContext) {
 	filter, cursor, err := parseMemoryFilter(r.URL.Query())
 	if err != nil {
-		s.fail(w, r, rc, err)
+		s.failResponse(w, r, rc, err)
 		return
 	}
 	view := memoriesView{Context: rc.Name, Filter: filter, Searching: filter.Query != ""}
@@ -80,7 +80,7 @@ func (s *Server) handleMemories(w http.ResponseWriter, r *http.Request, rc reque
 		err = s.listRows(r, rc, &view, cursor)
 	}
 	if err != nil {
-		s.fail(w, r, rc, err)
+		s.failResponse(w, r, rc, err)
 		return
 	}
 

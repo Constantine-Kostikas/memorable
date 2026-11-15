@@ -18,10 +18,10 @@ const (
 
 // secure wraps next in the middleware chain, outermost first: security headers, Host check,
 // session check, cross-origin protection, and CSRF check. ServeMux patterns enforce methods.
-func (s *Server) secure(port int, next http.Handler) http.Handler {
+func (s *Server) secure(port int, cookieName string, next http.Handler) http.Handler {
 	h := s.requireCSRF(next)
 	h = s.crossOriginProtection(h)
-	h = s.requireSession(h)
+	h = s.requireSession(cookieName, h)
 	h = s.requireHost(port, h)
 	return securityHeaders(h)
 }
@@ -65,9 +65,9 @@ func sessionExempt(r *http.Request) bool {
 	return p == "/" || strings.HasPrefix(p, "/static/")
 }
 
-func (s *Server) requireSession(next http.Handler) http.Handler {
+func (s *Server) requireSession(cookieName string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !sessionExempt(r) && !s.session.authenticated(r) {
+		if !sessionExempt(r) && !s.session.authenticated(r, cookieName) {
 			s.forbidden(w, r, "missing or invalid session")
 			return
 		}

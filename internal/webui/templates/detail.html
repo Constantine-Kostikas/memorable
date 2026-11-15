@@ -48,7 +48,14 @@
         <input type="text" name="replacement" required class="rounded border border-gray-300 px-2 py-1">
       </label>
       <button type="submit" class="rounded border border-gray-300 px-3 py-1 hover:bg-gray-100">Supersede</button>
-    </form>{{end}}
+    </form>
+    {{if .CanPurge}}<form method="post" action="{{.Base}}/purge" class="mt-3 flex flex-wrap items-end gap-2">
+      <input type="hidden" name="csrf" value="{{.CSRF}}">
+      <label class="flex flex-col text-sm">Type <span class="font-mono">{{.Confirm}}</span> to purge permanently
+        <input type="text" name="confirm" required autocomplete="off" class="rounded border border-gray-300 px-2 py-1">
+      </label>
+      <button type="submit" class="rounded border border-red-300 px-3 py-1 text-red-800 hover:bg-red-50">Purge</button>
+    </form>{{end}}{{end}}
   </section>
   <section id="versions" class="mb-6">
     <h2 class="mb-2 font-semibold">Versions</h2>

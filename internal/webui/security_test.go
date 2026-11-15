@@ -7,10 +7,12 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -81,7 +83,11 @@ func newTestServer(t *testing.T) (*Server, *backendRecorder) {
 
 // testHandler adds test-only routes: a POST write route and a GET context probe.
 func testHandler(s *Server) http.Handler {
-	return s.handler(testPort, func(mux *http.ServeMux) {
+	return testHandlerOn(s, testPort)
+}
+
+func testHandlerOn(s *Server, port int) http.Handler {
+	return s.handler(port, func(mux *http.ServeMux) {
 		mux.HandleFunc("POST /c/{context}/test-write", s.inContext(
 			func(w http.ResponseWriter, _ *http.Request, rc requestContext) {
 				_, _ = io.WriteString(w, "wrote "+rc.Name)
@@ -164,7 +170,7 @@ func TestTokenExchange(t *testing.T) {
 	require.Equal(t, http.StatusSeeOther, first.Code)
 	assert.Equal(t, "/c/personal/memories", first.Header().Get("Location"))
 	cookie := sessionCookie(t, first)
-	assert.Equal(t, "memorable_session", cookie.Name)
+	assert.Equal(t, "memorable_session_8123", cookie.Name)
 	assert.True(t, cookie.HttpOnly)
 	assert.Equal(t, http.SameSiteStrictMode, cookie.SameSite)
 	assert.Equal(t, "/", cookie.Path)
@@ -186,6 +192,30 @@ func TestTokenExchange(t *testing.T) {
 	bare := send(h, http.MethodGet, "/", "", withCookie(cookie))
 	assert.Equal(t, http.StatusSeeOther, bare.Code)
 	assert.Equal(t, "/c/personal/memories", bare.Header().Get("Location"))
+}
+
+func TestOnExchangeCalledOnceAfterSuccess(t *testing.T) {
+	t.Parallel()
+	var calls atomic.Int32
+	cfg := testConfig(&backendRecorder{})
+	cfg.OnExchange = func() { calls.Add(1) }
+	s, err := New(cfg)
+	require.NoError(t, err)
+	t.Cleanup(s.Close)
+	h := testHandler(s)
+	token := launchToken(t, s)
+
+	for _, target := range []string{"/", "/?token=wrong", "/?token=" + token + "x"} {
+		require.Equal(t, http.StatusForbidden, send(h, http.MethodGet, target, "").Code, target)
+	}
+	assert.Zero(t, calls.Load(), "a failed exchange must not call the hook")
+
+	cookie := sessionCookie(t, send(h, http.MethodGet, "/?token="+token, ""))
+	assert.Equal(t, int32(1), calls.Load())
+
+	send(h, http.MethodGet, "/?token="+token, "")
+	send(h, http.MethodGet, "/?token="+token, "", withCookie(cookie))
+	assert.Equal(t, int32(1), calls.Load(), "the hook runs exactly once")
 }
 
 func TestTokenExchangeRejectsWrongToken(t *testing.T) {
@@ -296,6 +326,45 @@ func TestRejectsPlantedCookieShadowingSession(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, onlyPlanted.Code)
 }
 
+func TestSessionCookieScopedToPort(t *testing.T) {
+	t.Parallel()
+	const otherPort = 8124
+	const otherHost = "127.0.0.1:8124"
+	first, _ := newTestServer(t)
+	second, _ := newTestServer(t)
+	firstHandler := testHandler(first)
+	secondHandler := testHandlerOn(second, otherPort)
+	firstCookie := login(t, first, firstHandler)
+	secondLogin := send(secondHandler, http.MethodGet, "/?token="+launchToken(t, second), "", withHost(otherHost))
+	require.Equal(t, http.StatusSeeOther, secondLogin.Code)
+	secondCookie := sessionCookie(t, secondLogin)
+	assert.Equal(t, "memorable_session_8123", firstCookie.Name)
+	assert.Equal(t, "memorable_session_8124", secondCookie.Name)
+
+	jar, err := cookiejar.New(nil)
+	require.NoError(t, err)
+	firstURL := &url.URL{Scheme: "http", Host: testHost, Path: "/"}
+	secondURL := &url.URL{Scheme: "http", Host: otherHost, Path: "/"}
+	jar.SetCookies(firstURL, []*http.Cookie{firstCookie})
+	jar.SetCookies(secondURL, []*http.Cookie{secondCookie})
+	withJar := func(u *url.URL) requestOption {
+		return func(r *http.Request) {
+			for _, c := range jar.Cookies(u) {
+				r.AddCookie(c)
+			}
+		}
+	}
+
+	assert.Equal(t, http.StatusOK, send(firstHandler, http.MethodGet, "/c/personal/probe", "", withJar(firstURL)).Code,
+		"the second launch must not overwrite the first one's cookie")
+	assert.Equal(t, http.StatusOK, send(secondHandler, http.MethodGet, "/c/personal/probe", "", withHost(otherHost), withJar(secondURL)).Code)
+
+	crossed := &http.Cookie{Name: firstCookie.Name, Value: secondCookie.Value}
+	assert.Equal(t, http.StatusForbidden, send(firstHandler, http.MethodGet, "/c/personal/probe", "", withCookie(crossed)).Code)
+	assert.Equal(t, http.StatusForbidden,
+		send(secondHandler, http.MethodGet, "/c/personal/probe", "", withHost(otherHost), withCookie(firstCookie)).Code)
+}
+
 func TestRejectsSessionAfterClose(t *testing.T) {
 	t.Parallel()
 	s, _ := newTestServer(t)
@@ -315,7 +384,8 @@ func TestRejectsUncleanStaticPath(t *testing.T) {
 
 	for _, target := range []string{"/static/../c/personal/probe", "/static/./../c/personal/probe", "/static//../c/personal/probe"} {
 		rec := send(h, http.MethodGet, target, "")
-		assert.NotEqual(t, http.StatusOK, rec.Code, target)
+		assert.Equal(t, http.StatusForbidden, rec.Code, target)
+		assert.Contains(t, rec.Body.String(), restart, target)
 		assert.NotContains(t, rec.Body.String(), "probe personal", target)
 	}
 }
@@ -468,6 +538,69 @@ func TestSecurityHeaders(t *testing.T) {
 		assert.Equal(t, wantCSP, rec.Header().Get("Content-Security-Policy"), name)
 		assert.Equal(t, "nosniff", rec.Header().Get("X-Content-Type-Options"), name)
 		assert.Equal(t, "no-referrer", rec.Header().Get("Referrer-Policy"), name)
+	}
+}
+
+func TestMiddlewareMethodsAndPaths(t *testing.T) {
+	t.Parallel()
+	s, _ := newTestServer(t)
+	h := testHandler(s)
+	cookie := login(t, s, h)
+	session := withCookie(cookie)
+	csrf := withHeader("X-CSRF-Token", s.session.csrf)
+	const protected, unknown = "/c/personal/probe", "/nothing"
+
+	tests := []struct {
+		name   string
+		method string
+		target string
+		opts   []requestOption
+		want   int
+	}{
+		{name: "HEAD protected without session", method: http.MethodHead, target: protected, want: http.StatusForbidden},
+		{name: "OPTIONS protected without session", method: http.MethodOptions, target: protected, want: http.StatusForbidden},
+		{name: "PUT protected without session", method: http.MethodPut, target: protected, want: http.StatusForbidden},
+		{name: "DELETE protected without session", method: http.MethodDelete, target: protected, want: http.StatusForbidden},
+		{name: "HEAD unknown without session", method: http.MethodHead, target: unknown, want: http.StatusForbidden},
+		{name: "OPTIONS unknown without session", method: http.MethodOptions, target: unknown, want: http.StatusForbidden},
+		{name: "PUT unknown without session", method: http.MethodPut, target: unknown, want: http.StatusForbidden},
+		{name: "DELETE unknown without session", method: http.MethodDelete, target: unknown, want: http.StatusForbidden},
+
+		{name: "HEAD protected with session", method: http.MethodHead, target: protected, opts: []requestOption{session}, want: http.StatusOK},
+		{name: "OPTIONS protected with session, no csrf", method: http.MethodOptions, target: protected, opts: []requestOption{session}, want: http.StatusForbidden},
+		{name: "PUT protected with session, no csrf", method: http.MethodPut, target: protected, opts: []requestOption{session}, want: http.StatusForbidden},
+		{name: "DELETE protected with session, no csrf", method: http.MethodDelete, target: protected, opts: []requestOption{session}, want: http.StatusForbidden},
+		{name: "OPTIONS protected with session and csrf", method: http.MethodOptions, target: protected, opts: []requestOption{session, csrf}, want: http.StatusMethodNotAllowed},
+		{name: "PUT protected with session and csrf", method: http.MethodPut, target: protected, opts: []requestOption{session, csrf}, want: http.StatusMethodNotAllowed},
+		{name: "DELETE protected with session and csrf", method: http.MethodDelete, target: protected, opts: []requestOption{session, csrf}, want: http.StatusMethodNotAllowed},
+		{name: "HEAD unknown with session", method: http.MethodHead, target: unknown, opts: []requestOption{session}, want: http.StatusNotFound},
+		{name: "OPTIONS unknown with session, no csrf", method: http.MethodOptions, target: unknown, opts: []requestOption{session}, want: http.StatusForbidden},
+		{name: "PUT unknown with session and csrf", method: http.MethodPut, target: unknown, opts: []requestOption{session, csrf}, want: http.StatusNotFound},
+		{name: "DELETE unknown with session and csrf", method: http.MethodDelete, target: unknown, opts: []requestOption{session, csrf}, want: http.StatusNotFound},
+
+		{
+			name: "csrf only in the query string", method: http.MethodPost,
+			target: "/c/personal/test-write?csrf=" + url.QueryEscape(s.session.csrf),
+			opts: []requestOption{
+				session, withHeader("Sec-Fetch-Site", "same-origin"), withHeader("Content-Type", "application/x-www-form-urlencoded"),
+			},
+			want: http.StatusForbidden,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			rec := send(h, tt.method, tt.target, "", tt.opts...)
+
+			assert.Equal(t, tt.want, rec.Code)
+			if tt.want >= http.StatusBadRequest {
+				assert.NotContains(t, rec.Body.String(), "probe personal")
+				assert.NotContains(t, rec.Body.String(), "wrote")
+			}
+			assert.Equal(t, wantCSP, rec.Header().Get("Content-Security-Policy"))
+			assert.Equal(t, "nosniff", rec.Header().Get("X-Content-Type-Options"))
+			assert.Equal(t, "no-referrer", rec.Header().Get("Referrer-Policy"))
+		})
 	}
 }
 

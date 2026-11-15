@@ -296,6 +296,54 @@ func TestBrokenContextShowsErrorForThatContextOnly(t *testing.T) {
 	assert.Equal(t, http.StatusOK, getPage(h, c, "/c/personal/memories").Code)
 }
 
+func TestHtmxErrorsAreFragments(t *testing.T) {
+	t.Parallel()
+	b := &backendRecorder{broken: "work"}
+	failing := &recordingMemories{err: errors.New("pq: password=hunter2 refused")}
+	cfg := testConfig(b)
+	cfg.Contexts = []string{"personal", "work", "failing"}
+	cfg.Backend = func(ctx context.Context, name string) (Backend, error) {
+		if _, err := b.open(ctx, name); err != nil {
+			return Backend{}, err
+		}
+		if name == "failing" {
+			return Backend{Memories: failing, Store: fakeStore{}}, nil
+		}
+		return Backend{Memories: &recordingMemories{}, Store: fakeStore{}}, nil
+	}
+	s, err := New(cfg)
+	require.NoError(t, err)
+	t.Cleanup(s.Close)
+	h := s.Handler(testPort)
+	c := login(t, s, h)
+
+	tests := []struct {
+		name    string
+		target  string
+		status  int
+		message string
+	}{
+		{name: "unknown context", target: "/c/nope/memories", status: http.StatusNotFound, message: "Unknown context."},
+		{name: "context that fails to open", target: "/c/work/memories", status: http.StatusServiceUnavailable, message: "could not be opened"},
+		{name: "failing backend", target: "/c/failing/memories", status: http.StatusInternalServerError, message: "Something went wrong."},
+		{name: "invalid filter", target: "/c/personal/memories?type=bogus", status: http.StatusUnprocessableEntity, message: "unknown type"},
+		{name: "admin route without --admin", target: "/c/personal/prune", status: http.StatusNotFound, message: "Page not found."},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			fragment := getPage(h, c, tt.target, withHeader("HX-Request", "true"))
+			assert.Equal(t, tt.status, fragment.Code)
+			assert.NotContains(t, fragment.Body.String(), "<html")
+			assert.Contains(t, fragment.Body.String(), tt.message)
+			assert.NotContains(t, fragment.Body.String(), "hunter2")
+
+			page := getPage(h, c, tt.target)
+			assert.Contains(t, page.Body.String(), "<html", "a plain request still gets the full page")
+		})
+	}
+}
+
 func TestNavLinksAreContextScoped(t *testing.T) {
 	t.Parallel()
 	h, c := newMemoriesServer(t, &recordingMemories{})

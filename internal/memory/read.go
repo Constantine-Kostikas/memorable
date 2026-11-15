@@ -227,5 +227,15 @@ func (s *Service) Preload(ctx context.Context) ([]Summary, error) {
 
 // Activity returns a memory's feedback and audit entries, newest first.
 func (s *Service) Activity(ctx context.Context, id uuid.UUID) (Activity, error) {
+	ms, err := s.repo.GetByIDs(ctx, []uuid.UUID{id})
+	if err != nil {
+		return Activity{}, err //nolint:wrapcheck // repository errors are already contextual
+	}
+	switch {
+	case len(ms) == 0:
+		return Activity{}, fmt.Errorf("memory %s: %w", id, ErrNotFound)
+	case ms[0].Status == StatusQuarantined:
+		return Activity{}, fmt.Errorf("memory %s: %w", id, ErrQuarantined)
+	}
 	return s.repo.Activity(ctx, id) //nolint:wrapcheck // repository errors are already contextual
 }

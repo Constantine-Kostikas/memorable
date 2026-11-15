@@ -500,6 +500,9 @@ func TestUIAdminIntegration(t *testing.T) {
 		assert.Contains(t, body, "Memory approved.")
 		assert.NotEqual(t, "quarantined", h.adminScalar("personal", "SELECT status FROM {schema}.memories WHERE id = $1", toApprove.ID))
 		assert.Equal(t, "ui", h.auditActions("personal", toApprove.ID)["approve"]["via"])
+		assert.Equal(t, "true", h.adminScalar("personal",
+			"SELECT (details->>'via' = 'ui' AND process LIKE 'ui:%')::text FROM {schema}.audit_log WHERE action = 'approve' AND memory_id = $1",
+			toApprove.ID))
 	})
 
 	t.Run("a wrong confirmation does not purge", func(t *testing.T) {
@@ -515,8 +518,9 @@ func TestUIAdminIntegration(t *testing.T) {
 		require.Equal(t, http.StatusOK, status, body)
 		assert.Contains(t, body, "Memory purged.")
 		assert.Equal(t, "0", h.adminScalar("personal", "SELECT count(*)::text FROM {schema}.memories WHERE id = $1", toPurge.ID))
-		assert.Equal(t, "ui", h.adminScalar("personal",
-			"SELECT details->>'via' FROM {schema}.audit_log WHERE action = 'purge' ORDER BY id DESC LIMIT 1"))
+		assert.Equal(t, "true", h.adminScalar("personal",
+			"SELECT (details->>'via' = 'ui' AND process LIKE 'ui:%')::text FROM {schema}.audit_log WHERE action = 'purge' AND memory_id = $1",
+			toPurge.ID))
 	})
 
 	t.Run("idle expiry locks admin and closes the pool", func(t *testing.T) {

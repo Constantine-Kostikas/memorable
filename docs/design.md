@@ -189,7 +189,7 @@ Trigram GIN index on `title`.
 | `active` | yes | yes, unless source is `tool_output` | normal |
 | `unverified` | yes, labeled | no | written with source `tool_output` |
 | `flagged` | only with `include_flagged` | no | feedback said wrong or outdated |
-| `quarantined` | no; content never returned over MCP | no | injection scanner hit; approve or purge via CLI |
+| `quarantined` | no; content never returned over MCP | no | injection scanner hit; approve or purge as admin (CLI or `ui --admin`) |
 | `superseded` | only with `include_superseded` | no | replaced by a newer memory |
 | `deleted` | no | no | soft delete; restorable |
 
@@ -320,7 +320,7 @@ Primary: memory poisoning and secret leakage. Secondary: context leakage, destru
 | Web UI: cross-site and rebinding | State changes are POST with a per-session CSRF token; cross-origin requests are refused (`Origin` and `Sec-Fetch-Site`); a `Host` other than `127.0.0.1:<port>` or `localhost:<port>` gets 421. |
 | Web UI: script injection | Memory content renders only as escaped text. `Content-Security-Policy: default-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`. htmx and Tailwind CSS are embedded: no CDN, no Node at build or runtime. |
 | Web UI: agent obtaining admin | `--admin` prompts for the password in the terminal and refuses a non-TTY stdin; no flag, environment variable, or config holds it. The unlock expires after 15 idle minutes (only admin actions count as use), after which the UI is app-role until restarted. Purge requires the typed slug (or id); prune shows a dry-run count first. |
-| Web UI: forensics | UI actions write audit entries with `details.via = "ui"`; app-role entries also carry `process` as `ui:<pid>@<start>`. Quarantined memories show as counts to the app role; the conflict list can show ids of memories linked by `contradicts`, quarantined ones included, as `memory_review` does. Full quarantined content appears only with `--admin`. |
+| Web UI: forensics | UI actions, app-role and admin alike, write audit entries with `details.via = "ui"` and `process` as `ui:<pid>@<start>`. Quarantined memories show as counts to the app role; the conflict list can show ids of memories linked by `contradicts`, quarantined ones included, as `memory_review` does. Full quarantined content appears only with `--admin`. |
 | Web UI: agent bypassing MCP "Ask" rules | An agent with Bash could run `memorable ui --no-browser`, read the URL from stderr, and delete or restore without the MCP permission prompt. The Bash deny rule `Bash(memorable ui:*)` is part of the recommended permissions and of what `memorable setup` writes. |
 | Web UI: **soft boundary (accepted)** | While `memorable ui --admin` runs and the unlock has not expired, whoever holds the session cookie has admin rights in the open contexts. Cookies are not scoped by port, so another web server on 127.0.0.1 that the browser visits during the session receives the session cookie. Sits beside the Docker soft boundary. |
 | Tampered update | `memorable update` talks HTTPS to `api.github.com` only and follows at most 3 redirects, each to HTTPS `*.githubusercontent.com` (the token is dropped on the cross-host hop). Size caps on every download (64 KiB signed files, 100 MiB archive, 200 MiB binary) and connection timeouts. The detached GPG signature on `checksums.txt` must verify against the public key embedded at build time (`D4A4DEE111ABA5ACBE1F49773B21B7770B4334A4`) before the archive's sha256 is trusted. Only the top-level `memorable` regular file is extracted, and any absolute or escaping entry fails the archive. Fail closed: the installed binary is untouched until every check passes. |
@@ -335,7 +335,7 @@ Primary: memory poisoning and secret leakage. Secondary: context leakage, destru
 
 ### Injection heuristics (initial set)
 
-Imperatives aimed at the agent ("ignore previous", "you must always", "system prompt"), command patterns (`curl ... | sh`, `rm -rf`, base64 piped to a shell), URLs combined with commands, hidden or zero-width Unicode. False positives are expected; approval is one CLI command.
+Imperatives aimed at the agent ("ignore previous", "you must always", "system prompt"), command patterns (`curl ... | sh`, `rm -rf`, base64 piped to a shell), URLs combined with commands, hidden or zero-width Unicode. False positives are expected; approval is one CLI command (`memorable approve`) or one click in `memorable ui --admin`.
 
 ## 9. CLI
 
