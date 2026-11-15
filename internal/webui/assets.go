@@ -20,6 +20,8 @@ type pageData struct {
 	AdminUnlockedMinutes int
 	Page                 string
 	Memories             *memoriesView
+	Detail               *detailView
+	Edit                 *editView
 }
 
 const pageMemories = "memories"

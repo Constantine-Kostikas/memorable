@@ -149,6 +149,7 @@ func (s *Server) handler(port int, extra func(*http.ServeMux)) http.Handler {
 // routes registers the page and action routes, all under /c/{context}/.
 func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /c/{context}/memories", s.inContext(s.handleMemories))
+	s.registerMemoryRoutes(mux)
 }
 
 // LaunchURL returns the one-time launch URL.
