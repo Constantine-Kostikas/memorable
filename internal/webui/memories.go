@@ -85,7 +85,7 @@ func (s *Server) handleMemories(w http.ResponseWriter, r *http.Request, rc reque
 	}
 
 	w.Header().Set("Vary", "HX-Request")
-	if r.Header.Get("HX-Request") == "true" {
+	if r.Header.Get("HX-Request") == "true" && r.Header.Get("HX-History-Restore-Request") != "true" {
 		s.renderTemplate(w, "memory_rows.html", view)
 		return
 	}

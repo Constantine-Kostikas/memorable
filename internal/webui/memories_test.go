@@ -301,3 +301,28 @@ func TestNavLinksAreContextScoped(t *testing.T) {
 		assert.NotContains(t, body, `href="/`+page+`"`)
 	}
 }
+
+func TestHistoryRestoreReturnsFullPage(t *testing.T) {
+	t.Parallel()
+	h, c := newMemoriesServer(t, &recordingMemories{})
+
+	rec := getPage(h, c, "/c/personal/memories?q=ports",
+		withHeader("HX-Request", "true"), withHeader("HX-History-Restore-Request", "true"))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), "<html")
+	assert.Equal(t, "HX-Request", rec.Header().Get("Vary"))
+}
+
+func TestHostileQueryAndProjectEscaped(t *testing.T) {
+	t.Parallel()
+	h, c := newMemoriesServer(t, &recordingMemories{})
+	evil := `"><script>alert(1)</script>`
+
+	q := url.Values{"q": {evil}, "project": {evil}}
+	body := getPage(h, c, "/c/personal/memories?"+q.Encode()).Body.String()
+
+	assert.NotContains(t, body, "<script>alert(1)")
+	assert.NotContains(t, body, `"><script>`)
+	assert.Contains(t, body, "&#34;&gt;&lt;script&gt;alert(1)&lt;/script&gt;")
+}
