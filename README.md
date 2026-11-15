@@ -12,15 +12,33 @@ Persistent, searchable memory for Claude Code. Claude stores and retrieves memor
 
 ## Install
 
-The repository is private, so install a release with the GitHub CLI (you need collaborator access):
+The repository is private, so install a release with the GitHub CLI (you need collaborator access). Every release so far is a pre-release, which `gh release download` skips unless you name the tag, so look up the newest tag first:
 
 ```sh
-gh release download -R constantine-kostikas/memorable -p "memorable_$(uname -s)_$(uname -m).tar.gz" -O - | tar -xz memorable
+tag=$(gh release list -R constantine-kostikas/memorable --exclude-drafts --limit 1 --json tagName --jq '.[0].tagName')
+gh release download "$tag" -R constantine-kostikas/memorable -p "memorable_$(uname -s)_$(uname -m).tar.gz" -O - | tar -xz memorable
 sudo mv memorable /usr/local/bin/
 memorable --version
 ```
 
 To build from source instead: `make build` (needs Go 1.26), then copy `bin/memorable` onto your `PATH`.
+
+## Update
+
+```sh
+memorable update --check   # report what would change
+memorable update
+```
+
+`memorable update` finds the newest release on GitHub, checks the GPG signature on its `checksums.txt` against the release key built into the binary, checks the archive's sha256, and only then replaces the binary in place. Any failed check aborts and leaves the installed binary untouched.
+
+- **Token:** while the repository is private, update reads a token from `GH_TOKEN`, `GITHUB_TOKEN`, or `gh auth token`, in that order.
+- **Pre-releases:** a stable install only moves to stable releases unless you pass `--pre`. A pre-release install also sees newer pre-releases.
+- **Pin a version:** `memorable update --version v0.2.0`, which can also downgrade.
+- **Root-owned directories:** if the binary's directory (for example `/usr/local/bin`) is not writable, update stages the verified binary in a private temp directory and runs `sudo install -m 0755 <staged> <target>` on a terminal, or prints that command otherwise. Do not run `sudo memorable update`: root has no GitHub token.
+- **Not handled:** development builds (`make build` without a tag) are refused unless you pass `--force`, and Homebrew installs are refused in favor of `brew upgrade`.
+
+Afterwards, restart your Claude Code sessions, because running `memorable serve` processes keep the old binary. Then run `memorable doctor`, and `memorable migrate` if it reports schema versions behind.
 
 ## Set up
 
@@ -134,6 +152,7 @@ Run `memorable doctor`. It checks the config, keyring, container, port, database
 - **Isolation**: a session is bound to one context schema and cannot choose another.
 - **Recoverable**: the app role cannot delete rows. Deletes are soft, every change is versioned, and only `memorable purge` (admin) erases data.
 - **Local only**: Postgres and Ollama listen on `127.0.0.1`, and remote embedding providers need `allow_remote = true`.
+- **Updates are verified**: `memorable update` downloads over HTTPS from `api.github.com` (following redirects only to `*.githubusercontent.com`), checks a detached GPG signature by key `D4A4DEE111ABA5ACBE1F49773B21B7770B4334A4` before trusting any checksum, and fails closed.
 - **Docker is a soft boundary**: anyone who can run `docker exec` has full database access. These Claude Code deny rules keep Claude out (setup adds them):
 
 ```json

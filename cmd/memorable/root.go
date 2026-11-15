@@ -89,6 +89,7 @@ func newRootCmdWith(info buildInfo, d deps) *cobra.Command {
 		newImportCmd(d, flags),
 		newBackupCmd(d, flags),
 		newSetupCmd(d, flags),
+		newUpdateCmd(d, flags, info),
 	)
 	return root
 }
