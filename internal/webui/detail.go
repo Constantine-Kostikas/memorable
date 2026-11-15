@@ -72,6 +72,7 @@ type detailView struct {
 	EditURL     string
 	ListURL     string
 	Quarantined bool
+	ReadOnly    bool
 	Title       string
 	Content     string
 	Type        string
@@ -146,7 +147,7 @@ func (s *Server) handleEdit(w http.ResponseWriter, r *http.Request, rc requestCo
 		s.failResponse(w, r, rc.Name, err)
 		return
 	}
-	if err != nil {
+	if err != nil || fetched.Memory.Scope == memory.ScopeProfile {
 		s.handleDetail(w, r, rc, id)
 		return
 	}
@@ -226,6 +227,7 @@ func fillMemory(view *detailView, m memory.Memory) {
 	if m.EmbeddingModel != nil {
 		view.Embedding = fmt.Sprintf("Embedded with %s (version %d).", *m.EmbeddingModel, m.Version)
 	}
+	view.ReadOnly = m.Scope == memory.ScopeProfile
 	view.CanActivate = m.Status == memory.StatusFlagged || m.Status == memory.StatusUnverified
 	view.CanRestore = m.Status == memory.StatusDeleted
 	view.CanDelete = m.Status != memory.StatusDeleted

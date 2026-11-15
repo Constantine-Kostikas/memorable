@@ -33,7 +33,7 @@ func (s *Server) actionStatus(r *http.Request, err error) (int, string) {
 	case errors.Is(err, memory.ErrQuarantined):
 		return http.StatusUnprocessableEntity, "This memory is quarantined: it needs approval (memorable approve or ui --admin)."
 	case errors.Is(err, memory.ErrReadOnly):
-		return http.StatusForbidden, "This memory cannot be changed here."
+		return http.StatusUnprocessableEntity, "This memory cannot be changed here."
 	case errors.Is(err, memory.ErrRateLimited):
 		return http.StatusTooManyRequests, "Write rate limit reached. Try again shortly."
 	case errors.Is(err, memory.ErrUnavailable):
@@ -222,24 +222,29 @@ func (s *Server) doSupersede(r *http.Request, rc requestContext, id uuid.UUID) (
 	return "Memory superseded.", nil
 }
 
-// resolveRef turns an id or slug into an id. Slugs resolve through a passive Get, which logs no access.
+// resolveRef turns an id or slug into the id of an existing, linkable memory. Both forms resolve
+// through a passive Get, which logs no access and turns a missing target into a 404 instead of a store error.
 func (s *Server) resolveRef(r *http.Request, rc requestContext, ref string) (uuid.UUID, error) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
 		return uuid.Nil, fmt.Errorf("%w: an id or slug is required", memory.ErrValidation)
 	}
+	req := memory.GetRequest{Slugs: []string{ref}, Passive: true}
 	if id, err := uuid.Parse(ref); err == nil {
-		return id, nil
+		req = memory.GetRequest{IDs: []uuid.UUID{id}, Passive: true}
 	}
-	res, err := rc.Backend.Memories.Get(r.Context(), memory.GetRequest{Slugs: []string{ref}, Passive: true})
+	res, err := rc.Backend.Memories.Get(r.Context(), req)
 	if err != nil {
-		return uuid.Nil, fmt.Errorf("resolve slug: %w", err)
+		return uuid.Nil, fmt.Errorf("resolve reference: %w", err)
 	}
 	if len(res) != 1 {
-		return uuid.Nil, fmt.Errorf("resolve slug: %w", memory.ErrNotFound)
+		return uuid.Nil, fmt.Errorf("resolve reference: %w", memory.ErrNotFound)
 	}
 	if res[0].Err != nil {
-		return uuid.Nil, fmt.Errorf("resolve slug: %w", res[0].Err)
+		return uuid.Nil, fmt.Errorf("resolve reference: %w", res[0].Err)
+	}
+	if res[0].Memory.Scope == memory.ScopeProfile {
+		return uuid.Nil, fmt.Errorf("%w: profile memories cannot be linked or superseded here", memory.ErrValidation)
 	}
 	return res[0].Memory.ID, nil
 }

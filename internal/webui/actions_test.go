@@ -167,6 +167,8 @@ func TestLinkAndUnlinkActions(t *testing.T) {
 	f := newDetailFixture(t, nil)
 	to := uuid.New()
 
+	f.mem.byID[to] = memory.Fetched{Ref: to.String(), Memory: memory.Memory{ID: to}}
+
 	rec := f.post("/link", url.Values{"to": {to.String()}, "kind": {"contradicts"}})
 	require.Equal(t, http.StatusOK, rec.Code)
 	rec = f.post("/unlink", url.Values{"to": {to.String()}, "kind": {"contradicts"}})
@@ -229,7 +231,10 @@ func TestSupersedeValidationComesFromService(t *testing.T) {
 		m.mutErr = fmt.Errorf("%w: replacement is deleted", memory.ErrValidation)
 	})
 
-	rec := f.post("/supersede", url.Values{"replacement": {uuid.NewString()}})
+	replacement := uuid.New()
+	f.mem.byID[replacement] = memory.Fetched{Memory: memory.Memory{ID: replacement}}
+
+	rec := f.post("/supersede", url.Values{"replacement": {replacement.String()}})
 
 	assert.Equal(t, http.StatusUnprocessableEntity, rec.Code)
 	assert.Contains(t, rec.Body.String(), "replacement is deleted")
@@ -280,4 +285,52 @@ func TestActionViaHtmxHeaderRendersFragment(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	assert.NotContains(t, rec.Body.String(), "<html")
 	assert.Contains(t, rec.Body.String(), `id="memory-detail"`)
+}
+
+func TestLinkToMissingIDIsNotFound(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, nil)
+
+	rec := f.post("/link", url.Values{"to": {uuid.NewString()}, "kind": {"related"}})
+
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+	assert.Empty(t, f.mem.called("Link"))
+	for _, g := range f.mem.lastGets() {
+		assert.True(t, g.Passive)
+	}
+}
+
+func TestLinkToQuarantinedOrProfileIsRejected(t *testing.T) {
+	t.Parallel()
+	quarantined, profile := uuid.New(), uuid.New()
+	f := newDetailFixture(t, func(m *detailMemories, _ uuid.UUID) {
+		m.byID[quarantined] = memory.Fetched{Memory: memory.Memory{ID: quarantined}, Err: memory.ErrQuarantined}
+		m.byID[profile] = memory.Fetched{Memory: memory.Memory{ID: profile, Scope: memory.ScopeProfile}}
+	})
+
+	for _, target := range []uuid.UUID{quarantined, profile} {
+		rec := f.post("/link", url.Values{"to": {target.String()}, "kind": {"related"}})
+		assert.Equal(t, http.StatusUnprocessableEntity, rec.Code, target)
+	}
+	assert.Empty(t, f.mem.called("Link"))
+}
+
+func TestSupersedeMissingReplacementIsNotFound(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, nil)
+
+	rec := f.post("/supersede", url.Values{"replacement": {uuid.NewString()}})
+
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+	assert.Empty(t, f.mem.called("Supersede"))
+}
+
+func TestReadOnlyIs422WithMessage(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, func(m *detailMemories, _ uuid.UUID) { m.mutErr = fmt.Errorf("%w: profile", memory.ErrReadOnly) })
+
+	rec := f.post("/delete", url.Values{})
+
+	assert.Equal(t, http.StatusUnprocessableEntity, rec.Code)
+	assert.Contains(t, rec.Body.String(), "This memory cannot be changed here.")
 }

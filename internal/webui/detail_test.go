@@ -2,9 +2,11 @@ package webui
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -32,6 +34,7 @@ type detailMemories struct {
 	history  []memory.Version
 	activity memory.Activity
 	bySlug   map[string]memory.Fetched
+	byID     map[uuid.UUID]memory.Fetched
 	mutErr   error
 	updated  memory.Memory
 }
@@ -60,6 +63,12 @@ func (d *detailMemories) Get(_ context.Context, r memory.GetRequest) ([]memory.F
 	d.getReqs = append(d.getReqs, r)
 	if len(r.Slugs) > 0 {
 		return []memory.Fetched{d.bySlug[r.Slugs[0]]}, nil
+	}
+	if f, ok := d.byID[r.IDs[0]]; ok {
+		return []memory.Fetched{f}, nil
+	}
+	if len(d.fetched) == 1 && d.fetched[0].Memory.ID != r.IDs[0] && d.fetched[0].Err == nil {
+		return []memory.Fetched{{Ref: r.IDs[0].String(), Err: memory.ErrNotFound}}, nil
 	}
 	return d.fetched, d.getErr
 }
@@ -159,6 +168,7 @@ func newDetailFixture(t *testing.T, mutate func(*detailMemories, uuid.UUID)) det
 			Audit:    []memory.AuditRecord{{Action: "update", Process: "ui:42@2026-11-15T10:00:00Z", Details: map[string]any{"via": "ui"}, CreatedAt: time.Date(2026, 11, 2, 9, 0, 0, 0, time.UTC)}},
 		},
 		bySlug: map[string]memory.Fetched{},
+		byID:   map[uuid.UUID]memory.Fetched{},
 	}
 	if mutate != nil {
 		mutate(mem, id)
@@ -287,4 +297,63 @@ func TestLineDiffDeterministic(t *testing.T) {
 	assert.Equal(t, []string{"  a", "- b", "+ x", "  c"}, got)
 	_, ok = lineDiff(strings.Repeat("a\n", maxDiffLines+1), "a")
 	assert.False(t, ok)
+}
+
+func TestDetailProfileHidesMutations(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, func(m *detailMemories, _ uuid.UUID) {
+		m.fetched[0].Memory.Scope = memory.ScopeProfile
+	})
+
+	rec := send(f.h, http.MethodGet, f.path(""), "", withCookie(f.c))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	body := rec.Body.String()
+	assert.Contains(t, body, "Port map")
+	for _, action := range []string{"/edit", "/delete", "/supersede", "/link", "/unlink", "/feedback", "/restore", "/activate"} {
+		assert.NotContains(t, body, f.path(action), action)
+	}
+	edit := send(f.h, http.MethodGet, f.path("/edit"), "", withCookie(f.c))
+	assert.NotContains(t, edit.Body.String(), `name="content"`)
+}
+
+func TestHtmxConfigMeta(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, nil)
+
+	rec := send(f.h, http.MethodGet, f.path(""), "", withCookie(f.c))
+
+	m := regexp.MustCompile(`name="htmx-config" content='([^']*)'`).FindStringSubmatch(rec.Body.String())
+	require.Len(t, m, 2)
+	var cfg struct {
+		IncludeIndicatorStyles bool `json:"includeIndicatorStyles"`
+		AllowEval              bool `json:"allowEval"`
+		ResponseHandling       []struct {
+			Code  string `json:"code"`
+			Swap  bool   `json:"swap"`
+			Error bool   `json:"error"`
+		} `json:"responseHandling"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(m[1]), &cfg))
+	assert.False(t, cfg.IncludeIndicatorStyles)
+	assert.False(t, cfg.AllowEval)
+	swapped := func(status string) (swap, isErr bool) {
+		for _, rule := range cfg.ResponseHandling {
+			if regexp.MustCompile("^(?:" + rule.Code + ")$").MatchString(status) {
+				return rule.Swap, rule.Error
+			}
+		}
+		return false, false
+	}
+	for _, status := range []string{"404", "409", "422", "429", "503"} {
+		swap, isErr := swapped(status)
+		assert.True(t, swap && isErr, status)
+	}
+	for _, status := range []string{"403", "500"} {
+		swap, isErr := swapped(status)
+		assert.False(t, swap, status)
+		assert.True(t, isErr, status)
+	}
+	swap, _ := swapped("200")
+	assert.True(t, swap)
 }
