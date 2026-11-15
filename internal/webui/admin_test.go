@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"sync"
 	"testing"
 	"testing/synctest"
@@ -545,6 +546,10 @@ func TestAdminIdleExpiry(t *testing.T) {
 			assert.Equal(t, http.StatusForbidden, rec.Code, path)
 			assert.Contains(t, rec.Body.String(), lockedText, path)
 		}
+
+		f.s.Close()
+		f.s.admin.release()
+		assert.Equal(t, 1, f.ops("personal").closeCount(), "a released handle is not closed again")
 	})
 }
 
@@ -571,13 +576,30 @@ func TestServerCloseReleasesAdmin(t *testing.T) {
 	f := newAdminFixture(t, withQuarantined(q))
 	require.Equal(t, http.StatusOK, f.post("/c/personal/memories/"+q.ID.String()+"/approve", nil, asHtmx()).Code)
 
+	require.Equal(t, http.StatusOK, f.post("/c/work/memories/"+q.ID.String()+"/approve", nil, asHtmx()).Code)
+
 	f.s.Close()
 	f.s.Close()
+	f.s.admin.release()
 
 	assert.Equal(t, 1, f.ops("personal").closeCount())
+	assert.Equal(t, 1, f.ops("work").closeCount())
 	assert.Nil(t, f.s.cfg.Admin, "the server config must not keep the admin factory")
 	assert.Equal(t, 0, f.s.admin.minutesLeft())
 }
+
+func TestAdminOpsRequiresClose(t *testing.T) {
+	t.Parallel()
+	adminOps := reflect.TypeFor[AdminOps]()
+
+	assert.False(t, reflect.TypeFor[*adminops.Ops]().Implements(adminOps),
+		"a bare *adminops.Ops cannot be cached: its pool would never be closed")
+	assert.True(t, reflect.TypeFor[closableOps]().Implements(adminOps))
+}
+
+type closableOps struct{ *adminops.Ops }
+
+func (closableOps) Close() {}
 
 func TestAdminLockedPageNeverLeaksDetails(t *testing.T) {
 	t.Parallel()

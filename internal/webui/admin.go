@@ -156,9 +156,7 @@ func (l *adminLock) releaseLocked() []AdminOps {
 
 func closeAdminOps(released []AdminOps) {
 	for _, ops := range released {
-		if c, ok := ops.(interface{ Close() }); ok {
-			c.Close()
-		}
+		ops.Close()
 	}
 }
 

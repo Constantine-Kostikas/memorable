@@ -44,7 +44,8 @@ type StoreReads interface {
 	ProfileList(ctx context.Context) ([]memory.Memory, error)
 }
 
-// AdminOps is the adminops.Ops method set the UI calls when started with --admin.
+// AdminOps is the adminops.Ops method set the UI calls when started with --admin, plus Close,
+// which must release the admin pool (wrap *adminops.Ops to add it) and is called once per handle.
 type AdminOps interface {
 	QuarantinedList(ctx context.Context) ([]memory.Memory, error)
 	Approve(ctx context.Context, id uuid.UUID) error
@@ -55,12 +56,10 @@ type AdminOps interface {
 	ProfileDelete(ctx context.Context, id uuid.UUID) error
 	ProfileAdd(ctx context.Context, in adminops.ProfileInput) (memory.Memory, error)
 	ProfileEdit(ctx context.Context, id uuid.UUID, in adminops.ProfileInput) (memory.Memory, error)
+	Close()
 }
 
-var (
-	_ Memories = (*memory.Service)(nil)
-	_ AdminOps = (*adminops.Ops)(nil)
-)
+var _ Memories = (*memory.Service)(nil)
 
 // Backend is the per-context application access.
 type Backend struct {
@@ -75,8 +74,8 @@ type Config struct {
 	// Backend opens or returns the application backend of the named context.
 	Backend func(ctx context.Context, name string) (Backend, error)
 	// Admin opens the admin operations of the named context; nil without --admin. The server
-	// calls it at most once per context and drops it when the unlock expires. A returned value
-	// with a Close() method is closed then, and by Server.Close.
+	// calls it at most once per context and drops it when the unlock expires; every returned
+	// handle is closed then, or by Server.Close.
 	Admin     func(ctx context.Context, name string) (AdminOps, error)
 	AdminIdle time.Duration
 	Now       func() time.Time
