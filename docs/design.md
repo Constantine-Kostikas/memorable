@@ -63,6 +63,7 @@ One Go binary provides the MCP server, the CLI, the setup wizard, and the hook c
 | Secrets | `github.com/zalando/go-keyring` with a 0600 file fallback |
 | Secret scanning | gitleaks default rule file (embedded, evaluated in-house) + entropy check; the gitleaks module itself is not imported because of its dependency tree |
 | Logging | `log/slog`, JSON, **stderr only** |
+| Self-update | `github.com/ProtonMail/go-crypto/openpgp` (detached signature check; `golang.org/x/crypto/openpgp` is deprecated) + `golang.org/x/mod/semver` |
 | Tests | `testing`, testify, testcontainers-go, `go.uber.org/goleak`, `testing/synctest` |
 | Database | PostgreSQL 18 + pgvector 0.8.7 (image `pgvector/pgvector:0.8.7-pg18-trixie`) + pg_trgm |
 | Embeddings | Ollama `/api/embed` (batch input, L2-normalized output); default model `embeddinggemma` (768 dimensions) |
@@ -85,6 +86,7 @@ internal/dockerpg/      container lifecycle for setup and backup
 internal/claudecfg/     MCP registration, settings.json, CLAUDE.md, hook edits (diff + confirm)
 internal/backup/        pg_dump via the container, rotation
 internal/ui/            lipgloss styles, TTY and NO_COLOR detection, output formats
+internal/update/        self-update: release selection, GitHub API client, GPG and checksum verification, atomic replace
 internal/hook/          SessionStart output
 testdata/eval/          search evaluation set
 ```
@@ -313,6 +315,8 @@ Primary: memory poisoning and secret leakage. Secondary: context leakage, destru
 | Runaway agent | Content 2,000 chars, title 120, 10 tags, batch 20, query 500 chars, k 20, 60 writes per minute per process. |
 | Forensics | Append-only audit log with content hashes. |
 | Dependencies | Minimal set, pinned; `govulncheck` and `gosec` via `tool` directives and CI. |
+| Tampered update | `memorable update` talks HTTPS to `api.github.com` only and follows at most 3 redirects, each to HTTPS `*.githubusercontent.com` (the token is dropped on the cross-host hop). Size caps on every download (64 KiB signed files, 100 MiB archive, 200 MiB binary) and connection timeouts. The detached GPG signature on `checksums.txt` must verify against the public key embedded at build time (`D4A4DEE111ABA5ACBE1F49773B21B7770B4334A4`) before the archive's sha256 is trusted. Only the top-level `memorable` regular file is extracted, and any absolute or escaping entry fails the archive. Fail closed: the installed binary is untouched until every check passes. |
+| Privilege during update | The new binary is written beside the target through `os.Root` and renamed over it. When the directory is root-owned, the verified binary is staged in a private 0700 temp directory and installed with `sudo install -m 0755 <staged> <target>` (separate arguments, no shell); memorable itself never runs under sudo. Homebrew installs are refused. |
 
 ### Database roles
 
@@ -356,6 +360,15 @@ Imperatives aimed at the agent ("ignore previous", "you must always", "system pr
 | `memorable hook session-start` | Reads hook JSON on stdin; prints the preload set |
 | `memorable stats` | Counts per status, type, project; embedding coverage |
 | `memorable version` | Version, commit, build date (ldflags) |
+| `memorable update [--check] [--pre] [--force] [--version vX.Y.Z]` | Replace the running binary with the newest verified release (below) |
+
+### `memorable update`
+
+1. **Select.** The newest published release newer than the running version, compared as semver. Pre-releases count when the running version is a pre-release, when `--pre` is passed, or for a `--force`d development build. `--version` pins a tag (and may downgrade). `--check` reports and touches nothing. GitHub's "latest release" endpoint skips pre-releases, so update lists releases itself.
+2. **Refuse** development builds (`dev` or any non-semver version) unless `--force`, and any binary under a Homebrew `Cellar` or `Caskroom`.
+3. **Token** from `GH_TOKEN`, `GITHUB_TOKEN`, or `gh auth token`; none works once the repository is public.
+4. **Verify** as in the security controls, then **replace** atomically (running `serve` processes keep the old inode), or stage and `sudo install`.
+5. **Report** old and new versions, and tell the user to restart Claude Code sessions and run `doctor` (and `migrate` if schema versions are behind). `doctor` does not check for updates in v1, to stay offline.
 
 ### `memorable setup`
 
@@ -439,11 +452,13 @@ backups_keep = 14
 - **CI** (`.github/workflows/ci.yml`, push and PR to main): build, `go test -race`, golangci-lint, govulncheck, gosec, integration tests.
 - **Release** (`.github/workflows/release.yml`, `v*` tags only): GoReleaser v2, `CGO_ENABLED=0`, linux and darwin on amd64 and arm64, archive names matching `uname`, GPG-signed checksums (`GPG_PRIVATE_KEY`, `GPG_PASSPHRASE` secrets), conventional-commit changelog groups, version via ldflags. Mirrors GitQuick's setup without its push-to-main trigger.
 - **Homebrew tap:** configured in `.goreleaser.yaml` but commented out until the repository is made public.
-- **Install while private** (colleagues are collaborators):
+- **Install while private** (colleagues are collaborators). `gh release download` without a tag skips pre-releases, so name the newest tag:
   ```sh
-  gh release download -R constantine-kostikas/memorable -p "memorable_$(uname -s)_$(uname -m).tar.gz" -O - | tar -xz memorable
+  tag=$(gh release list -R constantine-kostikas/memorable --exclude-drafts --limit 1 --json tagName --jq '.[0].tagName')
+  gh release download "$tag" -R constantine-kostikas/memorable -p "memorable_$(uname -s)_$(uname -m).tar.gz" -O - | tar -xz memorable
   sudo mv memorable /usr/local/bin/
   ```
+- **Update:** `memorable update` (see section 9).
 
 ## 14. Deliverables
 
