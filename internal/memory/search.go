@@ -47,6 +47,8 @@ type SearchResponse struct {
 	SearchID uuid.UUID
 	Results  []Summary
 	Explain  map[uuid.UUID]Explanation
+	// VectorUnavailable is set when embedding or the vector query failed and results are text-only.
+	VectorUnavailable bool
 }
 
 func (r *SearchRequest) normalize() error {
@@ -82,9 +84,10 @@ func (s *Service) Search(ctx context.Context, r SearchRequest) (SearchResponse, 
 	// Vector search is best effort: an unavailable embedder or a vector query error (for example a
 	// dimension mismatch after a model change) falls back to text retrieval.
 	var vecHits []Candidate
+	vectorUnavailable := true
 	if vec, err := s.embedOne(ctx, EmbedQuery, r.Query); err == nil {
 		if hits, err := s.repo.CandidatesVector(ctx, vec, f, candidateLimit); err == nil {
-			vecHits = hits
+			vecHits, vectorUnavailable = hits, false
 		}
 	}
 	ftsHits, err := s.repo.CandidatesFTS(ctx, r.Query, f, candidateLimit)
@@ -119,7 +122,7 @@ func (s *Service) Search(ctx context.Context, r SearchRequest) (SearchResponse, 
 	if len(results) > r.K {
 		results = results[:r.K]
 	}
-	resp := SearchResponse{Results: results}
+	resp := SearchResponse{Results: results, VectorUnavailable: vectorUnavailable}
 	if r.Explain {
 		resp.Explain = explanations(results, parts, fused, vecHits, ftsHits, triHits)
 	}

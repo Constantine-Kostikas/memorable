@@ -18,7 +18,11 @@ type pageData struct {
 	CSRF                 string
 	ReviewCount          int
 	AdminUnlockedMinutes int
+	Page                 string
+	Memories             *memoriesView
 }
+
+const pageMemories = "memories"
 
 func parseTemplates() (*template.Template, error) {
 	tmpl, err := template.ParseFS(assetFS, "templates/*.html")

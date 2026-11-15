@@ -272,6 +272,7 @@ type Patch struct {
 type Summary struct {
 	ID      uuid.UUID
 	Slug    *string
+	Project *string
 	Title   string
 	Snippet string
 	Type    Type

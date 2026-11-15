@@ -108,7 +108,7 @@ func (s *Service) embedOne(ctx context.Context, kind EmbedKind, text string) ([]
 
 func summarize(m Memory, score float64) Summary {
 	return Summary{
-		ID: m.ID, Slug: m.Slug, Title: m.Title, Snippet: Snippet(m.Content, SnippetRunes),
+		ID: m.ID, Slug: m.Slug, Project: m.Project, Title: m.Title, Snippet: Snippet(m.Content, SnippetRunes),
 		Type: m.Type, Tags: m.Tags, Scope: m.Scope, Status: m.Status, Score: score,
 	}
 }

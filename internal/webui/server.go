@@ -147,7 +147,9 @@ func (s *Server) handler(port int, extra func(*http.ServeMux)) http.Handler {
 }
 
 // routes registers the page and action routes, all under /c/{context}/.
-func (s *Server) routes(_ *http.ServeMux) {}
+func (s *Server) routes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /c/{context}/memories", s.inContext(s.handleMemories))
+}
 
 // LaunchURL returns the one-time launch URL.
 func (s *Server) LaunchURL(port int) string {
@@ -204,8 +206,10 @@ func (s *Server) inContext(h func(http.ResponseWriter, *http.Request, requestCon
 		backend, err := s.cfg.Backend(r.Context(), name)
 		if err != nil {
 			s.logger.ErrorContext(r.Context(), "open context", "context", name, "error", err)
-			s.renderError(w, http.StatusServiceUnavailable, s.authenticatedPage("Context unavailable",
-				"The "+name+" context could not be opened; other contexts still work. Run memorable doctor."))
+			page := s.authenticatedPage("Context unavailable",
+				"The "+name+" context could not be opened; other contexts still work. Run memorable doctor.")
+			page.Context = name
+			s.renderError(w, http.StatusServiceUnavailable, page)
 			return
 		}
 		h(w, r, requestContext{Name: name, Backend: backend})

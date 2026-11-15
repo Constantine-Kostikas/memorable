@@ -14,16 +14,16 @@
     <nav aria-label="Contexts" class="flex gap-2">
       {{range .Contexts}}<a href="/c/{{.}}/memories"{{if eq . $.Context}} aria-current="page" class="rounded bg-gray-900 px-2 py-1 text-white"{{else}} class="rounded border border-gray-300 px-2 py-1 hover:bg-gray-100"{{end}}>{{.}}</a>{{end}}
     </nav>
-    <nav class="flex gap-4">
-      <a href="/memories" class="hover:underline">Memories</a>
-      <a href="/review" class="hover:underline">Review ({{.ReviewCount}})</a>
-      <a href="/profile" class="hover:underline">Profile</a>
-      <a href="/stats" class="hover:underline">Stats</a>
-    </nav>
+    {{if .Context}}<nav aria-label="Pages" class="flex gap-4">
+      <a href="/c/{{.Context}}/memories" class="hover:underline">Memories</a>
+      <a href="/c/{{.Context}}/review" class="hover:underline">Review ({{.ReviewCount}})</a>
+      <a href="/c/{{.Context}}/profile" class="hover:underline">Profile</a>
+      <a href="/c/{{.Context}}/stats" class="hover:underline">Stats</a>
+    </nav>{{end}}
     {{if .AdminUnlockedMinutes}}<span class="ml-auto rounded bg-amber-100 px-2 py-1 text-sm text-amber-900">Admin unlocked ({{.AdminUnlockedMinutes}} min left)</span>{{end}}
   </header>
   <main class="mx-auto max-w-5xl px-4 py-6">
-    {{block "content" .}}{{if .Message}}{{template "error.html" .}}{{end}}{{end}}
+    {{block "content" .}}{{if eq .Page "memories"}}{{template "memories.html" .Memories}}{{else if .Message}}{{template "error.html" .}}{{end}}{{end}}
   </main>
 </body>
 </html>

@@ -80,6 +80,16 @@ func TestSearch_EmbedderDown(t *testing.T) {
 	res, err := e.svc.Search(context.Background(), memory.SearchRequest{Query: "postgres"})
 	require.NoError(t, err)
 	assert.Equal(t, []uuid.UUID{m.ID}, resultIDs(res.Results))
+	assert.True(t, res.VectorUnavailable)
+}
+
+func TestSearch_VectorAvailableFlagClear(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, nil)
+	created(t, e, note("Ports", "postgres listens on 5434"))
+	res, err := e.svc.Search(context.Background(), memory.SearchRequest{Query: "postgres"})
+	require.NoError(t, err)
+	assert.False(t, res.VectorUnavailable)
 }
 
 func TestSearch_Validation(t *testing.T) {
@@ -187,6 +197,7 @@ func TestSearch_VectorQueryErrorFallsBack(t *testing.T) {
 	res, err := e.svc.Search(context.Background(), memory.SearchRequest{Query: "postgres"})
 	require.NoError(t, err)
 	assert.Equal(t, []uuid.UUID{m.ID}, resultIDs(res.Results))
+	assert.True(t, res.VectorUnavailable)
 
 	r := writeOne(t, e, note("Other", "a different fact"))
 	assert.Equal(t, memory.OutcomeCreated, r.Outcome, "writes fall back to trigram duplicate checks")
