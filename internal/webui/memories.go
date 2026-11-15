@@ -70,7 +70,7 @@ type memoriesView struct {
 func (s *Server) handleMemories(w http.ResponseWriter, r *http.Request, rc requestContext) {
 	filter, cursor, err := parseMemoryFilter(r.URL.Query())
 	if err != nil {
-		s.fail(w, r, rc.Name, err)
+		s.fail(w, r, rc, err)
 		return
 	}
 	view := memoriesView{Context: rc.Name, Filter: filter, Searching: filter.Query != ""}
@@ -80,7 +80,7 @@ func (s *Server) handleMemories(w http.ResponseWriter, r *http.Request, rc reque
 		err = s.listRows(r, rc, &view, cursor)
 	}
 	if err != nil {
-		s.fail(w, r, rc.Name, err)
+		s.fail(w, r, rc, err)
 		return
 	}
 
@@ -91,8 +91,8 @@ func (s *Server) handleMemories(w http.ResponseWriter, r *http.Request, rc reque
 	}
 	view.Types, view.Statuses = filterTypes, filterStatuses
 	view.Projects = s.projectOptions(r, rc, filter.Project)
-	page := s.authenticatedPage("Memories", "")
-	page.Context, page.Page, page.Memories = rc.Name, pageMemories, &view
+	page := s.contextPage(r, rc, "Memories", "")
+	page.Page, page.Memories = pageMemories, &view
 	s.renderTemplate(w, "layout.html", page)
 }
 
@@ -259,7 +259,7 @@ func cmpOr(v, fallback string) string {
 }
 
 // fail maps err to a short safe message; unexpected errors are logged once and never shown.
-func (s *Server) fail(w http.ResponseWriter, r *http.Request, contextName string, err error) {
+func (s *Server) fail(w http.ResponseWriter, r *http.Request, rc requestContext, err error) {
 	status, message := http.StatusInternalServerError, "Something went wrong. See the memorable ui log."
 	switch {
 	case errors.Is(err, memory.ErrValidation):
@@ -272,8 +272,7 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, contextName string
 	if status >= http.StatusInternalServerError {
 		s.logger.ErrorContext(r.Context(), "request failed", "path", r.URL.Path, "error", err)
 	}
-	page := s.authenticatedPage("Error", message)
-	page.Context = contextName
+	page := s.contextPage(r, rc, "Error", message)
 	s.renderError(w, status, page)
 }
 

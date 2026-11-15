@@ -57,7 +57,7 @@ type actionFunc func(r *http.Request, rc requestContext, id uuid.UUID) (notice s
 func (s *Server) action(do actionFunc) func(http.ResponseWriter, *http.Request, requestContext, uuid.UUID) {
 	return func(w http.ResponseWriter, r *http.Request, rc requestContext, id uuid.UUID) {
 		if err := r.ParseForm(); err != nil {
-			s.failResponse(w, r, rc.Name, fmt.Errorf("%w: malformed form", memory.ErrValidation))
+			s.failResponse(w, r, rc, fmt.Errorf("%w: malformed form", memory.ErrValidation))
 			return
 		}
 		notice, err := do(r, rc, id)
@@ -68,7 +68,7 @@ func (s *Server) action(do actionFunc) func(http.ResponseWriter, *http.Request, 
 		}
 		view, loadErr := s.loadDetail(r, rc, id)
 		if loadErr != nil {
-			s.failResponse(w, r, rc.Name, loadErr)
+			s.failResponse(w, r, rc, loadErr)
 			return
 		}
 		view.Notice, view.Error = notice, message
@@ -78,7 +78,7 @@ func (s *Server) action(do actionFunc) func(http.ResponseWriter, *http.Request, 
 
 func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request, rc requestContext, id uuid.UUID) {
 	if err := r.ParseForm(); err != nil {
-		s.failResponse(w, r, rc.Name, fmt.Errorf("%w: malformed form", memory.ErrValidation))
+		s.failResponse(w, r, rc, fmt.Errorf("%w: malformed form", memory.ErrValidation))
 		return
 	}
 	edit := editView{
@@ -100,7 +100,7 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request, rc request
 	}
 	view, err := s.loadDetail(r, rc, id)
 	if err != nil {
-		s.failResponse(w, r, rc.Name, err)
+		s.failResponse(w, r, rc, err)
 		return
 	}
 	view.Notice = "Saved."

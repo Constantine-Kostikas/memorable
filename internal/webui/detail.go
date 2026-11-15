@@ -125,7 +125,7 @@ func (s *Server) withMemoryID(h func(http.ResponseWriter, *http.Request, request
 	return func(w http.ResponseWriter, r *http.Request, rc requestContext) {
 		id, err := uuid.Parse(r.PathValue("id"))
 		if err != nil {
-			s.failResponse(w, r, rc.Name, memory.ErrNotFound)
+			s.failResponse(w, r, rc, memory.ErrNotFound)
 			return
 		}
 		h(w, r, rc, id)
@@ -135,7 +135,7 @@ func (s *Server) withMemoryID(h func(http.ResponseWriter, *http.Request, request
 func (s *Server) handleDetail(w http.ResponseWriter, r *http.Request, rc requestContext, id uuid.UUID) {
 	view, err := s.loadDetail(r, rc, id)
 	if err != nil {
-		s.failResponse(w, r, rc.Name, err)
+		s.failResponse(w, r, rc, err)
 		return
 	}
 	s.respondDetail(w, r, rc, view, http.StatusOK)
@@ -144,7 +144,7 @@ func (s *Server) handleDetail(w http.ResponseWriter, r *http.Request, rc request
 func (s *Server) handleEdit(w http.ResponseWriter, r *http.Request, rc requestContext, id uuid.UUID) {
 	fetched, err := s.fetchPassive(r, rc, id)
 	if err != nil && !errors.Is(err, memory.ErrQuarantined) {
-		s.failResponse(w, r, rc.Name, err)
+		s.failResponse(w, r, rc, err)
 		return
 	}
 	if err != nil || fetched.Memory.Scope == memory.ScopeProfile {
@@ -354,8 +354,8 @@ func (s *Server) respondDetail(w http.ResponseWriter, r *http.Request, rc reques
 		s.renderStatus(w, status, "detail.html", view)
 		return
 	}
-	page := s.authenticatedPage(cmpOr(view.Title, "Memory"), "")
-	page.Context, page.Page, page.Detail = rc.Name, pageDetail, &view
+	page := s.contextPage(r, rc, cmpOr(view.Title, "Memory"), "")
+	page.Page, page.Detail = pageDetail, &view
 	s.renderStatus(w, status, "layout.html", page)
 }
 
@@ -365,8 +365,8 @@ func (s *Server) respondEdit(w http.ResponseWriter, r *http.Request, rc requestC
 		s.renderStatus(w, status, "edit_form.html", view)
 		return
 	}
-	page := s.authenticatedPage("Edit memory", "")
-	page.Context, page.Page, page.Edit = rc.Name, pageEdit, &view
+	page := s.contextPage(r, rc, "Edit memory", "")
+	page.Page, page.Edit = pageEdit, &view
 	s.renderStatus(w, status, "layout.html", page)
 }
 
@@ -383,9 +383,9 @@ func (s *Server) renderStatus(w http.ResponseWriter, status int, name string, da
 }
 
 // failResponse is fail for pages and for htmx swaps: a fragment request gets only the error box.
-func (s *Server) failResponse(w http.ResponseWriter, r *http.Request, contextName string, err error) {
+func (s *Server) failResponse(w http.ResponseWriter, r *http.Request, rc requestContext, err error) {
 	if !isFragmentRequest(r) {
-		s.fail(w, r, contextName, err)
+		s.fail(w, r, rc, err)
 		return
 	}
 	status, message := s.actionStatus(r, err)

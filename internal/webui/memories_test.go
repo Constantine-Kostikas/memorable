@@ -43,6 +43,10 @@ func (r *recordingMemories) Search(_ context.Context, req memory.SearchRequest) 
 	return r.search, r.err
 }
 
+func (r *recordingMemories) Review(context.Context) (memory.ReviewQueue, error) {
+	return memory.ReviewQueue{}, nil
+}
+
 func (r *recordingMemories) lastList() memory.ListRequest {
 	r.mu.Lock()
 	defer r.mu.Unlock()

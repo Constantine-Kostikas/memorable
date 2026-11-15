@@ -29,6 +29,10 @@ const (
 
 type fakeMemories struct{ Memories }
 
+func (fakeMemories) Review(context.Context) (memory.ReviewQueue, error) {
+	return memory.ReviewQueue{}, nil
+}
+
 type fakeStore struct{}
 
 func (fakeStore) Stats(context.Context) (store.Stats, error) { return store.Stats{}, nil }

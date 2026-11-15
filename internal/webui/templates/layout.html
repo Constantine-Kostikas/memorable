@@ -16,14 +16,14 @@
     </nav>
     {{if .Context}}<nav aria-label="Pages" class="flex gap-4">
       <a href="/c/{{.Context}}/memories" class="hover:underline">Memories</a>
-      <a href="/c/{{.Context}}/review" class="hover:underline">Review ({{.ReviewCount}})</a>
+      <a href="/c/{{.Context}}/review" class="hover:underline">Review{{if not .ReviewCountUnknown}} ({{.ReviewCount}}){{end}}</a>
       <a href="/c/{{.Context}}/profile" class="hover:underline">Profile</a>
       <a href="/c/{{.Context}}/stats" class="hover:underline">Stats</a>
     </nav>{{end}}
     {{if .AdminUnlockedMinutes}}<span class="ml-auto rounded bg-amber-100 px-2 py-1 text-sm text-amber-900">Admin unlocked ({{.AdminUnlockedMinutes}} min left)</span>{{end}}
   </header>
   <main class="mx-auto max-w-5xl px-4 py-6">
-    {{block "content" .}}{{if eq .Page "memories"}}{{template "memories.html" .Memories}}{{else if eq .Page "detail"}}{{template "detail.html" .Detail}}{{else if eq .Page "edit"}}{{template "edit_form.html" .Edit}}{{else if .Message}}{{template "error.html" .}}{{end}}{{end}}
+    {{block "content" .}}{{if eq .Page "memories"}}{{template "memories.html" .Memories}}{{else if eq .Page "detail"}}{{template "detail.html" .Detail}}{{else if eq .Page "review"}}{{template "review.html" .Review}}{{else if eq .Page "profile"}}{{template "profile.html" .Profile}}{{else if eq .Page "stats"}}{{template "stats.html" .Stats}}{{else if eq .Page "edit"}}{{template "edit_form.html" .Edit}}{{else if .Message}}{{template "error.html" .}}{{end}}{{end}}
   </main>
 </body>
 </html>

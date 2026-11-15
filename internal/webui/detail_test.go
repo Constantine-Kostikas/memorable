@@ -39,6 +39,10 @@ type detailMemories struct {
 	updated  memory.Memory
 }
 
+func (d *detailMemories) Review(context.Context) (memory.ReviewQueue, error) {
+	return memory.ReviewQueue{}, nil
+}
+
 func (d *detailMemories) record(name string, args ...any) {
 	d.mu.Lock()
 	defer d.mu.Unlock()

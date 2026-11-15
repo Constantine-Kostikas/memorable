@@ -149,6 +149,9 @@ func (s *Server) handler(port int, extra func(*http.ServeMux)) http.Handler {
 // routes registers the page and action routes, all under /c/{context}/.
 func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /c/{context}/memories", s.inContext(s.handleMemories))
+	mux.HandleFunc("GET /c/{context}/review", s.inContext(s.handleReview))
+	mux.HandleFunc("GET /c/{context}/profile", s.inContext(s.handleProfile))
+	mux.HandleFunc("GET /c/{context}/stats", s.inContext(s.handleStats))
 	s.registerMemoryRoutes(mux)
 }
 

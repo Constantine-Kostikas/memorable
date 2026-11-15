@@ -1,0 +1,19 @@
+<h1 class="mb-4 text-xl font-semibold">Profile</h1>
+<p class="mb-4 text-sm text-gray-600">Profile memories apply to every context and are read-only here.</p>
+{{if .Rows}}
+<ul class="divide-y divide-gray-200 rounded border border-gray-200">
+  {{range .Rows}}
+  <li class="p-3">
+    <div class="flex flex-wrap items-baseline gap-3">
+      <a href="{{.Href}}" class="font-medium hover:underline">{{.Title}}</a>
+      {{if .Slug}}<span class="font-mono text-sm text-gray-600">{{.Slug}}</span>{{end}}
+      <span class="text-sm text-gray-600">{{.Type}}</span>
+      <span class="rounded bg-gray-100 px-1 text-sm">{{.Status}}</span>
+    </div>
+    <pre class="mt-1 whitespace-pre-wrap break-words text-sm text-gray-700">{{.Content}}</pre>
+  </li>
+  {{end}}
+</ul>
+{{else}}
+<p class="text-gray-600">No profile memories.</p>
+{{end}}

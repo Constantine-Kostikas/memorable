@@ -358,3 +358,21 @@ func TestQuarantineGuards(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, memory.StatusQuarantined, got[0].Status)
 }
+
+func TestStoreProfileListAppRole(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f := newFixture(t)
+	_, err := f.admin.Exec(ctx, `INSERT INTO mem_profile.memories (id, owner, slug, type, title, content, source, status, content_hash)
+		VALUES ($1, 'dev', 'style', 'user', 'Style', 'No em dashes.', 'user_stated', 'active', '\x00'),
+		       ($2, 'dev', 'gone', 'user', 'Gone', 'Deleted.', 'user_stated', 'deleted', '\x01')`,
+		uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7()))
+	require.NoError(t, err)
+
+	got, err := f.store.ProfileList(ctx)
+
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.Equal(t, "Style", got[0].Title)
+	assert.Equal(t, memory.ScopeProfile, got[0].Scope)
+}

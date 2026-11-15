@@ -17,11 +17,15 @@ type pageData struct {
 	Contexts             []string
 	CSRF                 string
 	ReviewCount          int
+	ReviewCountUnknown   bool
 	AdminUnlockedMinutes int
 	Page                 string
 	Memories             *memoriesView
 	Detail               *detailView
 	Edit                 *editView
+	Review               *reviewView
+	Profile              *profileView
+	Stats                *statsView
 }
 
 const pageMemories = "memories"

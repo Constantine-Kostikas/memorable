@@ -1,0 +1,39 @@
+<h1 class="mb-4 text-xl font-semibold">Review</h1>
+{{range .Sections}}
+<section class="mb-6">
+  <h2 class="mb-2 text-lg font-semibold">{{.Heading}} ({{len .Items}})</h2>
+  {{if .Items}}
+  <ul class="divide-y divide-gray-200 rounded border border-gray-200">
+    {{range .Items}}
+    <li class="flex flex-wrap items-baseline gap-3 p-3">
+      <a href="{{.Href}}" class="font-medium hover:underline">{{.Title}}</a>
+      <span class="text-sm text-gray-600">{{.Project}}</span>
+      <span class="text-sm text-gray-600">{{.Type}}</span>
+      <span class="rounded bg-gray-100 px-1 text-sm">{{.Status}}</span>
+      <span class="ml-auto text-sm text-gray-600">{{.Note}}</span>
+    </li>
+    {{end}}
+  </ul>
+  {{else}}<p class="text-gray-600">{{.Empty}}</p>{{end}}
+</section>
+{{end}}
+<section class="mb-6">
+  <h2 class="mb-2 text-lg font-semibold">Conflicts ({{len .Conflicts}})</h2>
+  {{if .Conflicts}}
+  <ul class="divide-y divide-gray-200 rounded border border-gray-200">
+    {{range .Conflicts}}
+    <li class="flex flex-wrap items-baseline gap-3 p-3">
+      <a href="{{.FromHref}}" class="font-mono hover:underline">{{.FromID}}</a>
+      <span class="text-sm text-gray-600">{{.Kind}}</span>
+      <a href="{{.ToHref}}" class="font-mono hover:underline">{{.ToID}}</a>
+    </li>
+    {{end}}
+  </ul>
+  {{else}}<p class="text-gray-600">No conflicts.</p>{{end}}
+</section>
+<section class="mb-6">
+  <h2 class="mb-2 text-lg font-semibold">Quarantined</h2>
+  {{if .QuarantinedCount}}
+  <p class="rounded border border-amber-200 bg-amber-50 p-3 text-amber-900">{{.QuarantinedCount}} quarantined. Content stays hidden until approved: run <code>memorable approve</code> or start <code>memorable ui --admin</code>.</p>
+  {{else}}<p class="text-gray-600">Nothing is quarantined.</p>{{end}}
+</section>

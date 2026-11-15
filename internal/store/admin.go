@@ -223,12 +223,7 @@ func (a *Admin) ProfileDelete(ctx context.Context, id uuid.UUID) error {
 
 // ProfileList returns non-deleted profile memories.
 func (a *Admin) ProfileList(ctx context.Context) ([]memory.Memory, error) {
-	rows, err := a.pool.Query(ctx, `SELECT `+memCols+`, true AS is_profile FROM mem_profile.memories
-		WHERE status <> 'deleted' ORDER BY created_at`)
-	if err != nil {
-		return nil, mapErr("profile list", err)
-	}
-	return collectMemories(rows, "profile list")
+	return listProfile(ctx, a.pool)
 }
 
 // ProfileSetEmbedding stores a profile memory's embedding.
