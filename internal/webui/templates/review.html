@@ -31,9 +31,9 @@
   </ul>
   {{else}}<p class="text-gray-600">No conflicts.</p>{{end}}
 </section>
-<section class="mb-6">
+{{with .Quarantined}}{{template "quarantined.html" .}}{{else}}<section class="mb-6">
   <h2 class="mb-2 text-lg font-semibold">Quarantined</h2>
   {{if .QuarantinedCount}}
   <p class="rounded border border-amber-200 bg-amber-50 p-3 text-amber-900">{{.QuarantinedCount}} quarantined. Content stays hidden until approved: run <code>memorable approve</code> or start <code>memorable ui --admin</code>.</p>
   {{else}}<p class="text-gray-600">Nothing is quarantined.</p>{{end}}
-</section>
+</section>{{end}}

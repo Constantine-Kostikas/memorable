@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -43,6 +44,8 @@ type reviewView struct {
 	Sections         []reviewSection
 	Conflicts        []conflictItem
 	QuarantinedCount int
+	// Quarantined is the admin view of quarantined memories; nil while admin is absent or locked.
+	Quarantined *quarantinedView
 }
 
 func reviewTotal(q memory.ReviewQueue) int {
@@ -64,11 +67,33 @@ func (s *Server) contextPage(r *http.Request, rc requestContext, title, message 
 	return page
 }
 
+// handleReview shows the review queue. With admin unlocked, quarantined memories are listed in
+// full; acquiring admin access first means an expiry found here already shows as locked.
 func (s *Server) handleReview(w http.ResponseWriter, r *http.Request, rc requestContext) {
+	var quarantined *quarantinedView
+	if s.admin != nil {
+		ops, err := s.adminOps(r, rc)
+		switch {
+		case err == nil:
+			view := s.loadQuarantined(r, rc, ops)
+			quarantined = &view
+		case errors.Is(err, errAdminUnavailable):
+			quarantined = &quarantinedView{Context: rc.Name, Error: adminUnavailableMessage(rc.Name)}
+		}
+	}
+	page, err := s.reviewPage(r, rc)
+	if err != nil {
+		s.fail(w, r, rc, err)
+		return
+	}
+	page.Review.Quarantined = quarantined
+	s.renderTemplate(w, "layout.html", page)
+}
+
+func (s *Server) reviewPage(r *http.Request, rc requestContext) (pageData, error) {
 	queue, err := rc.Backend.Memories.Review(r.Context())
 	if err != nil {
-		s.fail(w, r, rc, fmt.Errorf("load review queue: %w", err))
-		return
+		return pageData{}, fmt.Errorf("load review queue: %w", err)
 	}
 	view := reviewView{
 		Context: rc.Name,
@@ -84,7 +109,7 @@ func (s *Server) handleReview(w http.ResponseWriter, r *http.Request, rc request
 	page := s.authenticatedPage("Review", "")
 	page.Context, page.Page, page.Review = rc.Name, pageReview, &view
 	page.ReviewCount = reviewTotal(queue)
-	s.renderTemplate(w, "layout.html", page)
+	return page, nil
 }
 
 func flaggedNote(memory.Memory) string    { return "Flagged by feedback." }

@@ -19,6 +19,7 @@ type pageData struct {
 	ReviewCount          int
 	ReviewCountUnknown   bool
 	AdminUnlockedMinutes int
+	AdminLockedMessage   string
 	Page                 string
 	Memories             *memoriesView
 	Detail               *detailView
@@ -26,6 +27,7 @@ type pageData struct {
 	Review               *reviewView
 	Profile              *profileView
 	Stats                *statsView
+	Prune                *pruneView
 }
 
 const pageMemories = "memories"

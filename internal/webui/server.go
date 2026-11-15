@@ -74,7 +74,9 @@ type Config struct {
 	Initial  string
 	// Backend opens or returns the application backend of the named context.
 	Backend func(ctx context.Context, name string) (Backend, error)
-	// Admin opens or returns the admin operations of the named context; nil without --admin.
+	// Admin opens the admin operations of the named context; nil without --admin. The server
+	// calls it at most once per context and drops it when the unlock expires. A returned value
+	// with a Close() method is closed then, and by Server.Close.
 	Admin     func(ctx context.Context, name string) (AdminOps, error)
 	AdminIdle time.Duration
 	Now       func() time.Time
@@ -88,6 +90,7 @@ type Server struct {
 	tmpl      *template.Template
 	static    fs.FS
 	session   *session
+	admin     *adminLock
 	closeOnce sync.Once
 }
 
@@ -126,7 +129,12 @@ func New(cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Server{cfg: cfg, logger: cfg.Logger, tmpl: tmpl, static: static, session: sess}, nil
+	var admin *adminLock
+	if cfg.Admin != nil {
+		admin = newAdminLock(cfg.Admin, cfg.AdminIdle, cfg.Now)
+		cfg.Admin = nil
+	}
+	return &Server{cfg: cfg, logger: cfg.Logger, tmpl: tmpl, static: static, session: sess, admin: admin}, nil
 }
 
 // Handler returns the UI handler for a listener on 127.0.0.1:port.
@@ -153,6 +161,7 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /c/{context}/profile", s.inContext(s.handleProfile))
 	mux.HandleFunc("GET /c/{context}/stats", s.inContext(s.handleStats))
 	s.registerMemoryRoutes(mux)
+	s.registerAdminRoutes(mux)
 }
 
 // LaunchURL returns the one-time launch URL.
@@ -160,13 +169,20 @@ func (s *Server) LaunchURL(port int) string {
 	return fmt.Sprintf("http://127.0.0.1:%d/?token=%s", port, s.session.token)
 }
 
-// Close invalidates the session. It is safe to call more than once.
+// Close invalidates the session and locks admin for good. It is safe to call more than once.
 func (s *Server) Close() {
-	s.closeOnce.Do(s.session.close)
+	s.closeOnce.Do(func() {
+		s.session.close()
+		s.admin.release()
+	})
+}
+
+func contextBase(name string) string {
+	return "/c/" + url.PathEscape(name)
 }
 
 func (s *Server) contextHome(name string) string {
-	return "/c/" + url.PathEscape(name) + "/memories"
+	return contextBase(name) + "/memories"
 }
 
 // handleRoot exchanges the launch token for the session cookie, or sends an existing session home.
@@ -221,7 +237,13 @@ func (s *Server) inContext(h func(http.ResponseWriter, *http.Request, requestCon
 }
 
 func (s *Server) authenticatedPage(title, message string) pageData {
-	return pageData{Title: title, Message: message, Contexts: s.cfg.Contexts, CSRF: s.session.csrf}
+	page := pageData{Title: title, Message: message, Contexts: s.cfg.Contexts, CSRF: s.session.csrf}
+	minutes, locked := s.admin.status()
+	page.AdminUnlockedMinutes = minutes
+	if locked {
+		page.AdminLockedMessage = adminLockedMessage
+	}
+	return page
 }
 
 func (s *Server) renderError(w http.ResponseWriter, status int, data pageData) {
