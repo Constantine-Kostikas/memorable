@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"maps"
 	"time"
 
 	"golang.org/x/time/rate"
@@ -30,6 +31,7 @@ type Settings struct {
 	WritesPerMinute int
 	Process         string
 	Cwd             string
+	AuditDetails    map[string]any
 }
 
 // Service implements memorable's business rules.
@@ -84,7 +86,7 @@ func (s *Service) filter() Filter {
 }
 
 func (s *Service) audit(action string) AuditEntry {
-	return AuditEntry{Action: action, Cwd: s.settings.Cwd, Process: s.settings.Process}
+	return AuditEntry{Action: action, Cwd: s.settings.Cwd, Process: s.settings.Process, Details: maps.Clone(s.settings.AuditDetails)}
 }
 
 func (s *Service) writable() error {

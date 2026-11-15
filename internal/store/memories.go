@@ -29,13 +29,24 @@ func (s *Store) InsertSuperseding(ctx context.Context, m *memory.Memory, old uui
 		oldAudit.Action = "supersede"
 		oldAudit.MemoryID = old
 		oldAudit.ContentHash = nil
-		if err := setStatus(ctx, tx, s.owner, old, memory.StatusSuperseded, "supersede", oldAudit, false); err != nil {
-			return err
-		}
-		_, err := tx.Exec(ctx, `INSERT INTO memory_links (from_id, to_id, kind, owner) VALUES ($1, $2, $3, $4)
-			ON CONFLICT (from_id, to_id, kind) DO UPDATE SET removed_at = NULL`, m.ID, old, memory.LinkSupersedes, s.owner)
-		return mapErr("link supersede", err)
+		return s.supersede(ctx, tx, old, m.ID, oldAudit)
 	})
+}
+
+// MarkSuperseded marks old as superseded by an existing replacement and links them.
+func (s *Store) MarkSuperseded(ctx context.Context, old, replacement uuid.UUID, a memory.AuditEntry) error {
+	return s.withTx(ctx, func(tx pgx.Tx) error {
+		return s.supersede(ctx, tx, old, replacement, a)
+	})
+}
+
+func (s *Store) supersede(ctx context.Context, tx pgx.Tx, old, replacement uuid.UUID, a memory.AuditEntry) error {
+	if err := setStatus(ctx, tx, s.owner, old, memory.StatusSuperseded, "supersede", a, false); err != nil {
+		return err
+	}
+	_, err := tx.Exec(ctx, `INSERT INTO memory_links (from_id, to_id, kind, owner) VALUES ($1, $2, $3, $4)
+		ON CONFLICT (from_id, to_id, kind) DO UPDATE SET removed_at = NULL`, replacement, old, memory.LinkSupersedes, s.owner)
+	return mapErr("link supersede", err)
 }
 
 func insertMemory(ctx context.Context, tx pgx.Tx, m *memory.Memory, a memory.AuditEntry) error {

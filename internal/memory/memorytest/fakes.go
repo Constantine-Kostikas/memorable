@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"maps"
 	"math"
 	"slices"
 	"sort"
@@ -19,6 +20,16 @@ import (
 	"github.com/constantine-kostikas/memorable/internal/rank"
 )
 
+type feedbackRow struct {
+	memoryID uuid.UUID
+	entry    memory.FeedbackEntry
+}
+
+type auditRow struct {
+	memoryID uuid.UUID
+	record   memory.AuditRecord
+}
+
 // Repo is an in-memory memory.Repository and memory.JobRepository.
 type Repo struct {
 	mu        sync.Mutex
@@ -27,7 +38,8 @@ type Repo struct {
 	vecs      map[uuid.UUID][]float32
 	versions  map[uuid.UUID][]memory.Version
 	links     []memory.Link
-	feedback  []memory.FeedbackKind
+	feedback  []feedbackRow
+	auditLog  []auditRow
 	jobs      map[uuid.UUID]*memory.Job
 	jobDone   map[uuid.UUID]bool
 	events    []string
@@ -153,7 +165,7 @@ func (r *Repo) insertLocked(m *memory.Memory, a memory.AuditEntry) error {
 	cp := *m
 	r.mems[m.ID] = &cp
 	r.addVersion(cp, "create")
-	r.Audits = append(r.Audits, a.Action)
+	r.recordAudit(m.ID, a)
 	return nil
 }
 
@@ -178,6 +190,31 @@ func (r *Repo) InsertSuperseding(_ context.Context, m *memory.Memory, old uuid.U
 	o.Version++
 	r.addVersion(*o, "supersede")
 	r.links = append(r.links, memory.Link{From: m.ID, To: old, Kind: memory.LinkSupersedes})
+	return nil
+}
+
+// MarkSuperseded implements memory.Repository.
+func (r *Repo) MarkSuperseded(_ context.Context, old, replacement uuid.UUID, a memory.AuditEntry) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.Err != nil {
+		return r.Err
+	}
+	o, ok := r.mems[old]
+	if !ok {
+		return memory.ErrNotFound
+	}
+	if o.Status == memory.StatusQuarantined {
+		return memory.ErrQuarantined
+	}
+	if _, ok := r.mems[replacement]; !ok {
+		return memory.ErrNotFound
+	}
+	o.Status = memory.StatusSuperseded
+	o.Version++
+	r.addVersion(*o, "supersede")
+	r.recordAudit(old, a)
+	r.links = append(r.links, memory.Link{From: replacement, To: old, Kind: memory.LinkSupersedes})
 	return nil
 }
 
@@ -297,7 +334,7 @@ func (r *Repo) Update(_ context.Context, id uuid.UUID, expected *int, p memory.P
 	m.Version++
 	m.UpdatedAt = time.Now()
 	r.addVersion(*m, "update")
-	r.Audits = append(r.Audits, a.Action)
+	r.recordAudit(id, a)
 	return *m, nil
 }
 
@@ -324,7 +361,7 @@ func (r *Repo) SetStatus(_ context.Context, id uuid.UUID, s memory.Status, kind 
 		m.DeletedAt = nil
 	}
 	r.addVersion(*m, kind)
-	r.Audits = append(r.Audits, a.Action)
+	r.recordAudit(id, a)
 	return nil
 }
 
@@ -365,7 +402,7 @@ func (r *Repo) Restore(_ context.Context, id uuid.UUID, version *int, a memory.A
 	m.ContentHash = memory.ContentHash(m.Title, m.Content)
 	m.Version++
 	r.addVersion(*m, "restore")
-	r.Audits = append(r.Audits, a.Action)
+	r.recordAudit(id, a)
 	return *m, nil
 }
 
@@ -425,11 +462,39 @@ func (r *Repo) RecordAccess(_ context.Context, id uuid.UUID, project *string, we
 }
 
 // AddFeedback implements memory.Repository.
-func (r *Repo) AddFeedback(_ context.Context, _ uuid.UUID, k memory.FeedbackKind, _ string, _ *string) error {
+func (r *Repo) AddFeedback(_ context.Context, id uuid.UUID, k memory.FeedbackKind, note string, project *string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.feedback = append(r.feedback, k)
+	r.feedback = append(r.feedback, feedbackRow{memoryID: id,
+		entry: memory.FeedbackEntry{Kind: k, Note: note, Project: project, CreatedAt: time.Now()}})
 	return r.Err
+}
+
+// Activity implements memory.Repository; entries are newest first.
+func (r *Repo) Activity(_ context.Context, id uuid.UUID) (memory.Activity, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.Err != nil {
+		return memory.Activity{}, r.Err
+	}
+	var out memory.Activity
+	for _, f := range slices.Backward(r.feedback) {
+		if f.memoryID == id {
+			out.Feedback = append(out.Feedback, f.entry)
+		}
+	}
+	for _, a := range slices.Backward(r.auditLog) {
+		if a.memoryID == id {
+			out.Audit = append(out.Audit, a.record)
+		}
+	}
+	return out, nil
+}
+
+func (r *Repo) recordAudit(id uuid.UUID, a memory.AuditEntry) {
+	r.Audits = append(r.Audits, a.Action)
+	r.auditLog = append(r.auditLog, auditRow{memoryID: id, record: memory.AuditRecord{
+		Action: a.Action, Process: a.Process, Cwd: a.Cwd, Details: maps.Clone(a.Details), CreatedAt: time.Now()}})
 }
 
 // AddLink implements memory.Repository.

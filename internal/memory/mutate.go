@@ -173,3 +173,42 @@ func (s *Service) Activate(ctx context.Context, id uuid.UUID) error {
 	}
 	return s.repo.SetStatus(ctx, id, StatusActive, "status", s.audit("activate")) //nolint:wrapcheck // contextual
 }
+
+// Supersede retires old in favor of an existing active replacement.
+func (s *Service) Supersede(ctx context.Context, old, replacement uuid.UUID) error {
+	if err := s.writable(); err != nil {
+		return err
+	}
+	if old == replacement {
+		return fmt.Errorf("%w: a memory cannot supersede itself", ErrValidation)
+	}
+	oldMem, err := s.loadOwned(ctx, old)
+	if err != nil {
+		return err
+	}
+	if oldMem.Status == StatusQuarantined {
+		return fmt.Errorf("memory %s: %w: %w", old, ErrValidation, ErrQuarantined)
+	}
+	replacementMem, err := s.loadOwned(ctx, replacement)
+	if err != nil {
+		return err
+	}
+	if replacementMem.Status != StatusActive {
+		return fmt.Errorf("%w: replacement %s is %s, only an active memory can replace another", ErrValidation, replacement, replacementMem.Status)
+	}
+	return s.repo.MarkSuperseded(ctx, old, replacement, s.audit("supersede")) //nolint:wrapcheck // contextual
+}
+
+func (s *Service) loadOwned(ctx context.Context, id uuid.UUID) (Memory, error) {
+	ms, err := s.repo.GetByIDs(ctx, []uuid.UUID{id})
+	if err != nil {
+		return Memory{}, err //nolint:wrapcheck // repository errors are already contextual
+	}
+	if len(ms) == 0 || ms[0].Owner != s.settings.Owner {
+		return Memory{}, fmt.Errorf("memory %s: %w", id, ErrNotFound)
+	}
+	if ms[0].Scope == ScopeProfile {
+		return Memory{}, fmt.Errorf("%w: profile memories are managed with `memorable profile`", ErrReadOnly)
+	}
+	return ms[0], nil
+}

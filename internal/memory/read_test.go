@@ -295,3 +295,49 @@ func TestSearch_Explain(t *testing.T) {
 	assert.InDelta(t, 1.0/61, x.RRF, 1e-12)
 	assert.InDelta(t, res.Results[0].Score, x.Boost.Final, 1e-12)
 }
+
+func TestActivityReturnsFeedbackAndAudit(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	e := newEnv(t, nil)
+	m := created(t, e, note("Ports", "postgres on 5433"))
+	require.NoError(t, e.svc.Feedback(ctx, m.ID, memory.FeedbackUseful, "note"))
+	title := "Ports v2"
+	_, err := e.svc.Update(ctx, m.ID, nil, memory.Patch{Title: &title})
+	require.NoError(t, err)
+
+	got, err := e.svc.Activity(ctx, m.ID)
+	require.NoError(t, err)
+	require.Len(t, got.Feedback, 1)
+	assert.Equal(t, "note", got.Feedback[0].Note)
+	assert.Equal(t, memory.FeedbackUseful, got.Feedback[0].Kind)
+	actions := make([]string, 0, len(got.Audit))
+	for _, a := range got.Audit {
+		actions = append(actions, a.Action)
+	}
+	assert.Equal(t, []string{"update", "create"}, actions)
+	assert.Equal(t, "1@test", got.Audit[0].Process)
+	assert.Equal(t, "/p/proj", got.Audit[0].Cwd)
+}
+
+func TestAuditDetailsPropagate(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	e := newEnv(t, func(s *memory.Settings) { s.AuditDetails = map[string]any{"via": "ui"} })
+	m := created(t, e, note("Ports", "postgres on 5433"))
+	require.NoError(t, e.svc.Delete(ctx, m.ID))
+
+	got, err := e.svc.Activity(ctx, m.ID)
+	require.NoError(t, err)
+	require.Len(t, got.Audit, 2)
+	for _, a := range got.Audit {
+		assert.Equal(t, "ui", a.Details["via"], a.Action)
+	}
+
+	plain := newEnv(t, nil)
+	pm := created(t, plain, note("Ports", "postgres on 5433"))
+	pa, err := plain.svc.Activity(ctx, pm.ID)
+	require.NoError(t, err)
+	require.Len(t, pa.Audit, 1)
+	assert.Empty(t, pa.Audit[0].Details)
+}

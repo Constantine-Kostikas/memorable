@@ -224,3 +224,8 @@ func (s *Service) Preload(ctx context.Context) ([]Summary, error) {
 	}
 	return out, nil
 }
+
+// Activity returns a memory's feedback and audit entries, newest first.
+func (s *Service) Activity(ctx context.Context, id uuid.UUID) (Activity, error) {
+	return s.repo.Activity(ctx, id) //nolint:wrapcheck // repository errors are already contextual
+}
