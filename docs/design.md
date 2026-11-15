@@ -450,7 +450,7 @@ backups_keep = 14
 - Private GitHub repository `constantine-kostikas/memorable` (created with author approval at the first commit).
 - Root files: `Makefile`, `.golangci.yml`, `.gitignore`, `CLAUDE.md` (with the always-load directive for the `golang-how-to` skill), `README.md`.
 - **CI** (`.github/workflows/ci.yml`, push and PR to main): build, `go test -race`, golangci-lint, govulncheck, gosec, integration tests.
-- **Release** (`.github/workflows/release.yml`, `v*` tags only): GoReleaser v2, `CGO_ENABLED=0`, linux and darwin on amd64 and arm64, archive names matching `uname`, GPG-signed checksums (`GPG_PRIVATE_KEY`, `GPG_PASSPHRASE` secrets), GitHub-native release notes grouped by PR label (`.github/release.yml`, labels applied from branch prefixes by `.github/labeler.yml`), version via ldflags. Mirrors GitQuick's setup without its push-to-main trigger.
+- **Release** (`.github/workflows/release.yml`, on a pushed `v*` tag or the "Run workflow" button, which tags the head of main with the entered version and releases it in the same run): GoReleaser v2, `CGO_ENABLED=0`, linux and darwin on amd64 and arm64, archive names matching `uname`, GPG-signed checksums (`GPG_PRIVATE_KEY`, `GPG_PASSPHRASE` secrets), GitHub-native release notes grouped by PR label (`.github/release.yml`, labels applied from branch prefixes by `.github/labeler.yml`), version via ldflags. Mirrors GitQuick's setup without its push-to-main trigger.
 - **Homebrew tap:** configured in `.goreleaser.yaml` but commented out until the repository is made public.
 - **Install while private** (colleagues are collaborators). `gh release download` without a tag skips pre-releases, so name the newest tag:
   ```sh
