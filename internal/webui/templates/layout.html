@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{.CSRF}}">
+  <meta name="htmx-config" content='{"includeIndicatorStyles":false,"allowEval":false}'>
+  <title>{{block "title" .}}{{.Title}}{{end}} - memorable</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/htmx.min.js" defer></script>
+</head>
+<body hx-headers='{"X-CSRF-Token":"{{.CSRF}}"}' class="bg-white text-gray-900 antialiased">
+  <header class="flex items-center gap-4 border-b border-gray-200 px-4 py-3">
+    <select name="context" aria-label="Context" hx-post="/context" hx-trigger="change" class="rounded border border-gray-300 px-2 py-1">
+      {{range .Contexts}}<option value="{{.}}"{{if eq . $.Context}} selected{{end}}>{{.}}</option>{{end}}
+    </select>
+    <nav class="flex gap-4">
+      <a href="/memories" class="hover:underline">Memories</a>
+      <a href="/review" class="hover:underline">Review ({{.ReviewCount}})</a>
+      <a href="/profile" class="hover:underline">Profile</a>
+      <a href="/stats" class="hover:underline">Stats</a>
+    </nav>
+    {{if .AdminUnlockedMinutes}}<span class="ml-auto rounded bg-amber-100 px-2 py-1 text-sm text-amber-900">Admin unlocked ({{.AdminUnlockedMinutes}} min left)</span>{{end}}
+  </header>
+  <main class="mx-auto max-w-5xl px-4 py-6">
+    {{block "content" .}}{{if .Message}}{{template "error.html" .}}{{end}}{{end}}
+  </main>
+</body>
+</html>

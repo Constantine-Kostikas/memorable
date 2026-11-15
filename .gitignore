@@ -1,6 +1,7 @@
 # Binaries and build output
 /memorable
 /bin/
+/bin/tailwindcss
 /dist/
 *.test
 *.out
