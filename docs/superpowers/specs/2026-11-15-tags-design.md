@@ -41,17 +41,17 @@ The goal is organizing (browse by area) and better search recall.
 
 ### 1. Tags in ranking
 
-- **Keyword:** new migration (`00002_tags_fts.sql`) in both `context` and `profile` schemas. Rebuild the generated `fts` column as title (weight A) + tags (weight A) + content (weight B), and recreate `memories_fts_idx`. Generated columns require immutable expressions, and `array_to_string` is expected to be marked stable (confirm in `pg_proc`); if so, add an `IMMUTABLE` SQL helper (for example `memorable_tags_text(text[])`) and use that.
+- **Keyword:** new migration (`00003_tags_fts.sql`; goose version 2 is the Go embedding migration) in both `context` and `profile` schemas. Rebuild the generated `fts` column as title (weight A) + tags (weight A) + content (weight B), and recreate `memories_fts_idx`. Generated columns require immutable expressions, and `array_to_string` is expected to be marked stable (confirm in `pg_proc`); if so, add an `IMMUTABLE` SQL helper (for example `memorable_tags_text(text[])`) and use that.
 - **Semantic:** `DocumentText(title, content string)` becomes `DocumentText(title string, tags []string, content string)`, producing `title: … | tags: a, b | text: …`. The `tags:` segment is omitted when there are no tags, so untagged memories keep byte-identical embedding text and need no re-embed.
 - **Re-embed on tag change:** a change to tags alone now marks the embedding stale, in `internal/memory` (update path) and `internal/adminops` (profile). Today only title or content changes do.
-- **Rollout:** after the migration, `memorable reembed` refreshes tagged memories. The release note says so.
+- **Rollout:** after the migration, `memorable reembed --all` refreshes tagged memories, including profile memories. The release note says so.
 - **Eval:** add cases to `internal/memory/eval_test.go` where the only link between query and memory is a tag. Compare recall before and after.
 
 ### 2. Visible vocabulary
 
 - **MCP tool `memory_tags`:** returns tags in use with counts, for the current project plus context-global plus profile; `all_projects` widens it. Compact output, sorted by count.
 - **CLI `memorable tags`:** same data, text or JSON (`-o json`), `--all-projects`.
-- **Preload:** one extra line, `Tags in use: a (12), b (7), …`, top 20 by count, counted inside the existing 4,000-character budget. Claude sees the vocabulary at session start without a tool call.
+- **Preload:** one extra line, `Tags in use: a (12), b (7), …`, top 20 by count, outside the existing 4,000-character summary budget (20 tags of at most 40 characters bound it). Claude sees the vocabulary at session start without a tool call.
 - **Normalization on write:** lowercase, trim, replace spaces and underscores with hyphens, and dedupe before validation, so `Go` and `go` collapse instead of failing validation.
 
 ### 3. Guidance
@@ -62,7 +62,7 @@ Add to `docs/claude-md-snippet.md`: tag every new memory with 1 to 3 tags; reuse
 
 - `memory_search` and `memory_list` gain `tags_any` (match at least one, `tags && $n`) beside the existing `tags` (match all, `tags @> $n`). Both may be combined.
 - CLI: `--tag` stays all-of; new repeatable `--any-tag`.
-- Web UI: the tags filter offers all/any.
+- Web UI: the tags filter offers all/any (added in the web UI plan, which is not merged yet).
 
 ## Decided by the user
 
