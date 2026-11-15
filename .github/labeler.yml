@@ -1,0 +1,25 @@
+# Maps PR branch prefixes to labels; .github/release.yml groups release notes by these labels.
+feature:
+  - head-branch: ["^feat/", "^feature/"]
+bug:
+  - head-branch: ["^fix/", "^bug/", "^bugfix/"]
+hotfix:
+  - head-branch: ["^hotfix/"]
+improvement:
+  - head-branch: ["^improvement/", "^improve/", "^enhancement/"]
+security:
+  - head-branch: ["^sec/", "^security/"]
+performance:
+  - head-branch: ["^perf/"]
+refactor:
+  - head-branch: ["^refactor/"]
+documentation:
+  - head-branch: ["^docs/", "^doc/"]
+dependencies:
+  - head-branch: ["^deps/", "^dependabot/"]
+ci:
+  - head-branch: ["^ci/", "^build/"]
+tests:
+  - head-branch: ["^test/", "^tests/"]
+chore:
+  - head-branch: ["^chore/"]

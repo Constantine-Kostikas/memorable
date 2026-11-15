@@ -50,29 +50,9 @@ checksum:
   name_template: checksums.txt
 
 changelog:
-  sort: asc
-  format: "{{ .SHA }}: {{ .Message }}{{ with .AuthorUsername }} (@{{ . }}){{ end }}"
-  filters:
-    exclude:
-      - "^test:"
-      - "^test\\("
-      - "^chore\\(deps\\): "
-      - "^(build|ci): "
-      - "^docs: "
-      - Merge pull request
-      - Merge branch
-  groups:
-    - title: "New Features"
-      regexp: '^.*?feat(\(.+\))??!?:.+$'
-      order: 100
-    - title: "Security updates"
-      regexp: '^.*?sec(\(.+\))??!?:.+$'
-      order: 150
-    - title: "Bug fixes"
-      regexp: '^.*?(fix|refactor)(\(.+\))??!?:.+$'
-      order: 200
-    - title: "Other changes"
-      order: 999
+  # Notes come from GitHub's generator: one line per merged PR, grouped by the PR labels
+  # mapped in .github/release.yml. Labels are applied from branch names by .github/labeler.yml.
+  use: github-native
 
 release:
   # Tags like v0.1.0-alpha.1 are published as pre-releases.
