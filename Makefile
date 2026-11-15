@@ -10,8 +10,8 @@ TAILWIND_SHA256_linux_x64   := dc61b3ac6b8c9ca874c0cc4c57b2409791a64c5540404ca5f
 TAILWIND_SHA256_linux_arm64 := 55fd0b241214eff3de1e8ee4f22796662f2d2e7a49bcfca7477cfd0bac398195
 TAILWIND_SHA256_macos_x64   := 7922e0953f2110c05976e3bf58f14e643d90427575e766b7d433f5f80cbee7e1
 TAILWIND_SHA256_macos_arm64 := cdf646702987a743464dff4d9c60fd4480d1c1e73dd819a9a67f1078815dce9d
-HTMX_VERSION              := v2.0.11
-HTMX_SHA256               := d6fdc75f204e6bdefa99b69bf1e6d4ac69b8a364f77929f45c13476b4000f717
+HTMX_VERSION              := v2.0.10
+HTMX_SHA256               := 71ea67185bfa8c98c39d31717c6fce5d852370fcdfd129db4543774d3145c0de
 
 TAILWIND_OS   := $(if $(filter Darwin,$(shell uname -s)),macos,linux)
 TAILWIND_ARCH := $(if $(filter x86_64 amd64,$(shell uname -m)),x64,arm64)

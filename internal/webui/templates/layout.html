@@ -11,9 +11,9 @@
 </head>
 <body hx-headers='{"X-CSRF-Token":"{{.CSRF}}"}' class="bg-white text-gray-900 antialiased">
   <header class="flex items-center gap-4 border-b border-gray-200 px-4 py-3">
-    <select name="context" aria-label="Context" hx-post="/context" hx-trigger="change" class="rounded border border-gray-300 px-2 py-1">
-      {{range .Contexts}}<option value="{{.}}"{{if eq . $.Context}} selected{{end}}>{{.}}</option>{{end}}
-    </select>
+    <nav aria-label="Contexts" class="flex gap-2">
+      {{range .Contexts}}<a href="/c/{{.}}/memories"{{if eq . $.Context}} aria-current="page" class="rounded bg-gray-900 px-2 py-1 text-white"{{else}} class="rounded border border-gray-300 px-2 py-1 hover:bg-gray-100"{{end}}>{{.}}</a>{{end}}
+    </nav>
     <nav class="flex gap-4">
       <a href="/memories" class="hover:underline">Memories</a>
       <a href="/review" class="hover:underline">Review ({{.ReviewCount}})</a>
