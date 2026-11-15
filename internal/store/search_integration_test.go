@@ -320,6 +320,52 @@ func TestAdmin_PurgeApproveProfile(t *testing.T) {
 	assert.GreaterOrEqual(t, n, int64(0))
 }
 
+func TestAdminPruneCountAndAuditDetails(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f := newFixture(t)
+	cfg := testConfig().Database
+	cfg.Host, cfg.Port, cfg.Name = f.db.Host, f.db.Port, f.db.Name
+	admin, err := store.OpenAdmin(ctx, cfg, storetest.AdminPassword, "mem_personal", "dev",
+		store.WithAuditDetails(map[string]any{"via": "ui"}))
+	require.NoError(t, err)
+	t.Cleanup(admin.Close)
+
+	quarantined := insertWith(t, f, "q", "q", func(m *memory.Memory) { m.Status = memory.StatusQuarantined }, -1)
+	victim := insertWith(t, f, "secret", "leaked", nil, -1)
+	require.NoError(t, admin.Approve(ctx, quarantined.ID))
+	require.NoError(t, admin.Purge(ctx, victim.ID))
+
+	for _, id := range []uuid.UUID{quarantined.ID, victim.ID} {
+		var via string
+		require.NoError(t, f.admin.QueryRow(ctx,
+			`SELECT details->>'via' FROM mem_personal.audit_log WHERE memory_id = $1 AND action <> 'create'`, id).Scan(&via))
+		assert.Equal(t, "ui", via)
+	}
+	var untagged int
+	require.NoError(t, f.admin.QueryRow(ctx,
+		`SELECT count(*) FROM mem_personal.audit_log WHERE action IN ('approve', 'purge') AND details->>'via' IS DISTINCT FROM 'ui'`).Scan(&untagged))
+	assert.Zero(t, untagged)
+
+	_, err = f.store.LogSearch(ctx, "old", nil, nil)
+	require.NoError(t, err)
+	_, err = f.admin.Exec(ctx, `UPDATE mem_personal.access_events SET created_at = now() - interval '100 days'`)
+	require.NoError(t, err)
+	_, err = f.store.LogSearch(ctx, "recent", nil, nil)
+	require.NoError(t, err)
+
+	cutoff := time.Now().Add(-90 * 24 * time.Hour)
+	counted, err := admin.PruneCount(ctx, cutoff)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), counted)
+	deleted, err := admin.Prune(ctx, cutoff)
+	require.NoError(t, err)
+	assert.Equal(t, counted, deleted)
+	after, err := admin.PruneCount(ctx, cutoff)
+	require.NoError(t, err)
+	assert.Zero(t, after)
+}
+
 func vecLiteral(dims, hot int) string {
 	b := make([]byte, 0, dims*2+2)
 	b = append(b, '[')

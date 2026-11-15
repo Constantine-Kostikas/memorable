@@ -1,44 +1,13 @@
 package main
 
 import (
-	"context"
 	"fmt"
 
-	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 
-	"github.com/constantine-kostikas/memorable/internal/embed"
+	"github.com/constantine-kostikas/memorable/internal/adminops"
 	"github.com/constantine-kostikas/memorable/internal/memory"
-	"github.com/constantine-kostikas/memorable/internal/scan"
 )
-
-// profileEmbedding computes an embedding for profile text; nil when Ollama is unavailable (text search still works).
-func profileEmbedding(ctx context.Context, t *adminTarget, title, content string) ([]float32, string) {
-	emb, err := embed.NewOllama(t.cfg.Embedding, nil)
-	if err != nil {
-		return nil, ""
-	}
-	vecs, err := emb.Embed(ctx, memory.EmbedDocument, []string{memory.DocumentText(title, content)})
-	if err != nil {
-		return nil, ""
-	}
-	return vecs[0], emb.Model()
-}
-
-func scanProfileText(title, content string, tags []string) error {
-	sec, err := scan.NewSecretScanner()
-	if err != nil {
-		return err //nolint:wrapcheck // already contextual
-	}
-	text := title + "\n" + content
-	for _, t := range tags {
-		text += " " + t
-	}
-	if fs := sec.Scan(text); len(fs) > 0 {
-		return fmt.Errorf("%w: %s", memory.ErrSecretDetected, fs[0].Rule)
-	}
-	return nil
-}
 
 func newProfileCmd(d deps, flags *rootFlags) *cobra.Command {
 	cmd := &cobra.Command{
@@ -81,22 +50,17 @@ func newProfileCmd(d deps, flags *rootFlags) *cobra.Command {
 			if err := n.Validate(); err != nil {
 				return usageError{err}
 			}
-			if err := scanProfileText(title, content, tags); err != nil {
-				return err
-			}
 			target, err := openAdmin(cmd.Context(), cmd, d, flags, contextName)
 			if err != nil {
 				return err
 			}
 			defer target.Close()
-			m := &memory.Memory{ID: uuid.Must(uuid.NewV7()), Owner: ownerName(d.getenv), Type: t, Title: title, Content: content,
-				Tags: tags, Source: memory.SourceUserStated, Pinned: pinned, ContentHash: memory.ContentHash(title, content)}
-			vec, model := profileEmbedding(cmd.Context(), target, title, content)
-			if err := target.admin.ProfileInsert(cmd.Context(), m, vec, model); err != nil {
+			m, err := target.ops.ProfileAdd(cmd.Context(), adminops.ProfileInput{Title: title, Content: content, Tags: tags, Type: t, Pinned: pinned})
+			if err != nil {
 				return err //nolint:wrapcheck // shown to the user as is
 			}
 			p.Success("added profile memory " + m.ID.String())
-			if vec == nil {
+			if m.EmbeddingModel == nil {
 				p.Warn("Ollama unavailable: stored without an embedding; run `memorable reembed --all` later")
 			}
 			return nil
@@ -122,7 +86,7 @@ func newProfileCmd(d deps, flags *rootFlags) *cobra.Command {
 				return err
 			}
 			defer target.Close()
-			mems, err := target.admin.ProfileList(cmd.Context())
+			mems, err := target.ops.ProfileList(cmd.Context())
 			if err != nil {
 				return err //nolint:wrapcheck // shown to the user as is
 			}
@@ -160,7 +124,7 @@ func newProfileCmd(d deps, flags *rootFlags) *cobra.Command {
 				return err
 			}
 			defer target.Close()
-			mems, err := target.admin.ProfileList(cmd.Context())
+			mems, err := target.ops.ProfileList(cmd.Context())
 			if err != nil {
 				return err //nolint:wrapcheck // shown to the user as is
 			}
@@ -189,15 +153,12 @@ func newProfileCmd(d deps, flags *rootFlags) *cobra.Command {
 				p.Line("no changes")
 				return nil
 			}
-			if err := scanProfileText(doc.Title, doc.Content, doc.Tags); err != nil {
-				return err
+			typ, err := memory.ParseType(doc.Type)
+			if err != nil {
+				return usageError{err}
 			}
-			var vec []float32
-			model := ""
-			if patch.Title != nil || patch.Content != nil {
-				vec, model = profileEmbedding(cmd.Context(), target, doc.Title, doc.Content)
-			}
-			out, err := target.admin.ProfileUpdate(cmd.Context(), id, patch, vec, model)
+			out, err := target.ops.ProfileEdit(cmd.Context(), id, adminops.ProfileInput{
+				Title: doc.Title, Content: doc.Content, Tags: doc.Tags, Type: typ, Pinned: doc.Pinned, ExpiresAt: patch.ExpiresAt})
 			if err != nil {
 				return err //nolint:wrapcheck // shown to the user as is
 			}
@@ -228,7 +189,7 @@ func newProfileCmd(d deps, flags *rootFlags) *cobra.Command {
 				return err
 			}
 			defer target.Close()
-			if err := target.admin.ProfileDelete(cmd.Context(), id); err != nil {
+			if err := target.ops.ProfileDelete(cmd.Context(), id); err != nil {
 				return err //nolint:wrapcheck // shown to the user as is
 			}
 			p.Success("deleted profile memory " + id.String())

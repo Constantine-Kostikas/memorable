@@ -8,12 +8,17 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"charm.land/huh/v2"
 	"github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
 
+	"github.com/constantine-kostikas/memorable/internal/adminops"
 	"github.com/constantine-kostikas/memorable/internal/config"
+	"github.com/constantine-kostikas/memorable/internal/embed"
+	"github.com/constantine-kostikas/memorable/internal/memory"
+	"github.com/constantine-kostikas/memorable/internal/scan"
 	"github.com/constantine-kostikas/memorable/internal/store"
 )
 
@@ -73,6 +78,7 @@ type adminTarget struct {
 	context string
 	dsn     string
 	admin   *store.Admin
+	ops     *adminops.Ops
 }
 
 func (t *adminTarget) Close() {
@@ -114,6 +120,16 @@ func openAdmin(ctx context.Context, cmd *cobra.Command, d deps, flags *rootFlags
 		admin.Close()
 		return nil, err //nolint:wrapcheck // already an ErrUnavailable
 	}
+	sec, err := scan.NewSecretScanner()
+	if err != nil {
+		admin.Close()
+		return nil, err //nolint:wrapcheck // already contextual
+	}
+	var emb memory.Embedder
+	if ollama, err := embed.NewOllama(cfg.Embedding, nil); err == nil {
+		emb = ollama
+	}
 	return &adminTarget{cfg: cfg, schema: schema, context: contextName,
-		dsn: store.DSN(cfg.Database, cfg.Database.AdminUser, pw), admin: admin}, nil
+		dsn: store.DSN(cfg.Database, cfg.Database.AdminUser, pw), admin: admin,
+		ops: adminops.New(admin, emb, sec, cfg.Retention.AccessEventsDays, time.Now)}, nil
 }
