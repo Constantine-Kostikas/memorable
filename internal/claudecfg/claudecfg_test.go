@@ -124,3 +124,9 @@ func TestDiff_ElidesUnchangedLines(t *testing.T) {
 	assert.Contains(t, d, "  ...")
 	assert.Contains(t, d, "+new")
 }
+
+func TestRulesDenyUI(t *testing.T) {
+	t.Parallel()
+	_, _, deny := Rules("/home/x/.config/memorable/credentials.json")
+	assert.Contains(t, deny, "Bash(memorable ui:*)")
+}

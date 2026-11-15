@@ -96,7 +96,7 @@ paths = ["~/code", "~/notes"]
 paths = ["~/work"]
 ```
 
-Each context is a separate Postgres schema, and a Claude Code session can only see the context of its directory. Writes from directories that match no context are refused. Memories in the `profile` context, such as your writing preferences, are readable from every context, and only you can write them, with `memorable profile add`.
+Each context is a separate Postgres schema, and a Claude Code session can only see the context of its directory. Writes from directories that match no context are refused. Memories in the `profile` context, such as your writing preferences, are readable from every context, and only you can write them, with `memorable profile add` or `memorable ui --admin`.
 
 ## Daily use
 
@@ -116,6 +116,12 @@ Claude uses the MCP tools on its own once the CLAUDE.md block is in place. You c
 | `memorable approve --list` | Review memories quarantined by the injection scanner (admin) |
 
 Every read command supports `-o json`. Output is plain text when piped.
+
+## Web UI
+
+`memorable ui` opens a local web interface for one context at a time: browse and filter memories, search with a per-result score breakdown, and edit, flag, delete, restore, link, or supersede from the browser. Review and stats pages match `memorable review` and `memorable stats`. `memorable ui --admin` prompts for the admin password in the terminal (it refuses a non-TTY) and adds approve, purge, prune, and profile writes; the unlock expires after 15 idle minutes, and purge requires typing the slug or id. Options: `--context <name>`, `--port <n>` (random free port by default), and `--no-browser`. `memorable setup` adds the Claude Code deny rule `Bash(memorable ui:*)`, so an agent cannot launch it.
+
+The server binds `127.0.0.1` only. The launch URL on stderr carries a single-use token that is exchanged for an `HttpOnly`, `SameSite=Strict` cookie, and the browser is opened on a private 0600 redirect file so the token never appears in a process argument list. Requests are checked for CSRF token, `Host`, and cross-origin headers, a strict Content-Security-Policy applies, and htmx and CSS are embedded with no CDN. Limits: a link previewer or scanner that fetches the launch URL first consumes the token, so restart `memorable ui` for a new link. While `--admin` is unlocked, anyone holding the session cookie has admin rights in the open contexts, and cookies are not scoped by port.
 
 ## Backups and restore
 
@@ -150,14 +156,14 @@ Run `memorable doctor`. It checks the config, keyring, container, port, database
 - **Secrets** are rejected on every write, using the gitleaks rule set plus an entropy check.
 - **Prompt injection**: text that looks like instructions to an agent is quarantined until you approve it, and quarantined content is never returned to Claude. Memories from tool output are marked unverified and never preloaded.
 - **Isolation**: a session is bound to one context schema and cannot choose another.
-- **Recoverable**: the app role cannot delete rows. Deletes are soft, every change is versioned, and only `memorable purge` (admin) erases data.
+- **Recoverable**: the app role cannot delete rows. Deletes are soft, every change is versioned, and only `memorable purge` (admin, from the CLI or `memorable ui --admin`) erases data.
 - **Local only**: Postgres and Ollama listen on `127.0.0.1`, and remote embedding providers need `allow_remote = true`.
 - **Updates are verified**: `memorable update` downloads over HTTPS from `api.github.com` (following redirects only to `*.githubusercontent.com`), checks a detached GPG signature by key `D4A4DEE111ABA5ACBE1F49773B21B7770B4334A4` before trusting any checksum, and fails closed.
 - **Docker is a soft boundary**: anyone who can run `docker exec` has full database access. These Claude Code deny rules keep Claude out (setup adds them):
 
 ```json
 "deny": [
-  "Bash(memorable purge:*)", "Bash(memorable approve:*)", "Bash(memorable profile:*)",
+  "Bash(memorable purge:*)", "Bash(memorable approve:*)", "Bash(memorable profile:*)", "Bash(memorable ui:*)",
   "Bash(docker exec memorable-postgres:*)", "Bash(docker inspect memorable-postgres:*)", "Bash(psql:*)",
   "Read(~/.config/memorable/credentials.json)"
 ]

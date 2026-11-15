@@ -1,6 +1,6 @@
 # memorable web UI Design
 
-Status: draft for approval
+Status: implemented
 Date: 2026-11-15
 Amends: `docs/design.md` (binding authority); the amendments are listed in section 9 and land with the implementation.
 
