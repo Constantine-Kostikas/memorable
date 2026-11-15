@@ -1,0 +1,25 @@
+# Groups GitHub-generated release notes by PR label. A PR lands in the first category that
+# matches, so the catch-all stays last. Labels are applied by .github/workflows/labeler.yml.
+changelog:
+  exclude:
+    labels:
+      - skip-changelog
+      - ci
+      - tests
+  categories:
+    - title: New Features
+      labels: [feature]
+    - title: Security updates
+      labels: [security]
+    - title: Hotfixes
+      labels: [hotfix]
+    - title: Bug fixes
+      labels: [bug]
+    - title: Improvements
+      labels: [improvement, performance, refactor]
+    - title: Documentation
+      labels: [documentation]
+    - title: Dependencies
+      labels: [dependencies]
+    - title: Other changes
+      labels: ["*"]
