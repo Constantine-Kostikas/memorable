@@ -20,7 +20,7 @@ var (
 	// ErrDevBuild means the running binary has no release version to compare against.
 	ErrDevBuild = errors.New("this is a development build; pass --force to replace it with a release")
 	// ErrHomebrew means Homebrew owns the binary.
-	ErrHomebrew = errors.New("memorable was installed with Homebrew; run `brew upgrade memorable` instead")
+	ErrHomebrew = errors.New("this install is managed by Homebrew; run `brew upgrade memorable` instead")
 	// ErrInvalidVersion means --version is not a semantic version.
 	ErrInvalidVersion = errors.New("invalid version")
 )

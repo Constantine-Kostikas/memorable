@@ -21,6 +21,7 @@ import (
 	"github.com/constantine-kostikas/memorable/internal/scope"
 	"github.com/constantine-kostikas/memorable/internal/secret"
 	"github.com/constantine-kostikas/memorable/internal/store"
+	"github.com/constantine-kostikas/memorable/internal/update"
 )
 
 // app is a fully wired session: config, resolved scope, store, and service.
@@ -52,6 +53,7 @@ type deps struct {
 	lookPath      func(string) (string, error)
 	executable    func() (string, error)
 	goos          string
+	selfUpdate    func(cmd *cobra.Command, current string, opts update.Options) (update.Result, error)
 }
 
 func defaultDeps() deps {
@@ -62,6 +64,9 @@ func defaultDeps() deps {
 	}
 	d.build = func(ctx context.Context, cfgPath string, dirs []string, logger *slog.Logger) (*app, error) {
 		return buildApp(ctx, d, cfgPath, dirs, logger)
+	}
+	d.selfUpdate = func(cmd *cobra.Command, current string, opts update.Options) (update.Result, error) {
+		return runSelfUpdate(d, cmd, current, opts)
 	}
 	return d
 }
