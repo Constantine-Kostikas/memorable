@@ -72,7 +72,7 @@ Admin handling was a separate decision:
 
 - Binds `127.0.0.1` only. The bind address is not configurable in v1.
 - Port: random free port by default; `--port` for a fixed one.
-- Prints the launch URL to stderr and opens the browser (`xdg-open` on Linux, `open` on macOS) unless `--no-browser`.
+- Prints the launch URL to stderr and opens the browser unless `--no-browser`. The browser is never given the token URL as a command-line argument (arguments are world-readable through `/proc/<pid>/cmdline`): `memorable ui` writes a 0600 HTML redirect file into a private 0700 temp directory and opens that file path with `xdg-open` (Linux) or `open` (macOS), as Jupyter does. The file is deleted on shutdown.
 - Runs until Ctrl-C or SIGTERM; shuts down gracefully (in-flight requests finish within 5 seconds, pools closed, embedding worker stopped).
 - Initial context: `--context`, else resolved from the working directory as today, else the first configured context. The UI can switch contexts afterwards.
 - Runs the embedding worker in-process like `serve`, so UI edits get embedded.
@@ -116,9 +116,9 @@ Author decisions: loopback only, `--admin` with the password prompted in the ter
 | Long-lived admin session | Admin unlock expires after 15 idle minutes; afterwards the UI is app-role until restarted with `--admin`. |
 | Destructive admin actions | Purge requires typing the memory's slug (or id when it has no slug). Prune shows a dry-run count first. |
 | Forensics | UI actions write audit entries like the CLI, with `process` identifying `memorable ui` and `details` carrying `"via": "ui"`. |
-| Agent bypassing MCP "Ask" rules | An agent with Bash could run `memorable ui --no-browser`, read the URL from stderr, and soft delete or restore without the MCP permission prompt. Add a Bash deny rule for `memorable ui*` to the recommended permissions and to what `memorable setup` writes into `settings.json`. |
+| Agent bypassing MCP "Ask" rules | An agent with Bash could run `memorable ui --no-browser`, read the URL from stderr, and soft delete or restore without the MCP permission prompt. Add the Bash deny rule `Bash(memorable ui:*)` to the recommended permissions and to what `memorable setup` writes into `settings.json`. |
 
-**Accepted soft boundary:** while `memorable ui --admin` runs and the unlock has not expired, whoever holds the session cookie has admin rights in the open contexts. The admin password is held in process memory for the session so admin pools can be opened per context; it is never written to disk, config, or logs. This sits beside the existing Docker soft boundary.
+**Accepted soft boundary:** while `memorable ui --admin` runs and the unlock has not expired, whoever holds the session cookie has admin rights in the open contexts. The admin password is held in process memory for the session so admin pools can be opened per context; it is never written to disk, config, or logs. This sits beside the existing Docker soft boundary. Cookies are not scoped by port, so any other web server on 127.0.0.1 that the browser visits during the session receives the session cookie; accepted for v1.
 
 ### htmx under the CSP
 
@@ -127,7 +127,7 @@ The CSP forbids inline scripts and styles, so: set htmx `includeIndicatorStyles`
 ### Contexts in the UI
 
 - One context per page. Switching contexts opens that context's app pool (and admin pool, if unlocked) with `search_path` set as today; nothing is cached across contexts in a way that can leak into another context's response.
-- The fallback context, if any, is shown read-only, matching `ErrReadOnly` semantics.
+- Every configured context opens read-write in the UI, including the one named as `fallback_context`: read-only fallback exists for unmatched working directories, and a context picked explicitly in the UI is not a fallback.
 
 ### Package layout
 
@@ -162,7 +162,7 @@ The CSP forbids inline scripts and styles, so: set htmx `includeIndicatorStyles`
 - Section 2: add `memorable ui` to the architecture diagram.
 - Section 2 package layout: add `internal/webui/`.
 - Section 4 Profile schema: "writable only through the CLI" becomes "writable only through the CLI or `memorable ui --admin`, both as the admin role".
-- Section 6 Recommended permissions: add Bash deny `memorable ui*`.
+- Section 6 Recommended permissions: add Bash deny `Bash(memorable ui:*)`.
 - Section 8 controls:
   - Network: "stdio for `serve`; `memorable ui` on 127.0.0.1 with token, CSRF, Host, and Origin checks".
   - Context leakage: "context fixed per process" becomes "context fixed per connection pool; `memorable ui` holds one pool per open context and never mixes contexts in a response".
@@ -170,5 +170,5 @@ The CSP forbids inline scripts and styles, so: set htmx `includeIndicatorStyles`
   - Destructive actions: "purge only via CLI as admin" becomes "purge only as admin, via CLI or `ui --admin` with typed confirmation".
   - Credentials: add "`memorable ui --admin` holds the admin password in process memory for its lifetime; never persisted".
   - Add the web UI rows and the accepted soft boundary from section 5.
-- Section 9 commands: add `memorable ui [--admin]`; `memorable setup` adds the `memorable ui*` deny rule.
+- Section 9 commands: add `memorable ui [--admin]`; `memorable setup` adds the `Bash(memorable ui:*)` deny rule.
 - Section 11: update "no listeners" accordingly.
