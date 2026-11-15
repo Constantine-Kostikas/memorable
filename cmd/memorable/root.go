@@ -83,6 +83,7 @@ func newRootCmdWith(info buildInfo, d deps) *cobra.Command {
 		newPurgeCmd(d, flags),
 		newPruneCmd(d, flags),
 		newProfileCmd(d, flags),
+		newUICmd(d, flags),
 		newReembedCmd(d, flags),
 		newDoctorCmd(d, flags),
 		newExportCmd(d, flags),

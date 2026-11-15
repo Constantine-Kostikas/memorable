@@ -46,6 +46,7 @@ type deps struct {
 	getenv        func(string) string
 	cwd           func() (string, error)
 	build         func(ctx context.Context, cfgPath string, dirs []string, logger *slog.Logger) (*app, error)
+	buildFor      func(ctx context.Context, cfgPath, contextName string, logger *slog.Logger, details map[string]any) (*app, error)
 	isTTY         func(*cobra.Command) bool
 	adminPassword func(*cobra.Command) (string, error)
 	docker        func(ctx context.Context, args ...string) ([]byte, error)
@@ -54,6 +55,7 @@ type deps struct {
 	executable    func() (string, error)
 	goos          string
 	selfUpdate    func(cmd *cobra.Command, current string, opts update.Options) (update.Result, error)
+	openBrowser   func(path string) error
 }
 
 func defaultDeps() deps {
@@ -65,6 +67,10 @@ func defaultDeps() deps {
 	d.build = func(ctx context.Context, cfgPath string, dirs []string, logger *slog.Logger) (*app, error) {
 		return buildApp(ctx, d, cfgPath, dirs, logger)
 	}
+	d.buildFor = func(ctx context.Context, cfgPath, contextName string, logger *slog.Logger, details map[string]any) (*app, error) {
+		return buildAppFor(ctx, d, cfgPath, contextName, logger, details)
+	}
+	d.openBrowser = openBrowserWith(d.run, d.goos)
 	d.selfUpdate = func(cmd *cobra.Command, current string, opts update.Options) (update.Result, error) {
 		return runSelfUpdate(d, cmd, current, opts)
 	}
@@ -146,12 +152,51 @@ func ownerName(getenv func(string) string) string {
 	return "unknown"
 }
 
+// appSpec is what differs between a session resolved from directories and one opened for a named context.
+type appSpec struct {
+	resolve      func(cfg *config.Config) (scope.Resolution, error)
+	cwd          string
+	process      string
+	auditDetails map[string]any
+}
+
 func buildApp(ctx context.Context, d deps, cfgPath string, dirs []string, logger *slog.Logger) (*app, error) {
+	cwd := ""
+	if len(dirs) > 0 {
+		cwd = dirs[len(dirs)-1]
+	}
+	return openApp(ctx, d, cfgPath, logger, appSpec{
+		resolve: func(cfg *config.Config) (scope.Resolution, error) { return resolveScope(cfg, dirs, d.getenv) },
+		cwd:     cwd,
+		process: processID(),
+	})
+}
+
+// buildAppFor opens the named context read-write with no project, as the web UI does for every
+// configured context, including the fallback context.
+func buildAppFor(ctx context.Context, d deps, cfgPath, contextName string, logger *slog.Logger, details map[string]any) (*app, error) {
+	return openApp(ctx, d, cfgPath, logger, appSpec{
+		resolve: func(cfg *config.Config) (scope.Resolution, error) {
+			if _, ok := cfg.Contexts[contextName]; !ok {
+				return scope.Resolution{}, fmt.Errorf("context %q is not configured: %w", contextName, memory.ErrNoContext)
+			}
+			return scope.Resolution{Context: contextName}, nil
+		},
+		process:      "ui:" + processID(),
+		auditDetails: details,
+	})
+}
+
+func processID() string {
+	return fmt.Sprintf("%d@%s", os.Getpid(), processStart.UTC().Format(time.RFC3339))
+}
+
+func openApp(ctx context.Context, d deps, cfgPath string, logger *slog.Logger, spec appSpec) (*app, error) {
 	cfg, path, err := loadConfig(d, cfgPath)
 	if err != nil {
 		return nil, err
 	}
-	res, err := resolveScope(cfg, dirs, d.getenv)
+	res, err := spec.resolve(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -182,14 +227,10 @@ func buildApp(ctx context.Context, d deps, cfgPath string, dirs []string, logger
 		st.Close()
 		return nil, err //nolint:wrapcheck // already contextual
 	}
-	cwd := ""
-	if len(dirs) > 0 {
-		cwd = dirs[len(dirs)-1]
-	}
 	svc := memory.NewService(st, st, emb, sec, scan.Injection, memory.Settings{
 		Owner: owner, Scope: res, Search: cfg.Search, Preload: cfg.Preload,
-		WritesPerMinute: cfg.Limits.WritesPerMinute, Cwd: cwd,
-		Process: fmt.Sprintf("%d@%s", os.Getpid(), processStart.UTC().Format(time.RFC3339)),
+		WritesPerMinute: cfg.Limits.WritesPerMinute, Cwd: spec.cwd,
+		Process: spec.process, AuditDetails: spec.auditDetails,
 	})
 	logger.DebugContext(ctx, "session ready", "context", res.Context, "read_only", res.ReadOnly)
 	return &app{cfg: cfg, cfgPath: path, res: res, store: st, emb: emb, svc: svc, secrets: secrets}, nil
