@@ -23,12 +23,30 @@ type SearchRequest struct {
 	AllProjects       bool
 	IncludeFlagged    bool
 	IncludeSuperseded bool
+	// Passive skips search logging, so the response carries no SearchID.
+	Passive bool
+	// Explain fills SearchResponse.Explain with the ranking breakdown of each result.
+	Explain bool
+	// Project overrides the session project and restricts results to it plus context-global memories.
+	Project *string
+}
+
+// Explanation shows how one result was retrieved and ranked. Ranks are 1-based and 0 when absent.
+type Explanation struct {
+	VectorRank  int
+	FTSRank     int
+	TrigramRank int
+	Similarity  float64
+	RRF         float64
+	Textual     bool
+	Boost       rank.Parts
 }
 
 // SearchResponse carries ranked compact results and the id of the logged search.
 type SearchResponse struct {
 	SearchID uuid.UUID
 	Results  []Summary
+	Explain  map[uuid.UUID]Explanation
 }
 
 func (r *SearchRequest) normalize() error {
@@ -56,6 +74,9 @@ func (s *Service) Search(ctx context.Context, r SearchRequest) (SearchResponse, 
 	}
 	f := s.filter()
 	f.Tags, f.Types, f.AllProjects = r.Tags, r.Types, r.AllProjects
+	if r.Project != nil {
+		f.Project, f.AllProjects = r.Project, false
+	}
 	f.IncludeFlagged, f.IncludeSuperseded = r.IncludeFlagged, r.IncludeSuperseded
 
 	// Vector search is best effort: an unavailable embedder or a vector query error (for example a
@@ -91,34 +112,76 @@ func (s *Service) Search(ctx context.Context, r SearchRequest) (SearchResponse, 
 		}
 	}
 
-	results, err := s.rankResults(ctx, kept, fused)
+	results, parts, err := s.rankResults(ctx, kept, fused, f.Project)
 	if err != nil {
 		return SearchResponse{}, err
 	}
 	if len(results) > r.K {
 		results = results[:r.K]
 	}
+	resp := SearchResponse{Results: results}
+	if r.Explain {
+		resp.Explain = explanations(results, parts, fused, vecHits, ftsHits, triHits)
+	}
+	if r.Passive {
+		return resp, nil
+	}
 	searchID, err := s.repo.LogSearch(ctx, r.Query, s.settings.Scope.Project, summaryIDs(results))
 	if err != nil {
 		return SearchResponse{}, err //nolint:wrapcheck // repository errors are already contextual
 	}
-	return SearchResponse{SearchID: searchID, Results: results}, nil
+	resp.SearchID = searchID
+	return resp, nil
 }
 
-func (s *Service) rankResults(ctx context.Context, ids []uuid.UUID, fused map[uuid.UUID]float64) ([]Summary, error) {
+func explanations(results []Summary, parts map[uuid.UUID]rank.Parts, fused map[uuid.UUID]float64,
+	vecHits, ftsHits, triHits []Candidate) map[uuid.UUID]Explanation {
+	vecRank, fts, tri := rankIndex(vecHits), rankIndex(ftsHits), rankIndex(triHits)
+	similarity := map[uuid.UUID]float64{}
+	for _, c := range vecHits {
+		similarity[c.ID] = c.Similarity
+	}
+	out := make(map[uuid.UUID]Explanation, len(results))
+	for _, r := range results {
+		out[r.ID] = Explanation{
+			VectorRank:  vecRank[r.ID],
+			FTSRank:     fts[r.ID],
+			TrigramRank: tri[r.ID],
+			Similarity:  similarity[r.ID],
+			RRF:         fused[r.ID],
+			Textual:     fts[r.ID] > 0 || tri[r.ID] > 0,
+			Boost:       parts[r.ID],
+		}
+	}
+	return out
+}
+
+func rankIndex(cs []Candidate) map[uuid.UUID]int {
+	out := make(map[uuid.UUID]int, len(cs))
+	for i, c := range cs {
+		out[c.ID] = i + 1
+	}
+	return out
+}
+
+func (s *Service) rankResults(ctx context.Context, ids []uuid.UUID, fused map[uuid.UUID]float64,
+	project *string) ([]Summary, map[uuid.UUID]rank.Parts, error) {
 	if len(ids) == 0 {
-		return []Summary{}, nil
+		return []Summary{}, nil, nil
 	}
-	mems, err := s.repo.Hydrate(ctx, ids, s.settings.Scope.Project)
+	mems, err := s.repo.Hydrate(ctx, ids, project)
 	if err != nil {
-		return nil, err //nolint:wrapcheck // repository errors are already contextual
+		return nil, nil, err //nolint:wrapcheck // repository errors are already contextual
 	}
-	now, hl, project := s.now(), s.halfLife(), s.settings.Scope.Project
+	now, hl := s.now(), s.halfLife()
 	out := make([]Summary, 0, len(mems))
+	parts := make(map[uuid.UUID]rank.Parts, len(mems))
 	for _, m := range mems {
 		projectMatch := m.Project != nil && project != nil && *m.Project == *project
 		eff := rank.Decay(m.AccessScore, m.ScoreUpdatedAt, now, hl)
-		out = append(out, summarize(m, rank.Boost(fused[m.ID], projectMatch, m.Pinned, eff)))
+		p := rank.BoostParts(fused[m.ID], projectMatch, m.Pinned, eff)
+		parts[m.ID] = p
+		out = append(out, summarize(m, p.Final))
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].Score == out[j].Score {
@@ -126,7 +189,7 @@ func (s *Service) rankResults(ctx context.Context, ids []uuid.UUID, fused map[uu
 		}
 		return out[i].Score > out[j].Score
 	})
-	return out, nil
+	return out, parts, nil
 }
 
 func candidateIDs(cs []Candidate) []uuid.UUID {

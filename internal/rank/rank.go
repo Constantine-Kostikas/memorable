@@ -21,17 +21,33 @@ func RRF(lists ...[]uuid.UUID) map[uuid.UUID]float64 {
 	return scores
 }
 
-// Boost applies the project, pinned, and capped popularity multipliers to a fused score.
-func Boost(rrf float64, projectMatch, pinned bool, effectiveScore float64) float64 {
-	m := 1.0
+// Parts breaks a boosted score into its additive multiplier components.
+type Parts struct {
+	Project    float64
+	Pinned     float64
+	Usage      float64
+	Multiplier float64
+	Final      float64
+}
+
+// BoostParts computes the project, pinned, and capped popularity multipliers and the boosted score.
+func BoostParts(rrf float64, projectMatch, pinned bool, effectiveScore float64) Parts {
+	p := Parts{}
 	if projectMatch {
-		m += 0.20
+		p.Project = 0.20
 	}
 	if pinned {
-		m += 0.10
+		p.Pinned = 0.10
 	}
-	m += math.Min(0.15, 0.05*math.Log1p(math.Max(0, effectiveScore)))
-	return rrf * m
+	p.Usage = math.Min(0.15, 0.05*math.Log1p(math.Max(0, effectiveScore)))
+	p.Multiplier = 1.0 + p.Project + p.Pinned + p.Usage
+	p.Final = rrf * p.Multiplier
+	return p
+}
+
+// Boost applies the project, pinned, and capped popularity multipliers to a fused score.
+func Boost(rrf float64, projectMatch, pinned bool, effectiveScore float64) float64 {
+	return BoostParts(rrf, projectMatch, pinned, effectiveScore).Final
 }
 
 // Decay returns score decayed from `from` to `to` with the given half-life.

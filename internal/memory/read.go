@@ -150,8 +150,10 @@ type ListRequest struct {
 	Types       []Type
 	Statuses    []Status
 	AllProjects bool
-	Cursor      *uuid.UUID
-	Limit       int
+	// Project overrides the session project and restricts results to it plus context-global memories.
+	Project *string
+	Cursor  *uuid.UUID
+	Limit   int
 }
 
 // ListResponse is one page of memories.
@@ -179,6 +181,9 @@ func (s *Service) List(ctx context.Context, r ListRequest) (ListResponse, error)
 	}
 	f := s.filter()
 	f.Tags, f.Types, f.AllProjects = r.Tags, r.Types, r.AllProjects
+	if r.Project != nil {
+		f.Project, f.AllProjects = r.Project, false
+	}
 	mems, next, err := s.repo.List(ctx, f, statuses, r.Cursor, r.Limit)
 	if err != nil {
 		return ListResponse{}, err //nolint:wrapcheck // repository errors are already contextual
