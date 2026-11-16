@@ -16,8 +16,8 @@ import (
 )
 
 const (
-	pageDetail   = "detail"
 	pageEdit     = "edit"
+	detailPaneID = "detail-pane"
 	maxDiffLines = 1000
 	timeLayout   = "2006-01-02 15:04 MST"
 )
@@ -69,7 +69,6 @@ type detailView struct {
 	ID          string
 	CSRF        string
 	Base        string
-	EditURL     string
 	ListURL     string
 	Quarantined bool
 	ReadOnly    bool
@@ -143,26 +142,9 @@ func (s *Server) handleDetail(w http.ResponseWriter, r *http.Request, rc request
 	s.respondDetail(w, r, rc, view, http.StatusOK)
 }
 
+// handleEdit keeps old /edit links working: the detail pane is where a memory is changed.
 func (s *Server) handleEdit(w http.ResponseWriter, r *http.Request, rc requestContext, id uuid.UUID) {
-	fetched, err := s.fetchPassive(r, rc, id)
-	if err != nil && !errors.Is(err, memory.ErrQuarantined) {
-		s.failResponse(w, r, rc, err)
-		return
-	}
-	if err != nil || fetched.Memory.Scope == memory.ScopeProfile {
-		s.handleDetail(w, r, rc, id)
-		return
-	}
-	m := fetched.Memory
-	edit := editView{
-		Context: rc.Name, ID: id.String(), CSRF: s.session.csrf, Base: memoryBase(rc.Name, id), DetailURL: memoryBase(rc.Name, id),
-		Title: m.Title, Content: m.Content, Tags: strings.Join(m.Tags, ", "), Type: m.Type.String(),
-		Types: filterTypes, Pinned: m.Pinned, Version: fmt.Sprint(m.Version),
-	}
-	if m.ExpiresAt != nil {
-		edit.ExpiresAt = m.ExpiresAt.UTC().Format(time.RFC3339)
-	}
-	s.respondEdit(w, r, rc, edit, http.StatusOK)
+	http.Redirect(w, r, memoryBase(rc.Name, id), http.StatusSeeOther) //nolint:gosec // G710: a same-origin path built from a configured context name and a parsed UUID.
 }
 
 func (s *Server) fetchPassive(r *http.Request, rc requestContext, id uuid.UUID) (memory.Fetched, error) {
@@ -181,8 +163,7 @@ func (s *Server) fetchPassive(r *http.Request, rc requestContext, id uuid.UUID) 
 func (s *Server) loadDetail(r *http.Request, rc requestContext, id uuid.UUID) (detailView, error) {
 	base := memoryBase(rc.Name, id)
 	view := detailView{
-		Context: rc.Name, ID: id.String(), CSRF: s.session.csrf, Base: base, EditURL: base + "/edit",
-		ListURL: s.contextHome(rc.Name),
+		Context: rc.Name, ID: id.String(), CSRF: s.session.csrf, Base: base,
 	}
 	fetched, err := s.fetchPassive(r, rc, id)
 	if errors.Is(err, memory.ErrQuarantined) {
@@ -352,15 +333,26 @@ func isFragmentRequest(r *http.Request) bool {
 	return r.Header.Get("HX-Request") == "true" && r.Header.Get("HX-History-Restore-Request") != "true"
 }
 
+// respondDetail answers an htmx request with the detail pane alone and any other request with the
+// workspace: the list rebuilt from the query string's filter beside the memory.
 func (s *Server) respondDetail(w http.ResponseWriter, r *http.Request, rc requestContext, view detailView, status int) {
+	filter, _, err := parseMemoryFilter(r.URL.Query())
+	if err != nil {
+		s.failResponse(w, r, rc, err)
+		return
+	}
+	view.ListURL = memoriesURL(rc.Name, filter, nil)
 	w.Header().Set("Vary", "HX-Request")
 	if isFragmentRequest(r) {
 		s.renderStatus(w, status, "detail.html", view)
 		return
 	}
-	page := s.contextPage(r, rc, cmpOr(view.Title, "Memory"), "")
-	page.Page, page.Detail = pageDetail, &view
-	s.renderStatus(w, status, "layout.html", page)
+	list := memoriesView{Context: rc.Name, Filter: filter, SelectedID: view.ID, Selected: &view}
+	if err := s.loadRows(r, rc, &list, nil); err != nil {
+		s.failResponse(w, r, rc, err)
+		return
+	}
+	s.renderStatus(w, status, "layout.html", s.workspacePage(r, rc, &list, cmpOr(view.Title, "Memory")))
 }
 
 func (s *Server) respondEdit(w http.ResponseWriter, r *http.Request, rc requestContext, view editView, status int) {
@@ -393,6 +385,10 @@ func (s *Server) failResponse(w http.ResponseWriter, r *http.Request, rc request
 		return
 	}
 	status, message := s.actionStatus(r, err)
-	w.Header().Set("Vary", "HX-Request")
-	s.renderStatus(w, status, "error.html", pageData{Title: "Error", Message: message})
+	w.Header().Set("Vary", "HX-Request, HX-Target")
+	name := "error.html"
+	if r.Header.Get("HX-Target") == detailPaneID {
+		name = "pane_error.html"
+	}
+	s.renderStatus(w, status, name, pageData{Title: "Error", Message: message})
 }

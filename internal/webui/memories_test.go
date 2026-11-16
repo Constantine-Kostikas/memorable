@@ -6,8 +6,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -112,7 +114,6 @@ func TestListPage(t *testing.T) {
 	assert.Contains(t, body, "House rules")
 	assert.Contains(t, body, "(global)")
 	assert.Contains(t, body, "active")
-	assert.Contains(t, body, "0.42")
 	assert.Contains(t, body, "cursor="+next.String())
 	req := mem.lastList()
 	assert.True(t, req.AllProjects)
@@ -377,4 +378,78 @@ func TestHostileQueryAndProjectEscaped(t *testing.T) {
 	assert.NotContains(t, body, "<script>alert(1)")
 	assert.NotContains(t, body, `"><script>`)
 	assert.Contains(t, body, "&#34;&gt;&lt;script&gt;alert(1)&lt;/script&gt;")
+}
+
+func TestRelativeAge(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 11, 16, 12, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name string
+		ago  time.Duration
+		want string
+	}{
+		{name: "seconds", ago: 30 * time.Second, want: "now"},
+		{name: "future skew", ago: -time.Minute, want: "now"},
+		{name: "minutes", ago: 5 * time.Minute, want: "5m"},
+		{name: "hours", ago: 3 * time.Hour, want: "3h"},
+		{name: "days", ago: 2 * 24 * time.Hour, want: "2d"},
+		{name: "older than 30 days", ago: 45 * 24 * time.Hour, want: "2026-10-02"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.want, relativeAge(now, now.Add(-tt.ago)))
+		})
+	}
+}
+
+func TestMemoriesEmptyPane(t *testing.T) {
+	t.Parallel()
+	h, c := newMemoriesServer(t, &recordingMemories{list: memory.ListResponse{Items: []memory.Summary{summary("Port map")}}})
+
+	body := getPage(h, c, "/c/personal/memories").Body.String()
+
+	assert.Contains(t, body, `id="detail-pane"`)
+	assert.Contains(t, body, "Select a memory, or press Ctrl K to jump to one.")
+	assert.NotContains(t, body, `aria-current="true"`)
+}
+
+func TestLoadMoreAppends(t *testing.T) {
+	t.Parallel()
+	next := uuid.New()
+	mem := &recordingMemories{list: memory.ListResponse{Items: []memory.Summary{summary("Port map")}, Next: &next}}
+	h, c := newMemoriesServer(t, mem)
+
+	body := getPage(h, c, "/c/personal/memories?type=project").Body.String()
+
+	nextURL := "/c/personal/memories?cursor=" + next.String() + "&amp;type=project"
+	assert.Contains(t, body, `href="`+nextURL+`"`)
+	assert.Contains(t, body, `hx-get="`+nextURL+`"`)
+	assert.Contains(t, body, `hx-target="#memory-rows" hx-swap="beforeend"`)
+	assert.Contains(t, body, "Load more")
+
+	fragment := getPage(h, c, "/c/personal/memories?type=project&cursor="+next.String(), withHeader("HX-Request", "true")).Body.String()
+	assert.True(t, strings.HasPrefix(strings.TrimSpace(fragment), "<li"), "rows append into the list itself")
+	assert.Contains(t, fragment, `id="load-more" hx-swap-oob="true"`)
+}
+
+func TestRowsCarryTypeTabAgeAndFilter(t *testing.T) {
+	t.Parallel()
+	row := summary("Port map")
+	row.Project, row.Type, row.Status = strp("alpha"), memory.TypeReference, memory.StatusFlagged
+	row.UpdatedAt = time.Now().Add(-3 * time.Hour)
+	active := summary("House rules")
+	active.UpdatedAt = time.Now().Add(-2 * 24 * time.Hour)
+	mem := &recordingMemories{list: memory.ListResponse{Items: []memory.Summary{row, active}}}
+	h, c := newMemoriesServer(t, mem)
+
+	body := getPage(h, c, "/c/personal/memories?tag=go&status=flagged").Body.String()
+
+	assert.Contains(t, body, "type-tab-reference")
+	assert.Contains(t, body, "reference · alpha · 3h")
+	assert.Contains(t, body, "project · (global) · 2d")
+	assert.Contains(t, body, `href="/c/personal/memories/`+row.ID.String()+`?status=flagged&amp;tag=go"`)
+	assert.Contains(t, body, `hx-target="#detail-pane" hx-swap="outerHTML" hx-push-url="true"`)
+	assert.Contains(t, body, "chip-status-flagged")
+	assert.NotContains(t, body, "chip-status-active", "the status chip shows only when not active")
 }

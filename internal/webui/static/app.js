@@ -73,6 +73,20 @@
     });
   }
 
+  function markSelectedRow(evt) {
+    var detail = evt.detail || {};
+    var link = detail.elt;
+    if (!detail.successful || !link || !link.hasAttribute || !link.hasAttribute('data-row-link')) {
+      return;
+    }
+    var current = document.querySelectorAll('[data-row-link][aria-current]');
+    Array.prototype.forEach.call(current, function (row) {
+      row.removeAttribute('aria-current');
+    });
+    link.setAttribute('aria-current', 'true');
+  }
+
   applyTheme(storedTheme());
   onReady(bindThemeToggles);
+  document.addEventListener('htmx:afterRequest', markSelectedRow);
 })();

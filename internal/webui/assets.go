@@ -22,7 +22,6 @@ type pageData struct {
 	AdminLockedMessage   string
 	Page                 string
 	Memories             *memoriesView
-	Detail               *detailView
 	Edit                 *editView
 	Review               *reviewView
 	Profile              *profileView

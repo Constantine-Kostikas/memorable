@@ -10,8 +10,8 @@
   <script src="/static/app.js"></script>
   <script src="/static/htmx.min.js" defer></script>
 </head>
-<body hx-headers='{"X-CSRF-Token":"{{.CSRF}}"}' class="bg-paper font-sans text-body text-ink antialiased">
-  <header class="flex items-center gap-4 border-b border-line bg-sheet px-4 py-3">
+<body hx-headers='{"X-CSRF-Token":"{{.CSRF}}"}' class="bg-paper font-sans text-body text-ink antialiased{{if eq .Page "memories"}} min-[900px]:flex min-[900px]:h-dvh min-[900px]:flex-col{{end}}">
+  <header class="flex shrink-0 flex-wrap items-center gap-4 border-b border-line bg-sheet px-4 py-3">
     <nav aria-label="Contexts" class="flex gap-2">
       {{range .Contexts}}<a href="/c/{{.}}/memories"{{if eq . $.Context}} aria-current="page" class="rounded border border-accent bg-accent px-2 py-1 text-accent-ink"{{else}} class="rounded border border-line px-2 py-1 hover:bg-rail"{{end}}>{{.}}</a>{{end}}
     </nav>
@@ -28,8 +28,8 @@
     </div>
   </header>
   {{with .AdminLockedMessage}}<p role="alert" class="border-b border-line bg-warn-soft px-4 py-2 text-warn">{{.}}</p>{{end}}
-  <main class="mx-auto max-w-5xl px-4 py-6">
-    {{block "content" .}}{{if eq .Page "memories"}}{{template "memories.html" .Memories}}{{else if eq .Page "detail"}}{{template "detail.html" .Detail}}{{else if eq .Page "review"}}{{template "review.html" .Review}}{{else if eq .Page "profile"}}{{template "profile.html" .Profile}}{{else if eq .Page "stats"}}{{template "stats.html" .Stats}}{{else if eq .Page "edit"}}{{template "edit_form.html" .Edit}}{{else if eq .Page "prune"}}{{template "prune.html" .Prune}}{{else if .Message}}{{template "error.html" .}}{{end}}{{end}}
+  <main class="{{if eq .Page "memories"}}min-[900px]:min-h-0 min-[900px]:flex-1{{else}}mx-auto max-w-5xl px-4 py-6{{end}}">
+    {{block "content" .}}{{if eq .Page "memories"}}{{template "workspace.html" .Memories}}{{else if eq .Page "review"}}{{template "review.html" .Review}}{{else if eq .Page "profile"}}{{template "profile.html" .Profile}}{{else if eq .Page "stats"}}{{template "stats.html" .Stats}}{{else if eq .Page "edit"}}{{template "edit_form.html" .Edit}}{{else if eq .Page "prune"}}{{template "prune.html" .Prune}}{{else if .Message}}{{template "error.html" .}}{{end}}{{end}}
   </main>
 </body>
 </html>

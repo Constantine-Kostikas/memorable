@@ -9,6 +9,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -44,15 +45,15 @@ type explainView struct {
 }
 
 type memoryRow struct {
-	Href    string
-	Title   string
-	Snippet string
-	Project string
-	Type    string
-	Status  string
-	Score   string
-	Tags    []string
-	Explain *explainView
+	Href      string
+	Title     string
+	Project   string
+	Type      string
+	TypeClass string
+	Status    string
+	Age       string
+	Current   bool
+	Explain   *explainView
 }
 
 type memoriesView struct {
@@ -65,6 +66,8 @@ type memoriesView struct {
 	Searching         bool
 	VectorUnavailable bool
 	NextURL           string
+	SelectedID        string
+	Selected          *detailView
 }
 
 func (s *Server) handleMemories(w http.ResponseWriter, r *http.Request, rc requestContext) {
@@ -73,27 +76,35 @@ func (s *Server) handleMemories(w http.ResponseWriter, r *http.Request, rc reque
 		s.failResponse(w, r, rc, err)
 		return
 	}
-	view := memoriesView{Context: rc.Name, Filter: filter, Searching: filter.Query != ""}
-	if view.Searching {
-		err = s.searchRows(r, rc, &view)
-	} else {
-		err = s.listRows(r, rc, &view, cursor)
-	}
-	if err != nil {
+	view := memoriesView{Context: rc.Name, Filter: filter}
+	if err := s.loadRows(r, rc, &view, cursor); err != nil {
 		s.failResponse(w, r, rc, err)
 		return
 	}
 
 	w.Header().Set("Vary", "HX-Request")
-	if r.Header.Get("HX-Request") == "true" && r.Header.Get("HX-History-Restore-Request") != "true" {
-		s.renderTemplate(w, "memory_rows.html", view)
+	if isFragmentRequest(r) {
+		s.renderTemplate(w, "memory_rows_response", view)
 		return
 	}
+	s.renderTemplate(w, "layout.html", s.workspacePage(r, rc, &view, "Memories"))
+}
+
+// loadRows fills the list pane from view.Filter: a search when there is a query, a list page otherwise.
+func (s *Server) loadRows(r *http.Request, rc requestContext, view *memoriesView, cursor *uuid.UUID) error {
+	view.Searching = view.Filter.Query != ""
+	if view.Searching {
+		return s.searchRows(r, rc, view)
+	}
+	return s.listRows(r, rc, view, cursor)
+}
+
+func (s *Server) workspacePage(r *http.Request, rc requestContext, view *memoriesView, title string) pageData {
 	view.Types, view.Statuses = filterTypes, filterStatuses
-	view.Projects = s.projectOptions(r, rc, filter.Project)
-	page := s.contextPage(r, rc, "Memories", "")
-	page.Page, page.Memories = pageMemories, &view
-	s.renderTemplate(w, "layout.html", page)
+	view.Projects = s.projectOptions(r, rc, view.Filter.Project)
+	page := s.contextPage(r, rc, title, "")
+	page.Page, page.Memories = pageMemories, view
+	return page
 }
 
 func (s *Server) listRows(r *http.Request, rc requestContext, view *memoriesView, cursor *uuid.UUID) error {
@@ -114,7 +125,7 @@ func (s *Server) listRows(r *http.Request, rc requestContext, view *memoriesView
 	if err != nil {
 		return fmt.Errorf("list memories: %w", err)
 	}
-	view.Rows = rowsOf(rc.Name, res.Items, nil)
+	view.Rows = view.rowsOf(res.Items, nil, s.cfg.Now())
 	if res.Next != nil {
 		view.NextURL = memoriesURL(rc.Name, f, res.Next)
 	}
@@ -142,7 +153,7 @@ func (s *Server) searchRows(r *http.Request, rc requestContext, view *memoriesVi
 	if f.Status != "" {
 		items = slices.DeleteFunc(slices.Clone(items), func(m memory.Summary) bool { return m.Status.String() != f.Status })
 	}
-	view.Rows = rowsOf(rc.Name, items, res.Explain)
+	view.Rows = view.rowsOf(items, res.Explain, s.cfg.Now())
 	view.VectorUnavailable = res.VectorUnavailable
 	return nil
 }
@@ -196,6 +207,21 @@ func parseMemoryFilter(q url.Values) (memoryFilter, *uuid.UUID, error) {
 }
 
 func memoriesURL(contextName string, f memoryFilter, cursor *uuid.UUID) string {
+	v := filterValues(f)
+	if cursor != nil {
+		v.Set("cursor", cursor.String())
+	}
+	return withQuery("/c/"+url.PathEscape(contextName)+"/memories", v)
+}
+
+func withQuery(path string, v url.Values) string {
+	if len(v) == 0 {
+		return path
+	}
+	return path + "?" + v.Encode()
+}
+
+func filterValues(f memoryFilter) url.Values {
 	v := url.Values{}
 	for key, val := range map[string]string{"q": f.Query, "project": f.Project, "type": f.Type, "status": f.Status} {
 		if val != "" {
@@ -205,24 +231,23 @@ func memoriesURL(contextName string, f memoryFilter, cursor *uuid.UUID) string {
 	for _, tag := range f.Tags {
 		v.Add("tag", tag)
 	}
-	if cursor != nil {
-		v.Set("cursor", cursor.String())
-	}
-	return "/c/" + url.PathEscape(contextName) + "/memories?" + v.Encode()
+	return v
 }
 
-func rowsOf(contextName string, items []memory.Summary, explain map[uuid.UUID]memory.Explanation) []memoryRow {
+// rowsOf builds list rows whose links keep the current filter, so a full-page load of a row reproduces the list.
+func (v *memoriesView) rowsOf(items []memory.Summary, explain map[uuid.UUID]memory.Explanation, now time.Time) []memoryRow {
+	query := filterValues(v.Filter)
 	rows := make([]memoryRow, 0, len(items))
 	for _, m := range items {
 		row := memoryRow{
-			Href:    "/c/" + url.PathEscape(contextName) + "/memories/" + m.ID.String(),
-			Title:   m.Title,
-			Snippet: m.Snippet,
-			Project: globalProject,
-			Type:    m.Type.String(),
-			Status:  m.Status.String(),
-			Score:   fmt.Sprintf("%.2f", m.Score),
-			Tags:    m.Tags,
+			Href:      withQuery(memoryBase(v.Context, m.ID), query),
+			Title:     m.Title,
+			Project:   globalProject,
+			Type:      m.Type.String(),
+			TypeClass: typeClass(m.Type.String()),
+			Status:    m.Status.String(),
+			Age:       relativeAge(now, m.UpdatedAt),
+			Current:   m.ID.String() == v.SelectedID,
 		}
 		if m.Project != nil && m.Scope != memory.ScopeGlobal {
 			row.Project = *m.Project
@@ -249,6 +274,24 @@ func explainOf(x memory.Explanation) *explainView {
 		UsageBoost: fmt.Sprintf("%.2f", x.Boost.Usage), Multiplier: fmt.Sprintf("%.2f", x.Boost.Multiplier),
 		Final: fmt.Sprintf("%.4f", x.Boost.Final),
 	}
+}
+
+const maxRelativeAge = 30 * 24 * time.Hour
+
+// relativeAge is the compact age shown on list rows; anything older than 30 days shows its date.
+func relativeAge(now, t time.Time) string {
+	age := now.Sub(t)
+	switch {
+	case age < time.Minute:
+		return "now"
+	case age < time.Hour:
+		return fmt.Sprintf("%dm", int(age/time.Minute))
+	case age < 24*time.Hour:
+		return fmt.Sprintf("%dh", int(age/time.Hour))
+	case age <= maxRelativeAge:
+		return fmt.Sprintf("%dd", int(age/(24*time.Hour)))
+	}
+	return t.UTC().Format(time.DateOnly)
 }
 
 func cmpOr(v, fallback string) string {

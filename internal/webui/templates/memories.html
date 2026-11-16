@@ -1,38 +1,46 @@
-<h1 class="mb-4 text-page font-bold">Memories</h1>
-<form method="get" action="/c/{{.Context}}/memories" class="mb-4 flex flex-wrap items-end gap-3">
-  <label class="flex flex-col text-body">Search
-    <input type="search" name="q" value="{{.Filter.Query}}" autocomplete="off" placeholder="Search memories"
-      class="field"
-      hx-get="/c/{{.Context}}/memories" hx-trigger="input changed delay:300ms, search"
-      hx-target="#memory-rows" hx-include="closest form" hx-push-url="true">
-  </label>
-  <label class="flex flex-col text-body">Project
-    <select name="project" class="field"
-      hx-get="/c/{{.Context}}/memories" hx-trigger="change" hx-target="#memory-rows" hx-include="closest form" hx-push-url="true">
-      <option value="">All projects</option>
-      {{range .Projects}}<option value="{{.}}"{{if eq . $.Filter.Project}} selected{{end}}>{{.}}</option>{{end}}
-    </select>
-  </label>
-  <label class="flex flex-col text-body">Type
-    <select name="type" class="field"
-      hx-get="/c/{{.Context}}/memories" hx-trigger="change" hx-target="#memory-rows" hx-include="closest form" hx-push-url="true">
-      <option value="">All types</option>
-      {{range .Types}}<option value="{{.}}"{{if eq . $.Filter.Type}} selected{{end}}>{{.}}</option>{{end}}
-    </select>
-  </label>
-  <label class="flex flex-col text-body">Status
-    <select name="status" class="field"
-      hx-get="/c/{{.Context}}/memories" hx-trigger="change" hx-target="#memory-rows" hx-include="closest form" hx-push-url="true">
-      <option value="">Default</option>
-      {{range .Statuses}}<option value="{{.}}"{{if eq . $.Filter.Status}} selected{{end}}>{{.}}</option>{{end}}
-    </select>
-  </label>
-  <label class="flex flex-col text-body">Tag
-    <input type="text" name="tag" value="{{with .Filter.Tags}}{{index . 0}}{{end}}" class="field"
-      hx-get="/c/{{.Context}}/memories" hx-trigger="input changed delay:300ms" hx-target="#memory-rows" hx-include="closest form" hx-push-url="true">
-  </label>
-  <button type="submit" class="btn btn-primary">Apply</button>
-</form>
-<div id="memory-rows">
+<section aria-label="Memories" class="list-pane flex min-w-0 flex-col border-line bg-rail min-[900px]:min-h-0 min-[900px]:overflow-y-auto min-[900px]:border-r">
+  <h1 class="sr-only">Memories</h1>
+  <form method="get" action="/c/{{.Context}}/memories" class="flex flex-col gap-2 border-b border-line p-3">
+    <label class="flex flex-col text-body">Search
+      <input type="search" name="q" value="{{.Filter.Query}}" autocomplete="off" placeholder="Search memories"
+        class="field"
+        hx-get="/c/{{.Context}}/memories" hx-trigger="input changed delay:300ms, search"
+        hx-target="#memory-rows" hx-include="closest form" hx-push-url="true">
+    </label>
+    <details class="text-body"{{if or .Filter.Project .Filter.Type .Filter.Status .Filter.Tags}} open{{end}}>
+      <summary class="cursor-pointer text-ink-muted">Filters</summary>
+      <div class="mt-2 grid grid-cols-2 gap-2">
+        <label class="flex flex-col text-body">Project
+          <select name="project" class="field"
+            hx-get="/c/{{.Context}}/memories" hx-trigger="change" hx-target="#memory-rows" hx-include="closest form" hx-push-url="true">
+            <option value="">All projects</option>
+            {{range .Projects}}<option value="{{.}}"{{if eq . $.Filter.Project}} selected{{end}}>{{.}}</option>{{end}}
+          </select>
+        </label>
+        <label class="flex flex-col text-body">Type
+          <select name="type" class="field"
+            hx-get="/c/{{.Context}}/memories" hx-trigger="change" hx-target="#memory-rows" hx-include="closest form" hx-push-url="true">
+            <option value="">All types</option>
+            {{range .Types}}<option value="{{.}}"{{if eq . $.Filter.Type}} selected{{end}}>{{.}}</option>{{end}}
+          </select>
+        </label>
+        <label class="flex flex-col text-body">Status
+          <select name="status" class="field"
+            hx-get="/c/{{.Context}}/memories" hx-trigger="change" hx-target="#memory-rows" hx-include="closest form" hx-push-url="true">
+            <option value="">Default</option>
+            {{range .Statuses}}<option value="{{.}}"{{if eq . $.Filter.Status}} selected{{end}}>{{.}}</option>{{end}}
+          </select>
+        </label>
+        <label class="flex flex-col text-body">Tag
+          <input type="text" name="tag" value="{{with .Filter.Tags}}{{index . 0}}{{end}}" class="field"
+            hx-get="/c/{{.Context}}/memories" hx-trigger="input changed delay:300ms" hx-target="#memory-rows" hx-include="closest form" hx-push-url="true">
+        </label>
+      </div>
+      <button type="submit" class="btn btn-primary mt-2">Apply</button>
+    </details>
+  </form>
+  <ul id="memory-rows" class="divide-y divide-line">
 {{template "memory_rows.html" .}}
-</div>
+  </ul>
+  <div id="load-more" class="p-3">{{template "load_more_link" .}}</div>
+</section>

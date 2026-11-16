@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -55,8 +56,9 @@ func TestUpdateConflict(t *testing.T) {
 	require.Equal(t, http.StatusConflict, rec.Code)
 	body := rec.Body.String()
 	assert.Contains(t, body, "This memory changed since you opened it.")
-	assert.Contains(t, body, `href="`+f.path("/edit")+`"`)
+	assert.Contains(t, body, `href="`+f.path("")+`"`)
 	assert.Contains(t, body, "my edit")
+	assert.Contains(t, body, `name="csrf" value="`+f.s.session.csrf+`"`)
 }
 
 func TestUpdateSecretKeepsForm(t *testing.T) {
@@ -284,7 +286,22 @@ func TestActionViaHtmxHeaderRendersFragment(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rec.Code)
 	assert.NotContains(t, rec.Body.String(), "<html")
-	assert.Contains(t, rec.Body.String(), `id="memory-detail"`)
+	assert.True(t, strings.HasPrefix(rec.Body.String(), `<section id="detail-pane"`))
+	assert.NotContains(t, rec.Body.String(), `id="memory-rows"`)
+}
+
+func TestActionWithoutHtmxRendersShell(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, nil)
+
+	rec := f.post("/feedback", url.Values{"kind": {"useful"}})
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	body := rec.Body.String()
+	assert.Contains(t, body, "<html")
+	assert.Contains(t, body, `id="memory-rows"`)
+	assert.Contains(t, body, `id="detail-pane"`)
+	assert.Contains(t, body, "Feedback recorded.")
 }
 
 func TestLinkToMissingIDIsNotFound(t *testing.T) {

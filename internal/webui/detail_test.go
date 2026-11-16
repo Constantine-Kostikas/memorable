@@ -37,6 +37,39 @@ type detailMemories struct {
 	byID     map[uuid.UUID]memory.Fetched
 	mutErr   error
 	updated  memory.Memory
+	listReqs []memory.ListRequest
+	searches []memory.SearchRequest
+}
+
+func (d *detailMemories) rows() []memory.Summary {
+	var rows []memory.Summary
+	for _, f := range d.fetched {
+		if f.Err == nil {
+			m := f.Memory
+			rows = append(rows, memory.Summary{ID: m.ID, Title: m.Title, Type: m.Type, Scope: m.Scope, Status: m.Status, Project: m.Project, UpdatedAt: m.UpdatedAt})
+		}
+	}
+	return rows
+}
+
+func (d *detailMemories) List(_ context.Context, r memory.ListRequest) (memory.ListResponse, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.listReqs = append(d.listReqs, r)
+	return memory.ListResponse{Items: d.rows()}, nil
+}
+
+func (d *detailMemories) Search(_ context.Context, r memory.SearchRequest) (memory.SearchResponse, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.searches = append(d.searches, r)
+	return memory.SearchResponse{Results: d.rows()}, nil
+}
+
+func (d *detailMemories) lastSearches() []memory.SearchRequest {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return append([]memory.SearchRequest(nil), d.searches...)
 }
 
 func (d *detailMemories) Review(context.Context) (memory.ReviewQueue, error) {
@@ -271,21 +304,76 @@ func TestDetailFragmentForHtmx(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rec.Code)
 	assert.NotContains(t, rec.Body.String(), "<html")
-	assert.Contains(t, rec.Body.String(), `id="memory-detail"`)
+	assert.Contains(t, rec.Body.String(), `<section id="detail-pane"`)
 }
 
-func TestEditFormCarriesVersion(t *testing.T) {
+func TestDetailFullPageRendersShell(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, nil)
+
+	rec := send(f.h, http.MethodGet, f.path("?q=go"), "", withCookie(f.c))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	body := rec.Body.String()
+	assert.Contains(t, body, "<html")
+	assert.Contains(t, body, `id="memory-rows"`)
+	assert.Contains(t, body, `id="detail-pane"`)
+	assert.Regexp(t, `<a href="`+regexp.QuoteMeta(f.path("?q=go"))+`"[^>]*aria-current="true"`, body)
+	searches := f.mem.lastSearches()
+	require.Len(t, searches, 1)
+	assert.Equal(t, "go", searches[0].Query)
+}
+
+func TestDetailFragmentForPane(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, nil)
+
+	rec := send(f.h, http.MethodGet, f.path("?q=go"), "", withCookie(f.c),
+		withHeader("HX-Request", "true"), withHeader("HX-Target", "detail-pane"))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	body := rec.Body.String()
+	assert.True(t, strings.HasPrefix(body, `<section id="detail-pane"`), body[:min(len(body), 80)])
+	assert.NotContains(t, body, `id="memory-rows"`)
+	assert.Empty(t, f.mem.lastSearches(), "a pane swap does not rebuild the list")
+}
+
+func TestDetailPaneErrorKeepsPaneID(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, func(m *detailMemories, id uuid.UUID) {
+		m.fetched = []memory.Fetched{{Ref: id.String(), Err: memory.ErrNotFound}}
+	})
+
+	rec := send(f.h, http.MethodGet, f.path(""), "", withCookie(f.c),
+		withHeader("HX-Request", "true"), withHeader("HX-Target", "detail-pane"))
+
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+	assert.True(t, strings.HasPrefix(rec.Body.String(), `<section id="detail-pane"`), "later selections still find the pane")
+	assert.Contains(t, rec.Body.String(), "Memory not found.")
+}
+
+func TestHistoryRestoreGetsFullPage(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, nil)
+
+	rec := send(f.h, http.MethodGet, f.path(""), "", withCookie(f.c),
+		withHeader("HX-Request", "true"), withHeader("HX-History-Restore-Request", "true"))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	body := rec.Body.String()
+	assert.Contains(t, body, "<html")
+	assert.Contains(t, body, `id="memory-rows"`)
+	assert.Contains(t, body, `id="detail-pane"`)
+}
+
+func TestEditURLRedirects(t *testing.T) {
 	t.Parallel()
 	f := newDetailFixture(t, nil)
 
 	rec := send(f.h, http.MethodGet, f.path("/edit"), "", withCookie(f.c))
 
-	require.Equal(t, http.StatusOK, rec.Code)
-	body := rec.Body.String()
-	assert.Contains(t, body, `name="version" value="2"`)
-	assert.Contains(t, body, `name="csrf" value="`+f.s.session.csrf+`"`)
-	assert.Contains(t, body, "go, ops")
-	assert.NotContains(t, body, hostile)
+	assert.Equal(t, http.StatusSeeOther, rec.Code)
+	assert.Equal(t, f.path(""), rec.Header().Get("Location"))
 }
 
 func TestLineDiffDeterministic(t *testing.T) {
@@ -318,7 +406,7 @@ func TestDetailProfileHidesMutations(t *testing.T) {
 		assert.NotContains(t, body, f.path(action), action)
 	}
 	edit := send(f.h, http.MethodGet, f.path("/edit"), "", withCookie(f.c))
-	assert.NotContains(t, edit.Body.String(), `name="content"`)
+	assert.Equal(t, http.StatusSeeOther, edit.Code)
 }
 
 func TestHtmxConfigMeta(t *testing.T) {

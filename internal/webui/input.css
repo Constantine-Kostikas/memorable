@@ -56,7 +56,7 @@
   --type-feedback: #7A4FD6;
   --type-feedback-soft: #ECE5FB;
   --type-feedback-ink: #5B34B5;
-  --type-reference: #C08A1E;
+  --type-reference: #B17F1A;
   --type-reference-soft: #F7ECD3;
   --type-reference-ink: #7A5208;
   --sheet-line: 1.25rem;
@@ -327,6 +327,18 @@
     background-color: var(--danger-soft);
     color: var(--danger);
   }
+
+  .memory-row > a:hover {
+    background-color: color-mix(in srgb, var(--sheet) 50%, var(--rail));
+  }
+
+  .memory-row:has(> a[aria-current=true]) {
+    background-color: var(--sheet);
+  }
+
+  .memory-row:has(> a[aria-current=true]) > a {
+    background-color: transparent;
+  }
 }
 
 /* Unlayered so the tab color beats utility border colors such as divide-line. */
@@ -352,4 +364,12 @@
 
 .type-tab-reference {
   border-left-color: var(--type-reference);
+}
+
+/* Unlayered so the narrow layout beats display utilities such as flex on the panes. */
+@media (width < 900px) {
+  .workspace:has(.pane-selected) .list-pane,
+  .detail-pane:not(.pane-selected) {
+    display: none;
+  }
 }

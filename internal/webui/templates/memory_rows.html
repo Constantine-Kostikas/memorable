@@ -1,39 +1,5 @@
-{{if .VectorUnavailable}}<p class="mb-3 notice-warn p-2">Showing text matches only: vector search unavailable.</p>{{end}}
-{{if .Rows}}
-<ul class="divide-y divide-line rounded-md border border-line bg-sheet">
-  {{range .Rows}}
-  <li class="type-tab-{{typeClass .Type}} p-3">
-    <div class="flex flex-wrap items-baseline gap-3">
-      <a href="{{.Href}}" class="font-bold hover:underline">{{.Title}}</a>
-      <span class="text-meta text-ink-muted">{{.Project}}</span>
-      <span class="chip chip-type-{{typeClass .Type}}">{{.Type}}</span>
-      <span class="chip chip-status-{{.Status}}">{{.Status}}</span>
-      <span class="ml-auto text-meta text-ink-muted">{{.Score}}</span>
-    </div>
-    <pre class="mt-1 whitespace-pre-wrap break-words font-sans text-ink">{{.Snippet}}</pre>
-    {{if .Tags}}<p class="mt-1 flex flex-wrap gap-1 text-meta">{{range .Tags}}<span class="chip">{{.}}</span>{{end}}</p>{{end}}
-    {{with .Explain}}
-    <details class="mt-2 text-body">
-      <summary class="cursor-pointer text-ink-muted">Why this result</summary>
-      <dl class="mt-1 grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-4">
-        <dt class="text-ink-muted">Vector rank</dt><dd>{{.VectorRank}}</dd>
-        <dt class="text-ink-muted">Full-text rank</dt><dd>{{.FTSRank}}</dd>
-        <dt class="text-ink-muted">Trigram rank</dt><dd>{{.TrigramRank}}</dd>
-        <dt class="text-ink-muted">Similarity</dt><dd>{{.Similarity}}</dd>
-        <dt class="text-ink-muted">Fused score (RRF)</dt><dd>{{.RRF}}</dd>
-        <dt class="text-ink-muted">Text match</dt><dd>{{if .Textual}}yes{{else}}no{{end}}</dd>
-        <dt class="text-ink-muted">Project boost</dt><dd>{{.ProjectBoost}}</dd>
-        <dt class="text-ink-muted">Pinned boost</dt><dd>{{.PinnedBoost}}</dd>
-        <dt class="text-ink-muted">Usage boost</dt><dd>{{.UsageBoost}}</dd>
-        <dt class="text-ink-muted">Multiplier</dt><dd>{{.Multiplier}}</dd>
-        <dt class="text-ink-muted">Final score</dt><dd>{{.Final}}</dd>
-      </dl>
-    </details>
-    {{end}}
-  </li>
-  {{end}}
-</ul>
-{{else}}
-<p class="text-ink-muted">No memories match.</p>
-{{end}}
-{{if .NextURL}}<p class="mt-3"><a href="{{.NextURL}}" class="btn">Next page</a></p>{{end}}
+{{if .VectorUnavailable}}<li class="m-2 notice-warn p-2">Showing text matches only: vector search unavailable.</li>{{end}}
+{{range .Rows}}{{template "memory_row.html" .}}{{else}}<li class="p-3 text-ink-muted">No memories match.</li>{{end}}
+{{define "memory_rows_response"}}{{template "memory_rows.html" .}}
+<div id="load-more" hx-swap-oob="true" class="p-3">{{template "load_more_link" .}}</div>{{end}}
+{{define "load_more_link"}}{{if .NextURL}}<a href="{{.NextURL}}" hx-get="{{.NextURL}}" hx-target="#memory-rows" hx-swap="beforeend" class="btn">Load more</a>{{end}}{{end}}

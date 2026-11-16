@@ -128,14 +128,26 @@ func TestMemoryRowsCarryTypeTab(t *testing.T) {
 
 	var out bytes.Buffer
 	err = tmpl.ExecuteTemplate(&out, "memory_rows.html", memoriesView{Rows: []memoryRow{
-		{Href: "/a", Title: "A", Type: "user", Status: "active"},
-		{Href: "/b", Title: "B", Type: "custom", Status: "deleted"},
+		{Href: "/a", Title: "A", Type: "user", TypeClass: typeClass("user"), Status: "active"},
+		{Href: "/b", Title: "B", Type: "custom", TypeClass: typeClass("custom"), Status: "deleted"},
 	}})
 	require.NoError(t, err)
 
 	body := out.String()
 	assert.Contains(t, body, "type-tab-user")
 	assert.Contains(t, body, "type-tab-other")
-	assert.Contains(t, body, "chip-status-active")
+	assert.NotContains(t, body, "chip-status-active", "rows show a status chip only when not active")
 	assert.Contains(t, body, "chip-status-deleted")
+}
+
+func TestAppJSMovesRowSelection(t *testing.T) {
+	t.Parallel()
+
+	js, err := assetFS.ReadFile("static/app.js")
+	require.NoError(t, err)
+
+	body := string(js)
+	assert.Contains(t, body, "document.addEventListener('htmx:afterRequest', markSelectedRow)")
+	assert.Contains(t, body, "'data-row-link'")
+	assert.Contains(t, body, "setAttribute('aria-current', 'true')")
 }
