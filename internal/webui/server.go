@@ -164,6 +164,7 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /c/{context}/review", s.inContext(s.handleReview))
 	mux.HandleFunc("GET /c/{context}/profile", s.inContext(s.handleProfile))
 	mux.HandleFunc("GET /c/{context}/stats", s.inContext(s.handleStats))
+	mux.HandleFunc("GET /c/{context}/lookup", s.inContext(s.handleLookup))
 	s.registerMemoryRoutes(mux)
 	s.registerAdminRoutes(mux)
 }

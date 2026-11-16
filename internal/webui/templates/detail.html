@@ -40,17 +40,29 @@
       <textarea id="memory-content" name="content" rows="14" data-original="{{.Stored.Content}}" required class="field sheet-ruled block w-full resize-y p-3"{{if not .Editable}} disabled{{end}}>
 {{.Form.Content}}</textarea>
       <div class="mt-3 grid gap-3 min-[600px]:grid-cols-2" data-editor-meta>
-        <label class="flex flex-col gap-1 text-body">Tags (comma-separated)
-          <input type="text" name="tags" value="{{.Form.Tags}}" data-original="{{.Stored.Tags}}" class="field"{{if not .Editable}} disabled{{end}}>
-        </label>
+        <div class="flex flex-col gap-1 text-body" data-tags>
+          <label for="memory-tags" data-tags-label>Tags <span data-tags-hint>(comma-separated)</span></label>
+          <input type="text" name="tags" value="{{.Form.Tags}}" data-original="{{.Stored.Tags}}" id="memory-tags" data-tags-source class="field"{{if not .Editable}} disabled{{end}}>
+          <div class="tag-chips field flex flex-wrap items-center gap-1" data-tag-chips hidden>
+            <ul class="flex flex-wrap gap-1" data-tag-list aria-label="Tags"></ul>
+            <input type="text" id="memory-tag-entry" data-tag-entry autocomplete="off" placeholder="Add tag" aria-describedby="memory-tag-help" class="tag-entry min-w-24 flex-1">
+          </div>
+          <span id="memory-tag-help" class="sr-only">Enter or comma adds a tag; Backspace in an empty field removes the last one.</span>
+          <template data-tag-chip><li class="chip inline-flex items-center gap-1"><span data-tag-text></span><button type="button" class="tag-remove" data-tag-remove>&times;</button></li></template>
+        </div>
         <label class="flex flex-col gap-1 text-body">Type
           <select name="type" data-original="{{.Stored.Type}}" class="field"{{if not .Editable}} disabled{{end}}>
             {{range .Types}}<option value="{{.}}"{{if eq . $.Form.Type}} selected{{end}}>{{.}}</option>{{end}}
           </select>
         </label>
-        <label class="flex flex-col gap-1 text-body">Expires (RFC 3339 or date; empty means never)
-          <input type="text" name="expires_at" value="{{.Form.ExpiresAt}}" data-original="{{.Stored.ExpiresAt}}" placeholder="2026-12-31" class="field"{{if not .Editable}} disabled{{end}}>
-        </label>
+        <div class="flex flex-col gap-1 text-body">
+          <label for="memory-expires">Expires (empty means never)</label>
+          <div class="flex gap-2">
+            <input type="date" name="expires_at" value="{{.Form.ExpiresAt}}" data-original="{{.Stored.ExpiresAt}}" id="memory-expires" class="field min-w-0 flex-1"{{if not .Editable}} disabled{{end}}>
+            {{if .Editable}}<button type="button" class="btn" data-clear-expiry aria-controls="memory-expires" hidden>Never</button>{{end}}
+          </div>
+          <input type="hidden" name="expires_at_original" value="{{.Form.ExpiresAtOriginal}}">
+        </div>
         <label class="flex items-center gap-2 self-end text-body">
           <input type="checkbox" name="pinned" value="on" data-original="{{if .Stored.Pinned}}on{{end}}"{{if .Form.Pinned}} checked{{end}}{{if not .Editable}} disabled{{end}}> Pinned
         </label>
@@ -87,9 +99,11 @@
         </form>{{end}}
         <form method="post" action="{{.Base}}/supersede{{.FilterQuery}}" hx-post="{{.Base}}/supersede" hx-target="#detail-pane" hx-swap="outerHTML" class="flex flex-col gap-2">
           <input type="hidden" name="csrf" value="{{.CSRF}}">
-          <label class="flex flex-col gap-1 text-body">Superseded by (id or slug)
-            <input type="text" name="replacement" required class="field">
-          </label>
+          <div class="relative flex flex-col gap-1 text-body">
+            <label for="supersede-ref">Superseded by (title, id, or slug)</label>
+            <input type="text" name="replacement" required autocomplete="off" id="supersede-ref" class="field" data-lookup="replacement" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="supersede-options" hx-get="{{.Lookup}}?for=supersede&amp;exclude={{.ID}}" hx-trigger="input changed delay:150ms" hx-target="#supersede-options" hx-swap="innerHTML">
+            <ul id="supersede-options" role="listbox" aria-label="Matching memories" class="lookup-list absolute left-0 top-full z-20 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-line bg-sheet shadow-md" hidden></ul>
+          </div>
           <button type="submit" class="btn self-start">Supersede</button>
         </form>
         {{if .CanDelete}}<hr class="border-line">
@@ -136,9 +150,11 @@
     </ul>
     {{if not .ReadOnly}}<form method="post" action="{{.Base}}/link{{.FilterQuery}}" hx-post="{{.Base}}/link" hx-target="#detail-pane" hx-swap="outerHTML" class="flex flex-wrap items-end gap-2">
       <input type="hidden" name="csrf" value="{{.CSRF}}">
-      <label class="flex flex-col text-body">Link to (id or slug)
-        <input type="text" name="to" required class="field">
-      </label>
+      <div class="relative flex flex-col text-body">
+        <label for="link-ref">Link to (title, id, or slug)</label>
+        <input type="text" name="to" required autocomplete="off" id="link-ref" class="field" data-lookup="to" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="link-options" hx-get="{{.Lookup}}?for=link&amp;exclude={{.ID}}" hx-trigger="input changed delay:150ms" hx-target="#link-options" hx-swap="innerHTML">
+        <ul id="link-options" role="listbox" aria-label="Matching memories" class="lookup-list absolute left-0 top-full z-20 mt-1 max-h-64 w-80 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-md border border-line bg-sheet shadow-md" hidden></ul>
+      </div>
       <label class="flex flex-col text-body">Kind
         <select name="kind" class="field">
           <option value="related">related</option>

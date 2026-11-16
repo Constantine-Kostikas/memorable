@@ -58,13 +58,16 @@ type activityEntry struct {
 
 // editFields is the editor's form state: the stored memory on load, the submitted values after a failed save.
 type editFields struct {
-	Title     string
-	Content   string
-	Tags      string
-	Type      string
-	ExpiresAt string
-	Pinned    bool
-	Version   int
+	Title   string
+	Content string
+	Tags    string
+	Type    string
+	// ExpiresAt is the date part the date input shows; ExpiresAtOriginal is the full stored timestamp it came
+	// from, so an untouched date keeps its time on save.
+	ExpiresAt         string
+	ExpiresAtOriginal string
+	Pinned            bool
+	Version           int
 }
 
 type detailView struct {
@@ -72,6 +75,7 @@ type detailView struct {
 	ID          string
 	CSRF        string
 	Base        string
+	Lookup      string
 	ListURL     string
 	FilterQuery string
 	Quarantined bool
@@ -155,6 +159,7 @@ func (s *Server) loadDetail(r *http.Request, rc requestContext, id uuid.UUID) (d
 	base := memoryBase(rc.Name, id)
 	view := detailView{
 		Context: rc.Name, ID: id.String(), CSRF: s.session.csrf, Base: base, Types: filterTypes,
+		Lookup: contextBase(rc.Name) + "/lookup",
 	}
 	fetched, err := s.fetchPassive(r, rc, id)
 	if errors.Is(err, memory.ErrQuarantined) {
@@ -209,7 +214,8 @@ func fillMemory(view *detailView, m memory.Memory) {
 		Pinned: m.Pinned, Version: m.Version,
 	}
 	if m.ExpiresAt != nil {
-		view.Form.ExpiresAt = m.ExpiresAt.UTC().Format(time.RFC3339)
+		view.Form.ExpiresAt = m.ExpiresAt.UTC().Format(time.DateOnly)
+		view.Form.ExpiresAtOriginal = m.ExpiresAt.UTC().Format(time.RFC3339)
 	}
 	view.Stored = view.Form
 	view.CanActivate = m.Status == memory.StatusFlagged || m.Status == memory.StatusUnverified

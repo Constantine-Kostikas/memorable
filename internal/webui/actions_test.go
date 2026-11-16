@@ -390,16 +390,68 @@ func TestUpdateRoundTripsRenderedExpiry(t *testing.T) {
 	t.Parallel()
 	expires := time.Date(2026, 12, 31, 8, 30, 0, 0, time.UTC)
 	f := newDetailFixture(t, func(m *detailMemories, _ uuid.UUID) { m.fetched[0].Memory.ExpiresAt = &expires })
-	rendered := regexp.MustCompile(`name="expires_at" value="([^"]*)"`).
-		FindStringSubmatch(send(f.h, http.MethodGet, f.path(""), "", withCookie(f.c)).Body.String())
+	body := send(f.h, http.MethodGet, f.path(""), "", withCookie(f.c)).Body.String()
+	rendered := regexp.MustCompile(`name="expires_at" value="([^"]*)"`).FindStringSubmatch(body)
+	original := regexp.MustCompile(`name="expires_at_original" value="([^"]*)"`).FindStringSubmatch(body)
 	require.Len(t, rendered, 2)
+	require.Len(t, original, 2)
 
-	rec := f.post("/update", updateForm(url.Values{"expires_at": {rendered[1]}}))
+	rec := f.post("/update", updateForm(url.Values{"expires_at": {rendered[1]}, "expires_at_original": {original[1]}}))
 
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	patch := f.mem.called("Update")[0].Args[2].(memory.Patch)
+	assert.Nil(t, patch.ExpiresAt, "an untouched date keeps the stored expiry, time included")
+}
+
+func TestExpiryUnchangedKeepsTime(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, nil)
+
+	rec := f.post("/update", updateForm(url.Values{"expires_at": {"2026-12-01"}, "expires_at_original": {"2026-12-01T15:30:00Z"}}))
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	patch := f.mem.called("Update")[0].Args[2].(memory.Patch)
+	assert.Nil(t, patch.ExpiresAt)
+}
+
+func TestExpiryChangedUsesDate(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, nil)
+
+	rec := f.post("/update", updateForm(url.Values{"expires_at": {"2026-12-05"}, "expires_at_original": {"2026-12-01T15:30:00Z"}}))
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	patch := f.mem.called("Update")[0].Args[2].(memory.Patch)
+	require.NotNil(t, patch.ExpiresAt)
 	require.NotNil(t, *patch.ExpiresAt)
-	assert.True(t, expires.Equal(**patch.ExpiresAt))
+	assert.True(t, time.Date(2026, 12, 5, 0, 0, 0, 0, time.UTC).Equal(**patch.ExpiresAt))
+}
+
+func TestExpiryClearedWithEmpty(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, nil)
+
+	rec := f.post("/update", updateForm(url.Values{"expires_at": {""}, "expires_at_original": {"2026-12-01T15:30:00Z"}}))
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	patch := f.mem.called("Update")[0].Args[2].(memory.Patch)
+	require.NotNil(t, patch.ExpiresAt)
+	assert.Nil(t, *patch.ExpiresAt)
+}
+
+func TestFailedSaveKeepsExpiryOriginal(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, func(m *detailMemories, _ uuid.UUID) {
+		m.mutErr = fmt.Errorf("update: %w", memory.ErrUnavailable)
+		m.fetched, m.getErr = nil, fmt.Errorf("get: %w", memory.ErrUnavailable)
+	})
+
+	rec := f.post("/update", updateForm(url.Values{"expires_at": {"2026-12-01"}, "expires_at_original": {"2026-12-01T15:30:00Z"}}),
+		withHeader("HX-Request", "true"))
+
+	editor := editorForm(t, rec.Body.String())
+	assert.Contains(t, editor, `name="expires_at" value="2026-12-01"`)
+	assert.Contains(t, editor, `name="expires_at_original" value="2026-12-01T15:30:00Z"`)
 }
 
 func TestNoticeIsOutOfBandToast(t *testing.T) {

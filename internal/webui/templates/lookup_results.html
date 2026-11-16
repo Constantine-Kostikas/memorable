@@ -1,0 +1,4 @@
+{{range .Options}}<li role="option" data-id="{{.ID}}" data-href="{{.Href}}" aria-selected="false" class="lookup-option cursor-pointer px-2 py-1">
+  <span class="block font-bold" data-option-title>{{.Title}}</span>
+  <span class="block text-meta text-ink-muted"><span class="chip chip-type-{{typeClass .Type}}">{{.Type}}</span>{{if .Slug}} <span class="font-mono">{{.Slug}}</span>{{end}}</span>
+</li>{{else}}{{if .Query}}<li role="presentation" class="px-2 py-1 text-meta text-ink-muted">No matches.</li>{{end}}{{end}}

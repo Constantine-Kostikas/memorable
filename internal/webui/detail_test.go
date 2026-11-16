@@ -39,6 +39,7 @@ type detailMemories struct {
 	updated  memory.Memory
 	listReqs []memory.ListRequest
 	searches []memory.SearchRequest
+	results  []memory.Summary
 }
 
 func (d *detailMemories) rows() []memory.Summary {
@@ -63,6 +64,9 @@ func (d *detailMemories) Search(_ context.Context, r memory.SearchRequest) (memo
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.searches = append(d.searches, r)
+	if d.results != nil {
+		return memory.SearchResponse{Results: d.results}, nil
+	}
 	return memory.SearchResponse{Results: d.rows()}, nil
 }
 
@@ -482,7 +486,9 @@ func TestDetailIsAnEditor(t *testing.T) {
 	assert.Contains(t, editor, "line one\n&lt;img src=x onerror=alert(1)&gt;</textarea>")
 	assert.Contains(t, editor, `name="tags" value="go, ops"`)
 	assert.Contains(t, editor, `<option value="project" selected>`)
-	assert.Contains(t, editor, `name="expires_at" value="2026-12-31T00:00:00Z"`)
+	assert.Regexp(t, `<input type="date" name="expires_at" value="2026-12-31"`, editor)
+	assert.Contains(t, editor, `name="expires_at_original" value="2026-12-31T00:00:00Z"`)
+	assert.Regexp(t, `<button type="button"[^>]*data-clear-expiry`, editor)
 	assert.Regexp(t, `name="pinned"[^>]*checked`, editor)
 	assert.Contains(t, editor, `name="version" value="2"`)
 	assert.Contains(t, editor, `name="csrf" value="`+f.s.session.csrf+`"`)
@@ -498,7 +504,7 @@ func TestDetailIsAnEditor(t *testing.T) {
 
 func TestPristineEditorMatchesItsOriginals(t *testing.T) {
 	t.Parallel()
-	expires := time.Date(2026, 12, 31, 0, 0, 0, 0, time.UTC)
+	expires := time.Date(2026, 12, 31, 15, 30, 0, 0, time.UTC)
 	f := newDetailFixture(t, func(m *detailMemories, _ uuid.UUID) {
 		m.fetched[0].Memory.ExpiresAt = &expires
 		m.fetched[0].Memory.Pinned = true
@@ -517,6 +523,7 @@ func TestPristineEditorMatchesItsOriginals(t *testing.T) {
 		require.Len(t, original, 2, name)
 		assert.Equal(t, original[1], value[1], name)
 	}
+	assert.Regexp(t, `name="expires_at" value="2026-12-31" data-original="2026-12-31"`, editor)
 	content := regexp.MustCompile(`(?s)<textarea[^>]*name="content"[^>]*data-original="([^"]*)"[^>]*>\n(.*?)</textarea>`).FindStringSubmatch(editor)
 	require.Len(t, content, 3)
 	assert.Equal(t, content[1], content[2])

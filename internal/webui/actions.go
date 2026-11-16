@@ -87,7 +87,8 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request, rc request
 	submitted := editFields{
 		Title: r.PostFormValue("title"), Content: r.PostFormValue("content"), Tags: r.PostFormValue("tags"),
 		Type: r.PostFormValue("type"), Pinned: r.PostFormValue("pinned") != "",
-		ExpiresAt: strings.TrimSpace(r.PostFormValue("expires_at")),
+		ExpiresAt:         strings.TrimSpace(r.PostFormValue("expires_at")),
+		ExpiresAtOriginal: strings.TrimSpace(r.PostFormValue("expires_at_original")),
 	}
 	expected, patch, err := patchFromEdit(submitted, rawVersion)
 	var updated memory.Memory
@@ -127,14 +128,27 @@ func patchFromEdit(e editFields, rawVersion string) (int, memory.Patch, error) {
 	if err != nil {
 		return 0, memory.Patch{}, fmt.Errorf("%w: unknown type", memory.ErrValidation)
 	}
+	tags := splitTags(e.Tags)
+	patch := memory.Patch{Title: &e.Title, Content: &e.Content, Tags: &tags, Type: &typ, Pinned: &e.Pinned}
+	if expiryUntouched(e) {
+		return expected, patch, nil
+	}
 	expires, err := parseExpiry(e.ExpiresAt)
 	if err != nil {
 		return 0, memory.Patch{}, err
 	}
-	tags := splitTags(e.Tags)
-	return expected, memory.Patch{
-		Title: &e.Title, Content: &e.Content, Tags: &tags, Type: &typ, Pinned: &e.Pinned, ExpiresAt: &expires,
-	}, nil
+	patch.ExpiresAt = &expires
+	return expected, patch, nil
+}
+
+// expiryUntouched reports whether the date input still shows the stored expiry's date, so saving
+// leaves the stored timestamp, time of day included, instead of moving it to midnight.
+func expiryUntouched(e editFields) bool {
+	if e.ExpiresAt == "" {
+		return false
+	}
+	original, err := time.Parse(time.RFC3339, e.ExpiresAtOriginal)
+	return err == nil && original.UTC().Format(time.DateOnly) == e.ExpiresAt
 }
 
 func parseExpiry(raw string) (*time.Time, error) {
