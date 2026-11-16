@@ -344,6 +344,7 @@ Imperatives aimed at the agent ("ignore previous", "you must always", "system pr
 - `fang` styles help, usage, errors, and version; `memorable --help` shows grouped commands with examples.
 - `lipgloss` tables and panels for lists, search results, stats, doctor checks; `huh` forms and spinners for setup and slow steps.
 - Plain text automatically when stdout is not a terminal (including when Claude runs the CLI) or `NO_COLOR` is set. `--output text|json` on every read command.
+- Tab completion is static: it never opens the database or the keyring. Enum flag values complete, ids, slugs, and tags complete to nothing, and context names come from the config file.
 - Exit codes: 0 success, 1 runtime error, 2 usage error. Logs on stderr; program output on stdout; commands write through `cmd.OutOrStdout()` for testability.
 
 ### Commands
@@ -367,6 +368,7 @@ Imperatives aimed at the agent ("ignore previous", "you must always", "system pr
 | `memorable export [--format json or md]` / `import <path>` | Portable export; import JSON or Claude Code `memory/*.md` files with full scanning |
 | `memorable hook session-start` | Reads hook JSON on stdin; prints the preload set |
 | `memorable stats` | Counts per status, type, project; embedding coverage |
+| `memorable completion bash\|zsh\|fish` | Print the completion script (cobra); setup installs it |
 | `memorable version` | Version, commit, build date (ldflags) |
 | `memorable ui [--admin] [--context <name>] [--no-browser] [--port <n>]` | Local web UI on loopback: browse, search with score breakdown, and act on memories; `--admin` unlocks approve, purge, prune, and profile writes after a terminal password prompt |
 | `memorable update [--check] [--pre] [--force] [--version vX.Y.Z]` | Replace the running binary with the newest verified release (below) |
@@ -393,7 +395,8 @@ Interactive only (refuses without a TTY). Each step shows what will change, as a
 8. Add permission rules to `~/.claude/settings.json`, including the Bash deny rule `Bash(memorable ui:*)`.
 9. Optional: SessionStart hook.
 10. Optional: daily backup via systemd user timer (Linux) or launchd agent (macOS).
-11. Run `doctor` and show the result.
+11. Optional: tab completion for the login shell (a script file, plus a marked block in `.zshrc`, or in `.bash_profile` for bash on macOS).
+12. Run `doctor` and show the result.
 
 ## 10. Configuration
 
@@ -459,7 +462,7 @@ backups_keep = 14
 - Private GitHub repository `constantine-kostikas/memorable` (created with author approval at the first commit).
 - Root files: `Makefile`, `.golangci.yml`, `.gitignore`, `CLAUDE.md` (with the always-load directive for the `golang-how-to` skill), `README.md`.
 - **CI** (`.github/workflows/ci.yml`, push and PR to main): build, `go test -race`, golangci-lint, govulncheck, gosec, integration tests.
-- **Release** (`.github/workflows/release.yml`, on a pushed `v*` tag or the "Run workflow" button, which tags the head of main with the entered version and releases it in the same run): GoReleaser v2, `CGO_ENABLED=0`, linux and darwin on amd64 and arm64, archive names matching `uname`, GPG-signed checksums (`GPG_PRIVATE_KEY`, `GPG_PASSPHRASE` secrets), GitHub-native release notes grouped by PR label (`.github/release.yml`, labels applied from branch prefixes by `.github/labeler.yml`), version via ldflags. Mirrors GitQuick's setup without its push-to-main trigger.
+- **Release** (`.github/workflows/release.yml`, on a pushed `v*` tag or the "Run workflow" button, which tags the head of main with the entered version and releases it in the same run): GoReleaser v2, `CGO_ENABLED=0`, archives that include `completions/memorable.{bash,zsh,fish}`, linux and darwin on amd64 and arm64, archive names matching `uname`, GPG-signed checksums (`GPG_PRIVATE_KEY`, `GPG_PASSPHRASE` secrets), GitHub-native release notes grouped by PR label (`.github/release.yml`, labels applied from branch prefixes by `.github/labeler.yml`), version via ldflags. Mirrors GitQuick's setup without its push-to-main trigger.
 - **Homebrew tap:** configured in `.goreleaser.yaml` but commented out until the repository is made public.
 - **Install while private** (colleagues are collaborators). `gh release download` without a tag skips pre-releases, so name the newest tag:
   ```sh

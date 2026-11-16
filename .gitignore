@@ -3,6 +3,7 @@
 /bin/
 /bin/tailwindcss
 /dist/
+/completions/
 *.test
 *.out
 coverage.*
