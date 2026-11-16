@@ -110,5 +110,6 @@ func summarize(m Memory, score float64) Summary {
 	return Summary{
 		ID: m.ID, Slug: m.Slug, Project: m.Project, Title: m.Title, Snippet: Snippet(m.Content, SnippetRunes),
 		Type: m.Type, Tags: m.Tags, Scope: m.Scope, Status: m.Status, Score: score,
+		UpdatedAt: m.UpdatedAt,
 	}
 }

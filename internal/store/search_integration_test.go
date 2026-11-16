@@ -457,3 +457,18 @@ func TestRequeueMissing(t *testing.T) {
 	require.Len(t, jobs, 1)
 	assert.Equal(t, lost.ID, jobs[0].MemoryID)
 }
+
+func TestList_ReturnsRowUpdatedAt(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f := newFixture(t)
+	m := insertWith(t, f, "stamped", "s", nil, -1)
+	want := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	_, err := f.admin.Exec(ctx, `UPDATE mem_personal.memories SET updated_at = $1 WHERE id = $2`, want, m.ID)
+	require.NoError(t, err)
+
+	got, _, err := f.store.List(ctx, memory.Filter{Owner: "dev", Now: time.Now()}, nil, nil, 10)
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.True(t, want.Equal(got[0].UpdatedAt), "got %s", got[0].UpdatedAt)
+}

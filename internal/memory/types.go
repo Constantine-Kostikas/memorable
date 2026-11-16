@@ -280,4 +280,6 @@ type Summary struct {
 	Scope   Scope
 	Status  Status
 	Score   float64
+	// UpdatedAt is shown by the web UI only; MCP renderings omit it.
+	UpdatedAt time.Time
 }
