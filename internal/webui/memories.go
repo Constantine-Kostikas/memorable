@@ -54,6 +54,9 @@ type memoryRow struct {
 	Age       string
 	Current   bool
 	Explain   *explainView
+	Note      string
+	// Standalone rows are plain links to the workspace, for pages without a detail pane.
+	Standalone bool
 }
 
 type memoriesView struct {

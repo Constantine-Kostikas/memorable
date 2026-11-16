@@ -54,6 +54,7 @@ func secretRules(err error) string {
 type actionFunc func(r *http.Request, rc requestContext, id uuid.UUID) (notice string, err error)
 
 // action runs a mutation and answers with the re-rendered detail, or the detail with an inline error.
+// A form posted from the Review page (return=review) is answered with the Review page instead.
 func (s *Server) action(do actionFunc) func(http.ResponseWriter, *http.Request, requestContext, uuid.UUID) {
 	return func(w http.ResponseWriter, r *http.Request, rc requestContext, id uuid.UUID) {
 		if err := r.ParseForm(); err != nil {
@@ -65,6 +66,10 @@ func (s *Server) action(do actionFunc) func(http.ResponseWriter, *http.Request, 
 		if err != nil {
 			status, message = s.actionStatus(r, err)
 			notice = ""
+		}
+		if r.PostFormValue("return") == returnToReview {
+			s.respondReview(w, r, rc, status, func(v *reviewView) { v.Notice, v.Error = notice, message })
+			return
 		}
 		view, loadErr := s.loadDetail(r, rc, id)
 		if loadErr != nil {

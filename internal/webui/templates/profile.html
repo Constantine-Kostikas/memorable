@@ -5,7 +5,7 @@
 {{if .Notice}}<p role="status" class="mb-4 notice-ok p-3">{{.Notice}}</p>{{end}}
 {{if .Error}}<p role="alert" class="mb-4 notice-danger p-3">{{.Error}}</p>{{end}}
 {{if .Rows}}
-<ul class="divide-y divide-line rounded-md border border-line bg-sheet">
+<ul class="divide-y divide-line overflow-hidden rounded-md border border-line bg-sheet">
   {{range .Rows}}
   <li class="type-tab-{{typeClass .Type}} p-3">
     <div class="flex flex-wrap items-baseline gap-3">
@@ -14,7 +14,7 @@
       <span class="chip chip-type-{{typeClass .Type}}">{{.Type}}</span>
       <span class="chip chip-status-{{.Status}}">{{.Status}}</span>
     </div>
-    <pre class="mt-1 whitespace-pre-wrap break-words font-sans text-ink">{{.Content}}</pre>
+    <div class="sheet-ruled mt-2 px-3"><pre class="whitespace-pre-wrap break-words text-ink">{{.Content}}</pre></div>
     {{if $.Admin}}
     <details class="mt-2"{{if .Error}} open{{end}}>
       <summary class="cursor-pointer text-body underline">Edit</summary>

@@ -1,34 +1,27 @@
+<div id="review">
 <h1 class="mb-4 text-page font-bold">Review</h1>
+{{if .Notice}}<p role="status" class="mb-4 notice-ok p-3">{{.Notice}}</p>{{end}}
+{{if .Error}}<p role="alert" class="mb-4 notice-danger p-3">{{.Error}}</p>{{end}}
 {{range .Sections}}
 <section class="mb-6">
-  <h2 class="mb-2 text-title font-bold">{{.Heading}} ({{len .Items}})</h2>
-  {{if .Items}}
-  <ul class="divide-y divide-line rounded-md border border-line bg-sheet">
-    {{range .Items}}
-    <li class="type-tab-{{typeClass .Type}} flex flex-wrap items-baseline gap-3 p-3">
-      <a href="{{.Href}}" class="font-bold hover:underline">{{.Title}}</a>
-      <span class="text-meta text-ink-muted">{{.Project}}</span>
-      <span class="chip chip-type-{{typeClass .Type}}">{{.Type}}</span>
-      <span class="chip chip-status-{{.Status}}">{{.Status}}</span>
-      <span class="ml-auto text-meta text-ink-muted">{{.Note}}</span>
-    </li>
-    {{end}}
+  <h2 class="mb-2 text-title font-bold">{{.Heading}} ({{len .Rows}})</h2>
+  {{if .Rows}}
+  <ul class="divide-y divide-line overflow-hidden rounded-md border border-line bg-sheet">
+    {{range .Rows}}{{template "memory_row.html" .}}{{end}}
   </ul>
   {{else}}<p class="text-ink-muted">{{.Empty}}</p>{{end}}
 </section>
 {{end}}
 <section class="mb-6">
   <h2 class="mb-2 text-title font-bold">Conflicts ({{len .Conflicts}})</h2>
-  {{if .Conflicts}}
-  <ul class="divide-y divide-line rounded-md border border-line bg-sheet">
-    {{range .Conflicts}}
-    <li class="flex flex-wrap items-baseline gap-3 p-3">
-      <a href="{{.FromHref}}" class="font-mono hover:underline">{{.FromID}}</a>
-      <span class="text-meta text-ink-muted">{{.Kind}}</span>
-      <a href="{{.ToHref}}" class="font-mono hover:underline">{{.ToID}}</a>
-    </li>
-    {{end}}
-  </ul>
+  {{range .Conflicts}}
+  <article class="mb-4">
+    <p class="mb-2 text-meta text-ink-muted">{{.Kind}}</p>
+    <div class="grid gap-4 md:grid-cols-2">
+      {{template "conflict_side" .From}}
+      {{template "conflict_side" .To}}
+    </div>
+  </article>
   {{else}}<p class="text-ink-muted">No conflicts.</p>{{end}}
 </section>
 {{with .Quarantined}}{{template "quarantined.html" .}}{{else}}<section class="mb-6">
@@ -37,3 +30,40 @@
   <p class="notice-warn p-3">{{.QuarantinedCount}} quarantined. Content stays hidden until approved: run <code>memorable approve</code> or start <code>memorable ui --admin</code>.</p>
   {{else}}<p class="text-ink-muted">Nothing is quarantined.</p>{{end}}
 </section>{{end}}
+</div>
+{{define "conflict_side"}}
+{{if .Hidden}}
+<div class="rounded-md border border-warn/40 bg-warn-soft p-3">
+  <p class="font-mono text-meta">{{.ID}}</p>
+  <p class="mt-1"><span class="chip chip-warn">quarantined, content hidden</span></p>
+</div>
+{{else if .Unavailable}}
+<div class="rounded-md border border-line bg-sheet p-3">
+  <p class="font-mono text-meta">{{.ID}}</p>
+  <p class="mt-1 text-ink-muted">unavailable</p>
+  <p class="mt-2"><a href="{{.Href}}" class="btn">Open</a></p>
+</div>
+{{else}}
+<div class="type-tab-{{.TypeClass}} flex flex-col gap-2 rounded-md border border-line bg-sheet p-3">
+  <h3 class="font-bold">{{.Title}}</h3>
+  <p class="flex flex-wrap gap-2"><span class="chip chip-type-{{.TypeClass}}">{{.Type}}</span><span class="chip chip-status-{{.Status}}">{{.Status}}</span><span class="font-mono text-meta text-ink-muted">{{.ID}}</span></p>
+  <div class="sheet-ruled px-3"><pre class="whitespace-pre-wrap break-words">{{.Preview}}</pre></div>
+  <div class="flex flex-wrap items-center gap-2">
+    <a href="{{.Href}}" class="btn">Open</a>
+    {{with .KeepURL}}
+    <form method="post" action="{{.}}" hx-post="{{.}}" hx-target="#review" hx-swap="outerHTML" hx-confirm="Keep this memory and supersede the other?">
+      <input type="hidden" name="csrf" value="{{$.CSRF}}">
+      <input type="hidden" name="return" value="review">
+      <input type="hidden" name="replacement" value="{{$.ID}}">
+      <button type="submit" class="btn btn-primary">Keep this one</button>
+    </form>
+    {{end}}
+    <form method="post" action="{{.DeleteURL}}" hx-post="{{.DeleteURL}}" hx-target="#review" hx-swap="outerHTML" hx-confirm="Delete this memory?">
+      <input type="hidden" name="csrf" value="{{$.CSRF}}">
+      <input type="hidden" name="return" value="review">
+      <button type="submit" class="btn btn-danger">Delete</button>
+    </form>
+  </div>
+</div>
+{{end}}
+{{end}}
