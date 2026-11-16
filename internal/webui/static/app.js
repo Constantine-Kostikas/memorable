@@ -441,6 +441,13 @@
     if (!region) {
       return;
     }
+    // Errors stay until dismissed, so a repeated Ctrl+S must not stack copies of the same one.
+    var already = Array.prototype.some.call(region.querySelectorAll('[data-toast] > span'), function (span) {
+      return span.textContent === message;
+    });
+    if (already) {
+      return;
+    }
     var toast = document.createElement('div');
     toast.setAttribute('role', 'alert');
     toast.className = 'toast notice-danger';
