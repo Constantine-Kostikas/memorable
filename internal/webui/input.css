@@ -419,6 +419,28 @@
     line-height: 1;
   }
 
+  .dialog {
+    margin: 10vh auto auto;
+    width: min(36rem, calc(100vw - 2rem));
+    max-height: 80vh;
+    overflow-y: auto;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background-color: var(--sheet);
+    color: var(--ink);
+    padding: 1rem;
+    box-shadow: 0 10px 30px color-mix(in srgb, var(--ink) 25%, transparent);
+  }
+
+  .dialog::backdrop {
+    background-color: color-mix(in srgb, var(--ink) 35%, transparent);
+  }
+
+  .palette-list {
+    max-height: 50vh;
+    overflow-y: auto;
+  }
+
   .lookup-option:hover,
   .lookup-option[aria-selected=true] {
     background-color: var(--neutral-soft);

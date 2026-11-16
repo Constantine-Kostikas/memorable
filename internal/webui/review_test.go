@@ -99,7 +99,7 @@ func TestReviewQuarantinedCountOnly(t *testing.T) {
 	body := rec.Body.String()
 	assert.Contains(t, body, "3 quarantined")
 	assert.Contains(t, body, "memorable approve")
-	assert.NotContains(t, body, "<form")
+	assert.NotContains(t, mainContent(t, body), "<form", "the page content offers no actions; the top bar's search form is chrome")
 	assert.Equal(t, 1, bytes.Count([]byte(body), []byte("Visible flagged")))
 }
 
@@ -183,8 +183,7 @@ func TestProfileReadOnly(t *testing.T) {
 	assert.Contains(t, body, "No em dashes.")
 	assert.Contains(t, body, "style")
 	assert.NotContains(t, body, hostile)
-	_, main, found := strings.Cut(body, "<main")
-	require.True(t, found)
+	main := mainContent(t, body)
 	assert.NotContains(t, main, "<form")
 	assert.NotContains(t, main, "<button")
 }
@@ -212,4 +211,14 @@ func TestBrokenContextOnReviewPages(t *testing.T) {
 		assert.Equal(t, http.StatusServiceUnavailable, getPage(h, c, "/c/work/"+page).Code, page)
 		assert.Equal(t, http.StatusOK, getPage(h, c, "/c/personal/"+page).Code, page)
 	}
+}
+
+// mainContent is the page's <main> element, without the top bar and the dialogs after it.
+func mainContent(t *testing.T, body string) string {
+	t.Helper()
+	_, main, found := strings.Cut(body, "<main")
+	require.True(t, found)
+	main, _, found = strings.Cut(main, "</main>")
+	require.True(t, found)
+	return main
 }

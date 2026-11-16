@@ -380,7 +380,7 @@
   }
 
   function expandShortcut(evt) {
-    if (evt.defaultPrevented || evt.ctrlKey || evt.metaKey || evt.altKey || evt.isComposing) {
+    if (evt.defaultPrevented || evt.ctrlKey || evt.metaKey || evt.altKey || evt.isComposing || openDialog()) {
       return;
     }
     if (evt.key === 'Escape') {
@@ -748,6 +748,370 @@
     });
   }
 
+
+  // Dialogs: Esc closes the open one and focus returns to whatever opened it.
+
+  var dialogOpener = null;
+
+  function openDialog() {
+    return document.querySelector('dialog[open]');
+  }
+
+  function showDialog(dialog) {
+    if (!dialog || dialog.open || typeof dialog.showModal !== 'function') {
+      return false;
+    }
+    var active = document.activeElement;
+    dialogOpener = active && active !== document.body ? active : null;
+    dialog.showModal();
+    return true;
+  }
+
+  function restoreFocus() {
+    var opener = dialogOpener;
+    dialogOpener = null;
+    if (opener && opener.isConnected && typeof opener.focus === 'function') {
+      opener.focus();
+    }
+  }
+
+  // Capture phase: the dialog closes itself on Esc, so the Esc that leaves Expand never sees it.
+  function onDialogEscape(evt) {
+    var dialog = openDialog();
+    if (!dialog || evt.key !== 'Escape' || evt.isComposing) {
+      return;
+    }
+    evt.preventDefault();
+    dialog.close();
+  }
+
+  function onDialogClose(evt) {
+    if (evt.target && evt.target.tagName && evt.target.tagName.toLowerCase() === 'dialog') {
+      restoreFocus();
+    }
+  }
+
+  function onDialogCloseClick(evt) {
+    var button = evt.target && evt.target.closest && evt.target.closest('[data-dialog-close]');
+    var dialog = button && button.closest('dialog');
+    if (dialog && dialog.open) {
+      dialog.close();
+    }
+  }
+
+  // Command palette: static page entries while the query is empty, /lookup?for=jump results otherwise.
+
+  function paletteParts() {
+    var dialog = document.getElementById('palette');
+    if (!dialog) {
+      return null;
+    }
+    return {
+      dialog: dialog,
+      input: dialog.querySelector('[data-palette-input]'),
+      pages: document.getElementById('palette-pages'),
+      results: document.getElementById('palette-results')
+    };
+  }
+
+  function paletteList(parts) {
+    return parts.input.value.trim() === '' ? parts.pages : parts.results;
+  }
+
+  function paletteOptions(parts) {
+    return paletteList(parts).querySelectorAll('[role="option"]');
+  }
+
+  function setPaletteOption(parts, index) {
+    var list = paletteList(parts);
+    parts.input.removeAttribute('aria-activedescendant');
+    Array.prototype.forEach.call(paletteOptions(parts), function (option, i) {
+      var active = i === index;
+      option.setAttribute('aria-selected', active ? 'true' : 'false');
+      if (active) {
+        option.id = option.id || list.id + '-' + i;
+        parts.input.setAttribute('aria-activedescendant', option.id);
+        option.scrollIntoView({ block: 'nearest' });
+      }
+    });
+  }
+
+  function renderPalette(parts) {
+    var showPages = parts.input.value.trim() === '';
+    parts.pages.hidden = !showPages;
+    parts.results.hidden = showPages;
+    parts.input.setAttribute('aria-controls', paletteList(parts).id);
+    setPaletteOption(parts, paletteOptions(parts).length > 0 ? 0 : -1);
+  }
+
+  function openPalette() {
+    var parts = paletteParts();
+    if (!parts || !parts.input || !parts.pages || !parts.results) {
+      return;
+    }
+    if (parts.dialog.open) {
+      parts.input.focus();
+      return;
+    }
+    parts.input.value = '';
+    parts.results.textContent = '';
+    parts.results.removeAttribute('aria-busy');
+    renderPalette(parts);
+    if (showDialog(parts.dialog)) {
+      parts.input.focus();
+    }
+  }
+
+  function bindPaletteButtons(root) {
+    if (!paletteParts()) {
+      return;
+    }
+    each(root, '[data-palette-open]', function (button) {
+      button.hidden = false;
+    });
+  }
+
+  function onPaletteButton(evt) {
+    if (evt.target && evt.target.closest && evt.target.closest('[data-palette-open]')) {
+      openPalette();
+    }
+  }
+
+  // Results stay marked busy from a keystroke until the lookup for it lands, so Enter never opens a stale match.
+  function onPaletteInput(evt) {
+    var parts = paletteParts();
+    if (parts && evt.target === parts.input) {
+      if (parts.input.value.trim() !== '') {
+        parts.results.setAttribute('aria-busy', 'true');
+      }
+      renderPalette(parts);
+    }
+  }
+
+  function onPaletteSwap(evt) {
+    var parts = paletteParts();
+    if (parts && evt.detail && evt.detail.target === parts.results) {
+      parts.results.removeAttribute('aria-busy');
+      renderPalette(parts);
+    }
+  }
+
+  function choosePaletteOption(parts, option) {
+    var href = option && option.getAttribute('data-href');
+    if (!href) {
+      return;
+    }
+    parts.dialog.close();
+    if (option.hasAttribute('data-id')) {
+      openMemory(href);
+    } else {
+      window.location.assign(href);
+    }
+  }
+
+  function onPaletteKeydown(evt) {
+    var parts = paletteParts();
+    if (!parts || evt.target !== parts.input || evt.isComposing) {
+      return;
+    }
+    var options = paletteOptions(parts);
+    var index = Array.prototype.findIndex.call(options, function (option) {
+      return option.getAttribute('aria-selected') === 'true';
+    });
+    switch (evt.key) {
+      case 'ArrowDown':
+      case 'ArrowUp':
+        evt.preventDefault();
+        if (options.length === 0) {
+          return;
+        }
+        if (evt.key === 'ArrowDown') {
+          setPaletteOption(parts, index < options.length - 1 ? index + 1 : 0);
+        } else {
+          setPaletteOption(parts, index > 0 ? index - 1 : options.length - 1);
+        }
+        return;
+      case 'Enter':
+        evt.preventDefault();
+        if (paletteList(parts) === parts.results && parts.results.getAttribute('aria-busy') === 'true') {
+          return;
+        }
+        choosePaletteOption(parts, options[index === -1 ? 0 : index]);
+        return;
+    }
+  }
+
+  function onPaletteClick(evt) {
+    var parts = paletteParts();
+    var option = parts && evt.target && evt.target.closest && evt.target.closest('#palette [role="option"]');
+    if (option) {
+      choosePaletteOption(parts, option);
+    }
+  }
+
+  // Opening a memory: click its row link when the list shows it, so the row's own htmx wiring (unsaved
+  // guard, push-url, row selection) applies. Otherwise htmx.ajax, whose htmx:confirm the guard also sees.
+
+  function pathOf(href) {
+    try {
+      return new URL(href, window.location.href).pathname;
+    } catch (e) {
+      return '';
+    }
+  }
+
+  function rowLinks() {
+    return document.querySelectorAll('#memory-rows [data-row-link]');
+  }
+
+  function rowLinkFor(href) {
+    var path = pathOf(href);
+    return Array.prototype.find.call(rowLinks(), function (link) {
+      return pathOf(link.getAttribute('href')) === path;
+    }) || null;
+  }
+
+  function paneMemoryHref() {
+    var pane = document.getElementById('detail-pane');
+    return pane ? pane.getAttribute('data-memory-href') : null;
+  }
+
+  // Marks the row of the memory the pane shows, so rows from a filter refresh or a palette jump agree with it.
+  function markPaneRow() {
+    var href = paneMemoryHref();
+    if (!href) {
+      return;
+    }
+    var open = rowLinkFor(href);
+    Array.prototype.forEach.call(rowLinks(), function (link) {
+      if (link === open) {
+        link.setAttribute('aria-current', 'true');
+      } else {
+        link.removeAttribute('aria-current');
+      }
+    });
+  }
+
+  function openMemory(href) {
+    var link = rowLinkFor(href);
+    if (link) {
+      link.click();
+      return;
+    }
+    if (!window.htmx || !document.getElementById('detail-pane')) {
+      window.location.assign(href);
+      return;
+    }
+    // Keep the list's filter in the URL, as the row links do.
+    var url = pathOf(href) + window.location.search;
+    window.htmx.ajax('GET', url, { target: '#detail-pane', swap: 'outerHTML', push: url });
+  }
+
+  // j / k: the selection moves at once; the memory loads once the keys rest for 150 ms.
+
+  var ROW_LOAD_DELAY_MS = 150;
+  var rowLoadTimer = null;
+  var pendingRow = null;
+
+  // The row a pending j/k points at, else the open memory's row, else the focused row, else the marked one.
+  function currentRowIndex(links) {
+    var list = Array.prototype.slice.call(links);
+    var pending = list.indexOf(pendingRow);
+    if (pending !== -1) {
+      return pending;
+    }
+    var href = paneMemoryHref();
+    var open = href ? list.indexOf(rowLinkFor(href)) : -1;
+    if (open !== -1) {
+      return open;
+    }
+    var focused = list.indexOf(document.activeElement);
+    if (focused !== -1) {
+      return focused;
+    }
+    return list.findIndex(function (link) {
+      return link.hasAttribute('aria-current');
+    });
+  }
+
+  function loadPendingRow() {
+    var link = pendingRow;
+    rowLoadTimer = null;
+    pendingRow = null;
+    if (link && link.isConnected && pathOf(link.getAttribute('href')) !== pathOf(paneMemoryHref() || '')) {
+      link.click();
+    }
+  }
+
+  function moveRowSelection(step) {
+    var links = rowLinks();
+    var index = currentRowIndex(links);
+    var next = index === -1 ? 0 : index + step;
+    if (next < 0 || next >= links.length) {
+      return;
+    }
+    pendingRow = links[next];
+    // A hidden list (narrow layout, Expand) cannot take focus; the memory still loads.
+    pendingRow.focus();
+    window.clearTimeout(rowLoadTimer);
+    rowLoadTimer = window.setTimeout(loadPendingRow, ROW_LOAD_DELAY_MS);
+  }
+
+  function focusContent() {
+    var content = document.querySelector('#detail-pane textarea[name="content"]');
+    if (!content || content.disabled) {
+      return false;
+    }
+    content.focus();
+    return true;
+  }
+
+  // Ctrl+K / Cmd+K open the palette from anywhere; single keys only outside fields and dialogs.
+  function navigationShortcut(evt) {
+    if (evt.defaultPrevented || evt.altKey || evt.isComposing) {
+      return;
+    }
+    if ((evt.ctrlKey || evt.metaKey) && !evt.shiftKey && String(evt.key).toLowerCase() === 'k') {
+      var dialog = openDialog();
+      if (!paletteParts()) {
+        return;
+      }
+      evt.preventDefault();
+      if (!dialog || dialog.id === 'palette') {
+        openPalette();
+      }
+      return;
+    }
+    if (evt.ctrlKey || evt.metaKey || openDialog() || isTextEntry(evt.target)) {
+      return;
+    }
+    switch (evt.key) {
+      case '/':
+        if (paletteParts()) {
+          evt.preventDefault();
+          openPalette();
+        }
+        return;
+      case '?':
+        if (showDialog(document.getElementById('shortcuts'))) {
+          evt.preventDefault();
+        }
+        return;
+      case 'j':
+      case 'k':
+        if (rowLinks().length > 0) {
+          evt.preventDefault();
+          moveRowSelection(evt.key === 'j' ? 1 : -1);
+        }
+        return;
+      case 'e':
+        if (!evt.repeat && focusContent()) {
+          evt.preventDefault();
+        }
+        return;
+    }
+  }
+
   applyTheme(storedTheme());
   onReady(bindThemeToggles);
   onReady(bindExpand);
@@ -757,10 +1121,15 @@
   onReady(bindExpiryClear);
   onReady(bindTagChips);
   onReady(bindLookups);
+  onReady(bindPaletteButtons);
   document.addEventListener('htmx:afterRequest', markSelectedRow);
   document.addEventListener('htmx:configRequest', onLookupConfigRequest);
   document.addEventListener('htmx:afterSwap', onLookupSwap);
+  document.addEventListener('htmx:afterSwap', onPaletteSwap);
+  document.addEventListener('htmx:afterSettle', markPaneRow);
   // Capture phase: these run before the document-level shortcuts below, which skip prevented events.
+  document.addEventListener('keydown', onDialogEscape, true);
+  document.addEventListener('keydown', onPaletteKeydown, true);
   document.addEventListener('keydown', onTagKeydown, true);
   document.addEventListener('keydown', onLookupKeydown, true);
   document.addEventListener('submit', onLookupSubmit, true);
@@ -780,6 +1149,13 @@
   document.addEventListener('click', onToastDismiss);
   document.addEventListener('keydown', saveShortcut);
   document.addEventListener('keydown', expandShortcut);
+  document.addEventListener('keydown', navigationShortcut);
+  document.addEventListener('input', onPaletteInput);
+  document.addEventListener('click', onPaletteButton);
+  document.addEventListener('click', onPaletteClick);
+  document.addEventListener('click', onDialogCloseClick);
+  // close does not bubble; the capture phase still sees it on its way to the dialog.
+  document.addEventListener('close', onDialogClose, true);
   document.addEventListener('htmx:pushedIntoHistory', rememberUrl);
   document.addEventListener('htmx:replacedInHistory', rememberUrl);
   window.addEventListener('popstate', guardHistory);

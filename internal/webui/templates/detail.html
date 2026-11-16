@@ -1,4 +1,4 @@
-<section id="detail-pane" aria-label="Memory" class="detail-pane pane-selected min-w-0 p-4 min-[900px]:min-h-0 min-[900px]:overflow-y-auto">
+<section id="detail-pane" data-memory-href="{{.Base}}" aria-label="Memory" class="detail-pane pane-selected min-w-0 p-4 min-[900px]:min-h-0 min-[900px]:overflow-y-auto">
   <p class="mb-3 text-body min-[900px]:hidden"><a href="{{.ListURL}}" class="underline">Back to memories</a></p>
   {{if .Quarantined}}
   {{if .FormError}}<p role="alert" class="mb-3 notice-danger p-3">{{.FormError}}</p>{{end}}

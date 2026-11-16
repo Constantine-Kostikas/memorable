@@ -23,6 +23,10 @@
       {{if .AdminUnlockedMinutes}}<a href="/c/{{.Context}}/prune" class="hover:underline">Prune</a>{{end}}
     </nav>{{end}}
     <div class="ml-auto flex items-center gap-3">
+      {{if .Context}}<form role="search" method="get" action="/c/{{.Context}}/memories" class="flex items-center gap-2">
+        <input type="search" name="q" aria-label="Search memories" placeholder="Search memories" autocomplete="off" class="field w-48">
+        <button type="button" class="btn" data-palette-open aria-keyshortcuts="Control+K Meta+K" hidden>Jump <kbd class="kbd">Ctrl K</kbd></button>
+      </form>{{end}}
       {{if .AdminUnlockedMinutes}}<span class="chip chip-warn px-2 py-1">Admin unlocked, locks in {{.AdminUnlockedMinutes}} min</span>{{end}}
       <button type="button" class="btn" data-theme-toggle aria-label="Theme: system">Theme: system</button>
     </div>
@@ -32,5 +36,6 @@
   <main class="{{if eq .Page "memories"}}min-[900px]:min-h-0 min-[900px]:flex-1{{else}}mx-auto max-w-5xl px-4 py-6{{end}}">
     {{block "content" .}}{{if eq .Page "memories"}}{{template "workspace.html" .Memories}}{{else if eq .Page "review"}}{{template "review.html" .Review}}{{else if eq .Page "profile"}}{{template "profile.html" .Profile}}{{else if eq .Page "stats"}}{{template "stats.html" .Stats}}{{else if eq .Page "prune"}}{{template "prune.html" .Prune}}{{else if .Message}}{{template "error.html" .}}{{end}}{{end}}
   </main>
+  {{template "palette.html" .}}
 </body>
 </html>

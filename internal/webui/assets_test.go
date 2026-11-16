@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"path"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -150,4 +151,99 @@ func TestAppJSMovesRowSelection(t *testing.T) {
 	assert.Contains(t, body, "document.addEventListener('htmx:afterRequest', markSelectedRow)")
 	assert.Contains(t, body, "'data-row-link'")
 	assert.Contains(t, body, "setAttribute('aria-current', 'true')")
+}
+
+func renderLayout(t *testing.T, page pageData) string {
+	t.Helper()
+
+	tmpl, err := parseTemplates()
+	require.NoError(t, err)
+
+	var out bytes.Buffer
+	require.NoError(t, tmpl.ExecuteTemplate(&out, "layout.html", page))
+	return out.String()
+}
+
+func dialogMarkup(t *testing.T, body, id string) string {
+	t.Helper()
+
+	start := strings.Index(body, `<dialog id="`+id+`"`)
+	require.NotEqual(t, -1, start, "dialog %s missing", id)
+	end := strings.Index(body[start:], "</dialog>")
+	require.NotEqual(t, -1, end, "dialog %s is not closed", id)
+	return body[start : start+end]
+}
+
+func TestLayoutHasPaletteAndShortcutDialogs(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name      string
+		minutes   int
+		wantPrune bool
+	}{
+		{name: "admin locked", minutes: 0, wantPrune: false},
+		{name: "admin unlocked", minutes: 12, wantPrune: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			body := renderLayout(t, pageData{
+				Title: "Memories", Context: "personal", Contexts: []string{"personal", "work"},
+				AdminUnlockedMinutes: tc.minutes,
+			})
+
+			palette := dialogMarkup(t, body, "palette")
+			assert.Contains(t, palette, `hx-get="/c/personal/lookup"`)
+			for _, page := range []string{"review", "profile", "stats"} {
+				assert.Equal(t, 1, strings.Count(palette, `data-href="/c/personal/`+page+`"`), page)
+			}
+			assert.Equal(t, tc.wantPrune, strings.Contains(palette, `data-href="/c/personal/prune"`))
+			for _, name := range []string{"personal", "work"} {
+				assert.Equal(t, 1, strings.Count(palette, `data-href="/c/`+name+`/memories"`), name)
+			}
+			assert.Regexp(t, `<li role="option" data-href="/c/personal/review"`, palette)
+
+			shortcuts := dialogMarkup(t, body, "shortcuts")
+			for _, key := range []string{"Ctrl K", "/", "j", "k", "e", "F", "Esc", "Ctrl S", "?"} {
+				assert.Contains(t, shortcuts, "<kbd class=\"kbd\">"+key+"</kbd>", key)
+			}
+		})
+	}
+}
+
+func TestLayoutWithoutContextHasNoPalette(t *testing.T) {
+	t.Parallel()
+
+	body := renderLayout(t, pageData{Title: "Error", Message: "nope"})
+	assert.NotContains(t, body, `<dialog id="palette"`)
+	assert.NotContains(t, body, "data-palette-open")
+}
+
+func TestTopBarSearchWorksWithoutJS(t *testing.T) {
+	t.Parallel()
+
+	body := renderLayout(t, pageData{Title: "Stats", Context: "work", Contexts: []string{"personal", "work"}})
+
+	form := regexp.MustCompile(`(?s)<form role="search" method="get" action="/c/work/memories"[^>]*>.*?</form>`).FindString(body)
+	require.NotEmpty(t, form, "top-bar search form missing")
+	assert.Regexp(t, `<input type="search" name="q"`, form)
+	assert.Contains(t, form, `aria-label="Search memories"`)
+	assert.Regexp(t, `<button type="button"[^>]*data-palette-open[^>]*hidden`, body, "the palette hint stays hidden until JS shows it")
+}
+
+func TestDetailPaneCarriesMemoryHref(t *testing.T) {
+	t.Parallel()
+
+	tmpl, err := parseTemplates()
+	require.NoError(t, err)
+
+	for _, view := range []detailView{
+		{Base: "/c/work/memories/0b4b7c8e-0000-4000-8000-000000000001", Editable: true},
+		{Base: "/c/work/memories/0b4b7c8e-0000-4000-8000-000000000001", Quarantined: true},
+	} {
+		var out bytes.Buffer
+		require.NoError(t, tmpl.ExecuteTemplate(&out, "detail.html", view))
+		assert.Regexp(t, `<section id="detail-pane" data-memory-href="/c/work/memories/0b4b7c8e-0000-4000-8000-000000000001"`, out.String())
+	}
 }
