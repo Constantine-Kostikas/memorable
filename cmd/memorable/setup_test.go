@@ -48,6 +48,8 @@ func TestSetup_DryRunAppliesNothing(t *testing.T) {
 		"mcp__memorable__memory_search",
 		"memorable-backup.timer",
 		"[contexts.personal]",
+		"Shell completion",
+		"unrecognized shell",
 		"dry run: nothing was changed",
 	} {
 		assert.Contains(t, out, want)
@@ -55,6 +57,79 @@ func TestSetup_DryRunAppliesNothing(t *testing.T) {
 	entries, err := os.ReadDir(home)
 	require.NoError(t, err)
 	assert.Empty(t, entries, "dry run must not create files")
+}
+
+func TestSetup_DryRunShellCompletion(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name   string
+		shell  string
+		goos   string
+		want   func(home string) []string
+		absent []string
+	}{
+		{
+			name: "zsh on linux", shell: "/bin/zsh", goos: "linux",
+			want: func(home string) []string {
+				return []string{filepath.Join(home, ".zshrc"), filepath.Join(home, ".local/share/memorable/completion.zsh"), "compinit"}
+			},
+		},
+		{
+			name: "bash on macOS", shell: "/bin/bash", goos: "darwin",
+			want: func(home string) []string {
+				return []string{filepath.Join(home, ".bash_profile"), "_get_comp_words_by_ref"}
+			},
+		},
+		{
+			name: "fish on linux", shell: "/usr/bin/fish", goos: "linux",
+			want: func(home string) []string {
+				return []string{filepath.Join(home, ".config/fish/completions/memorable.fish")}
+			},
+			absent: []string{".bashrc", ".zshrc"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			home := t.TempDir()
+			d := setupDeps(t, home)
+			base := d.getenv
+			d.getenv = func(k string) string {
+				if k == "SHELL" {
+					return tt.shell
+				}
+				return base(k)
+			}
+			d.goos = tt.goos
+			cfgPath := filepath.Join(home, ".config", "memorable", "config.toml")
+			out, err := runRoot(t, d, "", "--config", cfgPath, "setup", "--dry-run")
+			require.NoError(t, err, out)
+			for _, want := range tt.want(home) {
+				assert.Contains(t, out, want)
+			}
+			for _, absent := range tt.absent {
+				assert.NotContains(t, out, absent)
+			}
+			entries, err := os.ReadDir(home)
+			require.NoError(t, err)
+			assert.Empty(t, entries, "dry run must not create files")
+		})
+	}
+}
+
+func TestWriteAtomic_KeepsContentAndMode(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "a", "b", "file")
+	require.NoError(t, writeAtomic(path, "hello\n", 0o600))
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, "hello\n", string(got))
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	entries, err := os.ReadDir(filepath.Dir(path))
+	require.NoError(t, err)
+	assert.Len(t, entries, 1, "the temp file must be renamed away")
 }
 
 func TestSetup_NoTTY(t *testing.T) {

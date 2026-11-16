@@ -79,6 +79,20 @@ func readOptional(path string) (string, fs.FileMode, error) {
 }
 
 // writeFile shows the diff and writes after confirmation, keeping the file's existing permissions.
+func writeAtomic(path, content string, perm fs.FileMode) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return fmt.Errorf("creating %s: %w", filepath.Dir(path), err)
+	}
+	tmp := path + ".memorable-tmp"
+	if err := os.WriteFile(tmp, []byte(content), perm); err != nil {
+		return fmt.Errorf("writing %s: %w", path, err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return fmt.Errorf("writing %s: %w", path, err)
+	}
+	return nil
+}
+
 func (s *setupRun) writeFile(path, after string) error {
 	before, perm, err := readOptional(path)
 	if err != nil {
@@ -94,15 +108,8 @@ func (s *setupRun) writeFile(path, after string) error {
 	if err != nil || !ok || s.dry {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return fmt.Errorf("creating %s: %w", filepath.Dir(path), err)
-	}
-	tmp := path + ".memorable-tmp"
-	if err := os.WriteFile(tmp, []byte(after), perm); err != nil {
-		return fmt.Errorf("writing %s: %w", path, err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		return fmt.Errorf("writing %s: %w", path, err)
+	if err := writeAtomic(path, after, perm); err != nil {
+		return err
 	}
 	s.p.Success("wrote " + path)
 	return nil
@@ -416,7 +423,7 @@ func newSetupCmd(d deps, flags *rootFlags) *cobra.Command {
 			s := &setupRun{ctx: cmd.Context(), cmd: cmd, d: d, p: p, dry: dry, home: home, cfgPath: cfgPath, cfg: cfg, bin: bin}
 			p.Panel("memorable setup", "Each step shows what it changes and asks first.")
 			for _, step := range []func() error{s.prerequisites, s.container, s.contexts, s.database, s.model, s.mcp,
-				s.claudeMD, s.settings, s.backupTimer, func() error { return s.check(flags) }} {
+				s.claudeMD, s.settings, s.backupTimer, s.shellCompletion, func() error { return s.check(flags) }} {
 				if err := step(); err != nil {
 					return err
 				}

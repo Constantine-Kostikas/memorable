@@ -4,6 +4,7 @@ version: 2
 before:
   hooks:
     - go mod tidy
+    - make completions
 
 builds:
   - id: memorable
@@ -45,6 +46,7 @@ archives:
       {{- else }}{{ .Arch }}{{ end }}
     files:
       - README.md
+      - completions/*
 
 checksum:
   name_template: checksums.txt
@@ -76,6 +78,10 @@ release:
 #     description: Persistent, searchable memory for Claude Code over MCP
 #     binaries:
 #       - memorable
+#     completions:
+#       bash: completions/memorable.bash
+#       zsh: completions/memorable.zsh
+#       fish: completions/memorable.fish
 #     hooks:
 #       post:
 #         install: |

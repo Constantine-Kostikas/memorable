@@ -92,6 +92,11 @@ func newRootCmdWith(info buildInfo, d deps) *cobra.Command {
 		newSetupCmd(d, flags),
 		newUpdateCmd(d, flags, info),
 	)
+	root.SetCompletionCommandGroupID(groupSetup)
+	registerCompletions(root, d, flags)
+	if err := applyCompletionDefaults(root); err != nil {
+		panic(err)
+	}
 	return root
 }
 

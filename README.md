@@ -58,9 +58,21 @@ Setup walks through each step, shows what it will change (as a diff for files), 
 7. Adds a short instructions block to `~/.claude/CLAUDE.md`.
 8. Adds permission rules to `~/.claude/settings.json`, and optionally a SessionStart hook.
 9. Optionally installs a daily backup job (systemd user timer or launchd agent).
-10. Runs `memorable doctor`.
+10. Optionally installs tab completion for your login shell (bash, zsh, or fish).
+11. Runs `memorable doctor`.
 
 Start a new Claude Code session afterwards. `memorable doctor` checks everything and tells you how to fix what is broken.
+
+### Shell completion
+
+`memorable setup` installs completion for your login shell. To do it by hand, write the script that `memorable completion <shell>` prints:
+
+- **fish:** `memorable completion fish > ~/.config/fish/completions/memorable.fish`
+- **bash on Linux:** `memorable completion bash > ~/.local/share/bash-completion/completions/memorable` (needs the `bash-completion` package).
+- **bash on macOS:** install `bash-completion@2` with Homebrew (or `bash-completion` for the stock `/bin/bash` 3.2), then source the script from `~/.bash_profile`.
+- **zsh on Linux and macOS:** write `memorable completion zsh` to a file and `source` it at the end of `~/.zshrc`, after `compinit`.
+
+The scripts call back into the binary, so `memorable update` never requires reinstalling them. Completion is static: it never opens the database or the keyring, and ids, slugs, and tags complete to nothing. Context names come from `config.toml`. Release archives include the three scripts under `completions/`.
 
 ### Manual setup
 

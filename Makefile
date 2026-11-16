@@ -3,7 +3,7 @@ COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
 DATE    ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)
 
-.PHONY: build test test-integration test-eval lint vuln sec fmt css css-check htmx-check fonts-check
+.PHONY: build completions test test-integration test-eval lint vuln sec fmt css css-check htmx-check fonts-check
 
 TAILWIND_VERSION          := v4.3.3
 TAILWIND_SHA256_linux_x64   := dc61b3ac6b8c9ca874c0cc4c57b2409791a64c5540404ca5f5367360babc313a
@@ -28,6 +28,10 @@ WEBUI_FONT_BOLD := internal/webui/static/atkinson-hyperlegible-bold.woff2
 
 build:
 	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o bin/memorable ./cmd/memorable
+
+completions:
+	mkdir -p completions
+	for sh in bash zsh fish; do go run ./cmd/memorable completion $$sh > completions/memorable.$$sh; done
 
 test:
 	go test -race ./...
