@@ -115,7 +115,7 @@
     if (field.type === 'checkbox') {
       return field.checked !== (original === 'on');
     }
-    if (field.tagName.toLowerCase() === 'input') {
+    if (field.tagName.toLowerCase() === 'input' && field.type !== 'hidden') {
       // Browsers strip line breaks from a text input's value, so a stored title with one would never match.
       original = original.replace(/\n/g, '');
     }
@@ -415,6 +415,8 @@
   document.addEventListener('htmx:pushedIntoHistory', rememberUrl);
   document.addEventListener('htmx:replacedInHistory', rememberUrl);
   window.addEventListener('popstate', guardHistory);
+  // A cancelled popstate stops at guardHistory; every other one lands here, so lastUrl tracks restores too.
+  window.addEventListener('popstate', rememberUrl);
   window.addEventListener('beforeunload', guardUnload);
   window.addEventListener('hashchange', onHashChange);
 })();
