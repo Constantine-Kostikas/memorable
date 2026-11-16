@@ -103,6 +103,7 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request, rc request
 		status, message := s.actionStatus(r, err)
 		submitted.Version, _ = strconv.Atoi(rawVersion)
 		view.Form, view.FormError, view.Conflict = submitted, message, errors.Is(err, memory.ErrConflict)
+		view.Unsaved = true
 		s.respondDetail(w, r, rc, view, status)
 		return
 	}

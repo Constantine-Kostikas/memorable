@@ -1,21 +1,26 @@
 <section id="detail-pane" aria-label="Memory" class="detail-pane pane-selected min-w-0 p-4 min-[900px]:min-h-0 min-[900px]:overflow-y-auto">
   <p class="mb-3 text-body min-[900px]:hidden"><a href="{{.ListURL}}" class="underline">Back to memories</a></p>
   {{if .Quarantined}}
+  {{if .FormError}}<p role="alert" class="mb-3 notice-danger p-3">{{.FormError}}</p>{{end}}
   <section class="notice-warn p-4">
     <h1 class="text-title font-bold">Memory {{.ID}}</h1>
     <p class="mt-2">Status: {{.Status}}. Its content is hidden until it is approved (memorable approve or ui --admin).</p>
   </section>
+  {{if .Unsaved}}<label class="mt-3 flex flex-col gap-1 text-body">Your unsaved text (copy it before leaving)
+    <textarea rows="10" readonly class="field sheet-ruled block w-full resize-y p-3">
+{{.Form.Content}}</textarea>
+  </label>{{end}}
   {{else}}
-  <form id="memory-editor" data-editor data-title="{{.Title}}"{{if .Editable}} method="post" action="{{.Base}}/update{{.FilterQuery}}" hx-post="{{.Base}}/update" hx-target="#detail-pane" hx-swap="outerHTML"{{end}}>
+  <form id="memory-editor" data-editor data-title="{{.Title}}"{{if .Unsaved}} data-unsaved{{end}}{{if .Editable}} method="post" action="{{.Base}}/update{{.FilterQuery}}" hx-post="{{.Base}}/update" hx-target="#detail-pane" hx-swap="outerHTML"{{end}}>
     <input type="hidden" name="csrf" value="{{.CSRF}}">
     <input type="hidden" name="version" value="{{.Form.Version}}">
     <header class="mb-3">
       <div class="mb-1 flex items-center gap-2 text-meta text-ink-muted">
         <span class="chip chip-warn" data-dirty-marker hidden>Unsaved changes</span>
-        <span>{{if .Editable}}Editing version {{.Version}}{{else}}Read only: version {{.Version}}{{end}}</span>
+        <span>{{if .Conflict}}Your edit is based on version {{.Form.Version}}; the latest is version {{.Version}}{{else if .Editable}}Editing version {{.Version}}{{else}}Read only: version {{.Version}}{{end}}</span>
       </div>
       <h1><label for="memory-title" class="sr-only">Title</label>
-        <input id="memory-title" type="text" name="title" value="{{.Form.Title}}" required class="field w-full text-page font-bold"{{if not .Editable}} disabled{{end}}>
+        <input id="memory-title" type="text" name="title" value="{{.Form.Title}}" data-original="{{.Stored.Title}}" required class="field w-full text-page font-bold"{{if not .Editable}} disabled{{end}}>
       </h1>
       <p class="mt-2 text-meta text-ink-muted">
         <span class="chip chip-type-{{typeClass .Type}}">{{.Type}}</span> <span class="chip chip-status-{{.Status}}">{{.Status}}</span> · <span>{{.Project}}</span>{{if .Slug}} · <span class="font-mono">{{.Slug}}</span>{{end}} · <span>version {{.Version}}</span> · <span>updated {{.UpdatedAt}}</span>
@@ -31,29 +36,29 @@
     <section id="content" role="tabpanel" aria-label="Content">
       {{if .FormError}}<p role="alert" class="mb-3 notice-danger p-3">{{.FormError}}{{if .Conflict}} <a href="#versions" class="underline">Load latest version</a> to compare, or <a href="{{.Base}}{{.FilterQuery}}" hx-get="{{.Base}}" hx-target="#detail-pane" hx-swap="outerHTML" class="underline">discard your changes and reload</a>.{{end}}</p>{{end}}
       <label for="memory-content" class="sr-only">Content</label>
-      <textarea id="memory-content" name="content" rows="14" required class="field sheet-ruled block w-full resize-y p-3"{{if not .Editable}} disabled{{end}}>
+      <textarea id="memory-content" name="content" rows="14" data-original="{{.Stored.Content}}" required class="field sheet-ruled block w-full resize-y p-3"{{if not .Editable}} disabled{{end}}>
 {{.Form.Content}}</textarea>
       <div class="mt-3 grid gap-3 min-[600px]:grid-cols-2">
         <label class="flex flex-col gap-1 text-body">Tags (comma-separated)
-          <input type="text" name="tags" value="{{.Form.Tags}}" class="field"{{if not .Editable}} disabled{{end}}>
+          <input type="text" name="tags" value="{{.Form.Tags}}" data-original="{{.Stored.Tags}}" class="field"{{if not .Editable}} disabled{{end}}>
         </label>
         <label class="flex flex-col gap-1 text-body">Type
-          <select name="type" class="field"{{if not .Editable}} disabled{{end}}>
+          <select name="type" data-original="{{.Stored.Type}}" class="field"{{if not .Editable}} disabled{{end}}>
             {{range .Types}}<option value="{{.}}"{{if eq . $.Form.Type}} selected{{end}}>{{.}}</option>{{end}}
           </select>
         </label>
         <label class="flex flex-col gap-1 text-body">Expires (RFC 3339 or date; empty means never)
-          <input type="text" name="expires_at" value="{{.Form.ExpiresAt}}" placeholder="2026-12-31" class="field"{{if not .Editable}} disabled{{end}}>
+          <input type="text" name="expires_at" value="{{.Form.ExpiresAt}}" data-original="{{.Stored.ExpiresAt}}" placeholder="2026-12-31" class="field"{{if not .Editable}} disabled{{end}}>
         </label>
         <label class="flex items-center gap-2 self-end text-body">
-          <input type="checkbox" name="pinned" value="on"{{if .Form.Pinned}} checked{{end}}{{if not .Editable}} disabled{{end}}> Pinned
+          <input type="checkbox" name="pinned" value="on" data-original="{{if .Stored.Pinned}}on{{end}}"{{if .Form.Pinned}} checked{{end}}{{if not .Editable}} disabled{{end}}> Pinned
         </label>
       </div>
     </section>
   </form>
   <div class="mt-3 flex flex-wrap items-start gap-2" data-primary-actions>
     {{if .Editable}}<button type="submit" form="memory-editor" class="btn btn-primary" data-save>Save</button>
-    <button type="reset" form="memory-editor" class="btn" data-discard>Discard</button>{{end}}
+    <a href="{{.Base}}{{.FilterQuery}}" hx-get="{{.Base}}" hx-target="#detail-pane" hx-swap="outerHTML" class="btn" data-discard>Discard</a>{{end}}
     {{if not .ReadOnly}}<details class="more-actions relative">
       <summary class="btn">More actions</summary>
       <div class="absolute left-0 z-10 mt-1 flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-3 rounded-md border border-line bg-sheet p-3 shadow-md">

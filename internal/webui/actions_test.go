@@ -441,3 +441,64 @@ func TestUpdateKeepsSubmittedValuesWhenReloadFails(t *testing.T) {
 	assert.Contains(t, editorForm(t, body), "typed text</textarea>")
 	assert.Contains(t, body, "Memory store unavailable")
 }
+
+func TestFailedSaveRendersDirtyWithStoredBaseline(t *testing.T) {
+	t.Parallel()
+	for name, mutErr := range map[string]error{
+		"conflict": fmt.Errorf("update: %w", memory.ErrConflict),
+		"secret":   fmt.Errorf("%w: github-pat", memory.ErrSecretDetected),
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			f := newDetailFixture(t, func(m *detailMemories, _ uuid.UUID) { m.mutErr = mutErr })
+
+			rec := f.post("/update", updateForm(url.Values{"title": {"Mine"}, "content": {"typed text"}, "tags": {"mine"}}),
+				withHeader("HX-Request", "true"))
+
+			editor := editorForm(t, rec.Body.String())
+			assert.Regexp(t, `<form id="memory-editor"[^>]*data-unsaved`, editor)
+			assert.Regexp(t, `name="title" value="Mine"[^>]*data-original="Port map"`, editor)
+			assert.Regexp(t, `name="tags" value="mine"[^>]*data-original="go, ops"`, editor)
+			assert.Regexp(t, `<textarea[^>]*data-original="line one\n&lt;img src=x onerror=alert\(1\)&gt;"`, editor)
+			assert.Regexp(t, `<select name="type"[^>]*data-original="project"`, editor)
+			assert.NotContains(t, rec.Body.String(), hostile)
+		})
+	}
+}
+
+func TestDiscardIsAReloadLink(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, nil)
+
+	body := send(f.h, http.MethodGet, f.path("?q=go"), "", withCookie(f.c)).Body.String()
+
+	assert.Regexp(t, `<a href="`+regexp.QuoteMeta(f.path("?q=go"))+`"[^>]*data-discard`, body)
+	assert.NotContains(t, body, `type="reset"`)
+	assert.NotContains(t, editorForm(t, body), "data-unsaved")
+}
+
+func TestConflictHeaderNamesTheEditedVersion(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, func(m *detailMemories, _ uuid.UUID) { m.mutErr = fmt.Errorf("update: %w", memory.ErrConflict) })
+
+	rec := f.post("/update", updateForm(url.Values{"version": {"1"}}), withHeader("HX-Request", "true"))
+
+	assert.Contains(t, rec.Body.String(), "Your edit is based on version 1")
+}
+
+func TestFailedSaveOnQuarantinedReloadKeepsErrorAndText(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, func(m *detailMemories, id uuid.UUID) {
+		m.mutErr = fmt.Errorf("update: %w", memory.ErrQuarantined)
+		m.fetched = []memory.Fetched{{Ref: id.String(), Memory: memory.Memory{ID: id, Status: memory.StatusQuarantined}, Err: memory.ErrQuarantined}}
+	})
+
+	rec := f.post("/update", updateForm(url.Values{"content": {"typed " + hostile}}), withHeader("HX-Request", "true"))
+
+	require.Equal(t, http.StatusUnprocessableEntity, rec.Code)
+	body := rec.Body.String()
+	assert.Contains(t, body, "This memory is quarantined")
+	assert.Regexp(t, `role="alert"`, body)
+	assert.Regexp(t, `<textarea[^>]*readonly[^>]*>\ntyped &lt;img src=x onerror=alert\(1\)&gt;</textarea>`, body)
+	assert.NotContains(t, body, hostile)
+}

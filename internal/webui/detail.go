@@ -91,6 +91,8 @@ type detailView struct {
 	UpdatedAt   string
 	Embedding   string
 	Form        editFields
+	Stored      editFields
+	Unsaved     bool
 	Types       []string
 	CanActivate bool
 	CanDelete   bool
@@ -209,6 +211,7 @@ func fillMemory(view *detailView, m memory.Memory) {
 	if m.ExpiresAt != nil {
 		view.Form.ExpiresAt = m.ExpiresAt.UTC().Format(time.RFC3339)
 	}
+	view.Stored = view.Form
 	view.CanActivate = m.Status == memory.StatusFlagged || m.Status == memory.StatusUnverified
 	view.CanRestore = m.Status == memory.StatusDeleted
 	view.CanDelete = m.Status != memory.StatusDeleted

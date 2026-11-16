@@ -489,7 +489,7 @@ func TestDetailIsAnEditor(t *testing.T) {
 	assert.Regexp(t, `<span[^>]*data-dirty-marker[^>]*hidden`, editor)
 	assert.NotContains(t, editor[1:], "<form", "no form is nested in the editor")
 	assert.Regexp(t, `<button[^>]*form="memory-editor"[^>]*data-save`, body)
-	assert.Regexp(t, `<button type="reset"[^>]*form="memory-editor"[^>]*data-discard`, body)
+	assert.Regexp(t, `<a href="`+regexp.QuoteMeta(f.path(""))+`"[^>]*data-discard>Discard</a>`, body)
 	for _, section := range []string{"content", "versions", "links", "activity"} {
 		assert.Contains(t, body, `<a role="tab" href="#`+section+`"`, section)
 		assert.Contains(t, body, `id="`+section+`"`, section)
