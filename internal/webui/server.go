@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -216,6 +217,9 @@ func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
 	if !fs.ValidPath(name) {
 		http.NotFound(w, r)
 		return
+	}
+	if strings.HasSuffix(name, ".woff2") {
+		w.Header().Set("Content-Type", "font/woff2")
 	}
 	http.ServeFileFS(w, r, s.static, name) //nolint:gosec // G703: s.static is the embedded read-only asset FS and name is a validated single path element.
 }

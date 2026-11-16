@@ -2,6 +2,10 @@ package webui
 
 import (
 	"bytes"
+	"io/fs"
+	"net/http"
+	"path"
+	"regexp"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -11,7 +15,10 @@ import (
 func TestEmbeddedAssets(t *testing.T) {
 	t.Parallel()
 
-	for _, name := range []string{"static/app.css", "static/htmx.min.js"} {
+	for _, name := range []string{
+		"static/app.css", "static/htmx.min.js", "static/app.js", "static/OFL.txt",
+		"static/atkinson-hyperlegible-regular.woff2", "static/atkinson-hyperlegible-bold.woff2",
+	} {
 		data, err := assetFS.ReadFile(name)
 		require.NoError(t, err, name)
 		assert.NotEmpty(t, data, name)
@@ -48,4 +55,36 @@ func TestErrorTemplateEscapesMessage(t *testing.T) {
 	err = tmpl.ExecuteTemplate(&out, "error.html", pageData{Title: "Not found", Message: "<b>nope</b>"})
 	require.NoError(t, err)
 	assert.NotContains(t, out.String(), "<b>nope</b>")
+}
+
+func TestStaticFontContentType(t *testing.T) {
+	t.Parallel()
+
+	h, c := newMemoriesServer(t, &recordingMemories{})
+	rec := getPage(h, c, "/static/atkinson-hyperlegible-regular.woff2")
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "font/woff2", rec.Header().Get("Content-Type"))
+}
+
+func TestTemplatesHaveNoInlineStyleOrScript(t *testing.T) {
+	t.Parallel()
+
+	inlineStyle := regexp.MustCompile(`(?i)\sstyle\s*=`)
+	inlineHandler := regexp.MustCompile(`(?i)\shx-on`)
+	scriptTag := regexp.MustCompile(`(?i)<script[^>]*>`)
+	scriptSrc := regexp.MustCompile(`(?i)\ssrc\s*=`)
+
+	files, err := fs.Glob(assetFS, "templates/*.html")
+	require.NoError(t, err)
+	require.NotEmpty(t, files)
+	for _, file := range files {
+		data, err := assetFS.ReadFile(file)
+		require.NoError(t, err, file)
+		name := path.Base(file)
+		assert.False(t, inlineStyle.Match(data), "%s has an inline style attribute", name)
+		assert.False(t, inlineHandler.Match(data), "%s has an hx-on attribute", name)
+		for _, tag := range scriptTag.FindAll(data, -1) {
+			assert.True(t, scriptSrc.Match(tag), "%s has a script tag without src: %s", name, tag)
+		}
+	}
 }
