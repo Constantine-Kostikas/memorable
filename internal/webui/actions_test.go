@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -350,4 +352,92 @@ func TestReadOnlyIs422WithMessage(t *testing.T) {
 
 	assert.Equal(t, http.StatusUnprocessableEntity, rec.Code)
 	assert.Contains(t, rec.Body.String(), "This memory cannot be changed here.")
+}
+
+func TestUpdateConflictKeepsSubmittedValues(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, func(m *detailMemories, _ uuid.UUID) { m.mutErr = fmt.Errorf("update: %w", memory.ErrConflict) })
+
+	rec := f.post("/update", updateForm(url.Values{"title": {"Mine"}, "content": {"typed text"}, "version": {"1"}}),
+		withHeader("HX-Request", "true"))
+
+	require.Equal(t, http.StatusConflict, rec.Code)
+	body := rec.Body.String()
+	assert.True(t, strings.HasPrefix(body, `<section id="detail-pane"`))
+	editor := editorForm(t, body)
+	assert.Contains(t, editor, `value="Mine"`)
+	assert.Contains(t, editor, "typed text</textarea>")
+	assert.Contains(t, editor, `name="version" value="1"`, "the stale version stays so a re-save conflicts again")
+	assert.Contains(t, body, conflictMessage)
+	assert.Contains(t, body, `<a href="#versions" class="underline">Load latest version</a>`)
+}
+
+func TestUpdateSecretKeepsSubmittedValues(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, func(m *detailMemories, _ uuid.UUID) {
+		m.mutErr = fmt.Errorf("%w: github-pat", memory.ErrSecretDetected)
+	})
+
+	rec := f.post("/update", updateForm(url.Values{"content": {"token here"}}), withHeader("HX-Request", "true"))
+
+	require.Equal(t, http.StatusUnprocessableEntity, rec.Code)
+	body := rec.Body.String()
+	assert.Contains(t, body, "github-pat")
+	assert.Contains(t, editorForm(t, body), "token here</textarea>")
+}
+
+func TestUpdateRoundTripsRenderedExpiry(t *testing.T) {
+	t.Parallel()
+	expires := time.Date(2026, 12, 31, 8, 30, 0, 0, time.UTC)
+	f := newDetailFixture(t, func(m *detailMemories, _ uuid.UUID) { m.fetched[0].Memory.ExpiresAt = &expires })
+	rendered := regexp.MustCompile(`name="expires_at" value="([^"]*)"`).
+		FindStringSubmatch(send(f.h, http.MethodGet, f.path(""), "", withCookie(f.c)).Body.String())
+	require.Len(t, rendered, 2)
+
+	rec := f.post("/update", updateForm(url.Values{"expires_at": {rendered[1]}}))
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	patch := f.mem.called("Update")[0].Args[2].(memory.Patch)
+	require.NotNil(t, *patch.ExpiresAt)
+	assert.True(t, expires.Equal(**patch.ExpiresAt))
+}
+
+func TestNoticeIsOutOfBandToast(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, nil)
+
+	rec := f.post("/feedback", url.Values{"kind": {"useful"}}, withHeader("HX-Request", "true"))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	body := rec.Body.String()
+	assert.True(t, strings.HasPrefix(body, `<section id="detail-pane"`))
+	oob := body[strings.Index(body, "</section>\n"):]
+	assert.Contains(t, oob, `hx-swap-oob="beforeend:#toasts"`)
+	assert.Contains(t, oob, "Feedback recorded.")
+}
+
+func TestActionErrorIsOutOfBandToast(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, func(m *detailMemories, _ uuid.UUID) { m.mutErr = fmt.Errorf("%w: profile", memory.ErrReadOnly) })
+
+	rec := f.post("/delete", url.Values{}, withHeader("HX-Request", "true"))
+
+	require.Equal(t, http.StatusUnprocessableEntity, rec.Code)
+	assert.Regexp(t, `(?s)hx-swap-oob="beforeend:#toasts".*role="alert".*This memory cannot be changed here.`, rec.Body.String())
+}
+
+func TestUpdateKeepsSubmittedValuesWhenReloadFails(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, func(m *detailMemories, _ uuid.UUID) {
+		m.mutErr = fmt.Errorf("update: %w", memory.ErrUnavailable)
+		m.fetched, m.getErr = nil, fmt.Errorf("get: %w", memory.ErrUnavailable)
+	})
+
+	rec := f.post("/update", updateForm(url.Values{"content": {"typed text"}}), withHeader("HX-Request", "true"))
+
+	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
+	body := rec.Body.String()
+	assert.True(t, strings.HasPrefix(body, `<section id="detail-pane"`))
+	assert.Contains(t, editorForm(t, body), "typed text</textarea>")
+	assert.Contains(t, body, "Memory store unavailable")
 }

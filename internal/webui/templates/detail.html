@@ -1,62 +1,100 @@
 <section id="detail-pane" aria-label="Memory" class="detail-pane pane-selected min-w-0 p-4 min-[900px]:min-h-0 min-[900px]:overflow-y-auto">
   <p class="mb-3 text-body min-[900px]:hidden"><a href="{{.ListURL}}" class="underline">Back to memories</a></p>
-  {{if .Notice}}<p role="status" class="mb-4 notice-ok p-3">{{.Notice}}</p>{{end}}
-  {{if .Error}}<p role="alert" class="mb-4 notice-danger p-3">{{.Error}}</p>{{end}}
   {{if .Quarantined}}
   <section class="notice-warn p-4">
     <h1 class="text-title font-bold">Memory {{.ID}}</h1>
     <p class="mt-2">Status: {{.Status}}. Its content is hidden until it is approved (memorable approve or ui --admin).</p>
   </section>
   {{else}}
-  <header class="mb-4">
-    <h1 class="text-page font-bold">{{.Title}}</h1>
-    <p class="mt-1 text-meta text-ink-muted">
-      <span class="chip chip-type-{{typeClass .Type}}">{{.Type}}</span> <span class="chip chip-status-{{.Status}}">{{.Status}}</span> · <span>{{.Project}}</span> · <span>version {{.Version}}</span>{{if .Slug}} · <span class="font-mono">{{.Slug}}</span>{{end}}{{if .Pinned}} · <span>pinned</span>{{end}}
-    </p>
-    <p class="mt-1 text-meta text-ink-muted">{{range .Tags}}<span class="chip mr-1">{{.}}</span>{{end}}</p>
-    <p class="mt-1 text-meta text-ink-muted">Created {{.CreatedAt}}, updated {{.UpdatedAt}}{{if .ExpiresAt}}, expires {{.ExpiresAt}}{{end}}</p>
-    <p class="mt-1 text-meta text-ink-muted">{{.Embedding}}</p>
-  </header>
-  <nav aria-label="Memory sections" class="mb-4 flex gap-4 border-b border-line pb-2 text-body">
-    <a href="#content" class="hover:underline">Content</a>
-    <a href="#versions" class="hover:underline">Versions</a>
-    <a href="#links" class="hover:underline">Links</a>
-    <a href="#feedback" class="hover:underline">Feedback</a>
-    <a href="#audit" class="hover:underline">Audit</a>
-  </nav>
-  <section id="content" class="mb-6">
-    <h2 class="mb-2 font-bold">Content</h2>
-    <div class="sheet-ruled p-3"><pre class="whitespace-pre-wrap break-words">{{.Content}}</pre></div>
-    {{if not .ReadOnly}}<div class="mt-3 flex flex-wrap items-center gap-3">
-      {{if .CanActivate}}<form method="post" action="{{.Base}}/activate" hx-post="{{.Base}}/activate" hx-target="#detail-pane" hx-swap="outerHTML">
-        <input type="hidden" name="csrf" value="{{.CSRF}}">
-        <button type="submit" class="btn">Activate</button>
-      </form>{{end}}
-      {{if .CanDelete}}<form method="post" action="{{.Base}}/delete" hx-post="{{.Base}}/delete" hx-target="#detail-pane" hx-swap="outerHTML" hx-confirm="Delete this memory?">
-        <input type="hidden" name="csrf" value="{{.CSRF}}">
-        <button type="submit" class="btn btn-danger">Delete</button>
-      </form>{{end}}
-      {{if .CanRestore}}<form method="post" action="{{.Base}}/restore" hx-post="{{.Base}}/restore" hx-target="#detail-pane" hx-swap="outerHTML">
-        <input type="hidden" name="csrf" value="{{.CSRF}}">
-        <button type="submit" class="btn">Restore</button>
-      </form>{{end}}
-    </div>
-    <form method="post" action="{{.Base}}/supersede" hx-post="{{.Base}}/supersede" hx-target="#detail-pane" hx-swap="outerHTML" class="mt-3 flex flex-wrap items-end gap-2">
-      <input type="hidden" name="csrf" value="{{.CSRF}}">
-      <label class="flex flex-col text-body">Superseded by (id or slug)
-        <input type="text" name="replacement" required class="field">
-      </label>
-      <button type="submit" class="btn">Supersede</button>
-    </form>
-    {{if .CanPurge}}<form method="post" action="{{.Base}}/purge" class="mt-3 flex flex-wrap items-end gap-2">
-      <input type="hidden" name="csrf" value="{{.CSRF}}">
-      <label class="flex flex-col text-body">Type <span class="font-mono">{{.Confirm}}</span> to purge permanently
-        <input type="text" name="confirm" required autocomplete="off" class="field">
-      </label>
-      <button type="submit" class="btn btn-danger">Purge</button>
-    </form>{{end}}{{end}}
-  </section>
-  <section id="versions" class="mb-6">
+  <form id="memory-editor" data-editor data-title="{{.Title}}"{{if .Editable}} method="post" action="{{.Base}}/update{{.FilterQuery}}" hx-post="{{.Base}}/update" hx-target="#detail-pane" hx-swap="outerHTML"{{end}}>
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <input type="hidden" name="version" value="{{.Form.Version}}">
+    <header class="mb-3">
+      <div class="mb-1 flex items-center gap-2 text-meta text-ink-muted">
+        <span class="chip chip-warn" data-dirty-marker hidden>Unsaved changes</span>
+        <span>{{if .Editable}}Editing version {{.Version}}{{else}}Read only: version {{.Version}}{{end}}</span>
+      </div>
+      <h1><label for="memory-title" class="sr-only">Title</label>
+        <input id="memory-title" type="text" name="title" value="{{.Form.Title}}" required class="field w-full text-page font-bold"{{if not .Editable}} disabled{{end}}>
+      </h1>
+      <p class="mt-2 text-meta text-ink-muted">
+        <span class="chip chip-type-{{typeClass .Type}}">{{.Type}}</span> <span class="chip chip-status-{{.Status}}">{{.Status}}</span> · <span>{{.Project}}</span>{{if .Slug}} · <span class="font-mono">{{.Slug}}</span>{{end}} · <span>version {{.Version}}</span> · <span>updated {{.UpdatedAt}}</span>
+      </p>
+      <p class="mt-1 text-meta text-ink-muted">Created {{.CreatedAt}}{{if .ExpiresAt}}, expires {{.ExpiresAt}}{{end}}. {{.Embedding}}</p>
+    </header>
+    <nav role="tablist" aria-label="Memory sections" class="mb-3 flex gap-4 border-b border-line pb-2 text-body">
+      <a role="tab" href="#content" aria-controls="content" class="hover:underline">Content</a>
+      <a role="tab" href="#versions" aria-controls="versions" class="hover:underline">Versions {{len .Versions}}</a>
+      <a role="tab" href="#links" aria-controls="links" class="hover:underline">Links {{len .Links}}</a>
+      <a role="tab" href="#activity" aria-controls="activity" class="hover:underline">Activity</a>
+    </nav>
+    <section id="content" role="tabpanel" aria-label="Content">
+      {{if .FormError}}<p role="alert" class="mb-3 notice-danger p-3">{{.FormError}}{{if .Conflict}} <a href="#versions" class="underline">Load latest version</a> to compare, or <a href="{{.Base}}{{.FilterQuery}}" hx-get="{{.Base}}" hx-target="#detail-pane" hx-swap="outerHTML" class="underline">discard your changes and reload</a>.{{end}}</p>{{end}}
+      <label for="memory-content" class="sr-only">Content</label>
+      <textarea id="memory-content" name="content" rows="14" required class="field sheet-ruled block w-full resize-y p-3"{{if not .Editable}} disabled{{end}}>
+{{.Form.Content}}</textarea>
+      <div class="mt-3 grid gap-3 min-[600px]:grid-cols-2">
+        <label class="flex flex-col gap-1 text-body">Tags (comma-separated)
+          <input type="text" name="tags" value="{{.Form.Tags}}" class="field"{{if not .Editable}} disabled{{end}}>
+        </label>
+        <label class="flex flex-col gap-1 text-body">Type
+          <select name="type" class="field"{{if not .Editable}} disabled{{end}}>
+            {{range .Types}}<option value="{{.}}"{{if eq . $.Form.Type}} selected{{end}}>{{.}}</option>{{end}}
+          </select>
+        </label>
+        <label class="flex flex-col gap-1 text-body">Expires (RFC 3339 or date; empty means never)
+          <input type="text" name="expires_at" value="{{.Form.ExpiresAt}}" placeholder="2026-12-31" class="field"{{if not .Editable}} disabled{{end}}>
+        </label>
+        <label class="flex items-center gap-2 self-end text-body">
+          <input type="checkbox" name="pinned" value="on"{{if .Form.Pinned}} checked{{end}}{{if not .Editable}} disabled{{end}}> Pinned
+        </label>
+      </div>
+    </section>
+  </form>
+  <div class="mt-3 flex flex-wrap items-start gap-2" data-primary-actions>
+    {{if .Editable}}<button type="submit" form="memory-editor" class="btn btn-primary" data-save>Save</button>
+    <button type="reset" form="memory-editor" class="btn" data-discard>Discard</button>{{end}}
+    {{if not .ReadOnly}}<details class="more-actions relative">
+      <summary class="btn">More actions</summary>
+      <div class="absolute left-0 z-10 mt-1 flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-3 rounded-md border border-line bg-sheet p-3 shadow-md">
+        <form method="post" action="{{.Base}}/feedback{{.FilterQuery}}" hx-post="{{.Base}}/feedback" hx-target="#detail-pane" hx-swap="outerHTML" class="flex flex-col gap-2">
+          <input type="hidden" name="csrf" value="{{.CSRF}}">
+          <label class="flex flex-col gap-1 text-body">Feedback
+            <select name="kind" class="field">
+              <option value="useful">useful</option>
+              <option value="wrong">wrong</option>
+              <option value="outdated">outdated</option>
+            </select>
+          </label>
+          <label class="flex flex-col gap-1 text-body">Note
+            <input type="text" name="note" class="field">
+          </label>
+          <button type="submit" class="btn self-start">Send feedback</button>
+        </form>
+        {{if .CanActivate}}<form method="post" action="{{.Base}}/activate{{.FilterQuery}}" hx-post="{{.Base}}/activate" hx-target="#detail-pane" hx-swap="outerHTML">
+          <input type="hidden" name="csrf" value="{{.CSRF}}">
+          <button type="submit" class="btn">Activate</button>
+        </form>{{end}}
+        {{if .CanRestore}}<form method="post" action="{{.Base}}/restore{{.FilterQuery}}" hx-post="{{.Base}}/restore" hx-target="#detail-pane" hx-swap="outerHTML">
+          <input type="hidden" name="csrf" value="{{.CSRF}}">
+          <button type="submit" class="btn">Restore</button>
+        </form>{{end}}
+        <form method="post" action="{{.Base}}/supersede{{.FilterQuery}}" hx-post="{{.Base}}/supersede" hx-target="#detail-pane" hx-swap="outerHTML" class="flex flex-col gap-2">
+          <input type="hidden" name="csrf" value="{{.CSRF}}">
+          <label class="flex flex-col gap-1 text-body">Superseded by (id or slug)
+            <input type="text" name="replacement" required class="field">
+          </label>
+          <button type="submit" class="btn self-start">Supersede</button>
+        </form>
+        {{if .CanDelete}}<hr class="border-line">
+        <form method="post" action="{{.Base}}/delete{{.FilterQuery}}" hx-post="{{.Base}}/delete" hx-target="#detail-pane" hx-swap="outerHTML" hx-confirm="Delete this memory?">
+          <input type="hidden" name="csrf" value="{{.CSRF}}">
+          <button type="submit" class="btn btn-danger">Delete</button>
+        </form>{{end}}
+      </div>
+    </details>{{end}}
+  </div>
+  <section id="versions" role="tabpanel" aria-label="Versions" class="mt-6">
     <h2 class="mb-2 font-bold">Versions</h2>
     {{range .Versions}}
     <article class="mb-3 rounded-md border border-line bg-sheet p-3">
@@ -68,7 +106,7 @@
       {{else}}
         <div class="mt-2 text-body"><pre class="whitespace-pre-wrap break-words font-sans">{{.Content}}</pre></div>
       {{end}}
-      {{if and (not .Current) (not $.ReadOnly)}}<form method="post" action="{{$.Base}}/restore" hx-post="{{$.Base}}/restore" hx-target="#detail-pane" hx-swap="outerHTML" class="mt-2">
+      {{if and (not .Current) (not $.ReadOnly)}}<form method="post" action="{{$.Base}}/restore{{$.FilterQuery}}" hx-post="{{$.Base}}/restore" hx-target="#detail-pane" hx-swap="outerHTML" class="mt-2">
         <input type="hidden" name="csrf" value="{{$.CSRF}}">
         <input type="hidden" name="version" value="{{.Version}}">
         <button type="submit" class="btn px-2 py-0.5">Restore this version</button>
@@ -76,13 +114,13 @@
     </article>
     {{else}}<p class="text-meta text-ink-muted">No versions recorded.</p>{{end}}
   </section>
-  <section id="links" class="mb-6">
+  <section id="links" role="tabpanel" aria-label="Links" class="mt-6">
     <h2 class="mb-2 font-bold">Links</h2>
     <ul class="mb-3">
       {{range .Links}}<li class="mb-1 flex items-center gap-2 text-body">
         <span>{{if .Outgoing}}{{.Kind}} to{{else}}{{.Kind}} from{{end}}</span>
         <a href="{{.Href}}" class="underline">{{.OtherID}}</a>
-        {{if and .Outgoing (not $.ReadOnly)}}<form method="post" action="{{$.Base}}/unlink" hx-post="{{$.Base}}/unlink" hx-target="#detail-pane" hx-swap="outerHTML">
+        {{if and .Outgoing (not $.ReadOnly)}}<form method="post" action="{{$.Base}}/unlink{{$.FilterQuery}}" hx-post="{{$.Base}}/unlink" hx-target="#detail-pane" hx-swap="outerHTML">
           <input type="hidden" name="csrf" value="{{$.CSRF}}">
           <input type="hidden" name="to" value="{{.OtherID}}">
           <input type="hidden" name="kind" value="{{.Kind}}">
@@ -90,7 +128,7 @@
         </form>{{end}}
       </li>{{else}}<li class="text-meta text-ink-muted">No links.</li>{{end}}
     </ul>
-    {{if not .ReadOnly}}<form method="post" action="{{.Base}}/link" hx-post="{{.Base}}/link" hx-target="#detail-pane" hx-swap="outerHTML" class="flex flex-wrap items-end gap-2">
+    {{if not .ReadOnly}}<form method="post" action="{{.Base}}/link{{.FilterQuery}}" hx-post="{{.Base}}/link" hx-target="#detail-pane" hx-swap="outerHTML" class="flex flex-wrap items-end gap-2">
       <input type="hidden" name="csrf" value="{{.CSRF}}">
       <label class="flex flex-col text-body">Link to (id or slug)
         <input type="text" name="to" required class="field">
@@ -105,31 +143,23 @@
       <button type="submit" class="btn">Add link</button>
     </form>{{end}}
   </section>
-  <section id="feedback" class="mb-6">
-    <h2 class="mb-2 font-bold">Feedback</h2>
-    <ul class="mb-3">
-      {{range .Feedback}}<li class="mb-1 text-body"><span class="font-bold">{{.Kind}}</span> · {{.CreatedAt}}{{if .Project}} · {{.Project}}{{end}}{{if .Note}} · {{.Note}}{{end}}</li>{{else}}<li class="text-meta text-ink-muted">No feedback yet.</li>{{end}}
-    </ul>
-    {{if not .ReadOnly}}<form method="post" action="{{.Base}}/feedback" hx-post="{{.Base}}/feedback" hx-target="#detail-pane" hx-swap="outerHTML" class="flex flex-wrap items-end gap-2">
-      <input type="hidden" name="csrf" value="{{.CSRF}}">
-      <label class="flex flex-col text-body">Verdict
-        <select name="kind" class="field">
-          <option value="useful">useful</option>
-          <option value="wrong">wrong</option>
-          <option value="outdated">outdated</option>
-        </select>
-      </label>
-      <label class="flex flex-col text-body">Note
-        <input type="text" name="note" class="field">
-      </label>
-      <button type="submit" class="btn">Send feedback</button>
-    </form>{{end}}
-  </section>
-  <section id="audit" class="mb-6">
-    <h2 class="mb-2 font-bold">Audit</h2>
+  <section id="activity" role="tabpanel" aria-label="Activity" class="mt-6">
+    <h2 class="mb-2 font-bold">Activity</h2>
     <ul>
-      {{range .Audit}}<li class="mb-1 text-body"><span class="font-bold">{{.Action}}</span> · {{.CreatedAt}} · {{.Process}}{{if .Cwd}} · {{.Cwd}}{{end}}{{if .Details}} · {{.Details}}{{end}}</li>{{else}}<li class="text-meta text-ink-muted">No audit records.</li>{{end}}
+      {{range .Activity}}<li class="mb-1 text-body"><span class="font-bold">{{.Kind}}</span> · {{.When}} · {{.Summary}}</li>{{else}}<li class="text-meta text-ink-muted">No activity recorded.</li>{{end}}
     </ul>
+    {{if .CanPurge}}<div class="mt-6 rounded-md border border-danger p-3">
+      <h3 class="mb-2 font-bold text-danger">Danger zone</h3>
+      <form method="post" action="{{.Base}}/purge" class="flex flex-wrap items-end gap-2">
+        <input type="hidden" name="csrf" value="{{.CSRF}}">
+        <label class="flex flex-col text-body">Type <span class="font-mono">{{.Confirm}}</span> to purge permanently
+          <input type="text" name="confirm" required autocomplete="off" class="field">
+        </label>
+        <button type="submit" class="btn btn-danger">Purge</button>
+      </form>
+    </div>{{end}}
   </section>
   {{end}}
 </section>
+{{define "detail_response"}}{{template "detail.html" .}}
+{{template "toasts_oob" .}}{{end}}

@@ -76,31 +76,38 @@ func (s *Server) action(do actionFunc) func(http.ResponseWriter, *http.Request, 
 	}
 }
 
+// handleUpdate saves the editor. On any error the pane re-renders around the submitted values, including
+// the submitted version, so a stale form conflicts again instead of overwriting a newer save.
 func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request, rc requestContext, id uuid.UUID) {
 	if err := r.ParseForm(); err != nil {
 		s.failResponse(w, r, rc, fmt.Errorf("%w: malformed form", memory.ErrValidation))
 		return
 	}
-	edit := editView{
-		Context: rc.Name, ID: id.String(), CSRF: s.session.csrf, Base: memoryBase(rc.Name, id), DetailURL: memoryBase(rc.Name, id),
+	rawVersion := r.PostFormValue("version")
+	submitted := editFields{
 		Title: r.PostFormValue("title"), Content: r.PostFormValue("content"), Tags: r.PostFormValue("tags"),
-		Type: r.PostFormValue("type"), Types: filterTypes, Pinned: r.PostFormValue("pinned") != "",
-		ExpiresAt: strings.TrimSpace(r.PostFormValue("expires_at")), Version: r.PostFormValue("version"),
+		Type: r.PostFormValue("type"), Pinned: r.PostFormValue("pinned") != "",
+		ExpiresAt: strings.TrimSpace(r.PostFormValue("expires_at")),
 	}
-	expected, patch, err := patchFromEdit(edit)
+	expected, patch, err := patchFromEdit(submitted, rawVersion)
 	var updated memory.Memory
 	if err == nil {
 		updated, err = rc.Backend.Memories.Update(r.Context(), id, &expected, patch)
 	}
+	view, loadErr := s.loadDetail(r, rc, id)
 	if err != nil {
+		if loadErr != nil {
+			// The reload failed too (typically the store is down): keep the typed text in a bare editor.
+			view.Editable, view.Title, view.Type = true, submitted.Title, submitted.Type
+		}
 		status, message := s.actionStatus(r, err)
-		edit.Error, edit.Conflict = message, errors.Is(err, memory.ErrConflict)
-		s.respondEdit(w, r, rc, edit, status)
+		submitted.Version, _ = strconv.Atoi(rawVersion)
+		view.Form, view.FormError, view.Conflict = submitted, message, errors.Is(err, memory.ErrConflict)
+		s.respondDetail(w, r, rc, view, status)
 		return
 	}
-	view, err := s.loadDetail(r, rc, id)
-	if err != nil {
-		s.failResponse(w, r, rc, err)
+	if loadErr != nil {
+		s.failResponse(w, r, rc, loadErr)
 		return
 	}
 	view.Notice = "Saved."
@@ -110,8 +117,8 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request, rc request
 	s.respondDetail(w, r, rc, view, http.StatusOK)
 }
 
-func patchFromEdit(e editView) (int, memory.Patch, error) {
-	expected, err := strconv.Atoi(e.Version)
+func patchFromEdit(e editFields, rawVersion string) (int, memory.Patch, error) {
+	expected, err := strconv.Atoi(rawVersion)
 	if err != nil {
 		return 0, memory.Patch{}, fmt.Errorf("%w: the form is missing the version it was loaded at; reload the page", memory.ErrValidation)
 	}

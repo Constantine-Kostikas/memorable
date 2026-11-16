@@ -13,6 +13,7 @@ var assetFS embed.FS
 type pageData struct {
 	Title                string
 	Message              string
+	ListURL              string
 	Context              string
 	Contexts             []string
 	CSRF                 string
@@ -22,7 +23,6 @@ type pageData struct {
 	AdminLockedMessage   string
 	Page                 string
 	Memories             *memoriesView
-	Edit                 *editView
 	Review               *reviewView
 	Profile              *profileView
 	Stats                *statsView
