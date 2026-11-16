@@ -496,6 +496,35 @@ func TestDetailIsAnEditor(t *testing.T) {
 	}
 }
 
+func TestPristineEditorMatchesItsOriginals(t *testing.T) {
+	t.Parallel()
+	expires := time.Date(2026, 12, 31, 0, 0, 0, 0, time.UTC)
+	f := newDetailFixture(t, func(m *detailMemories, _ uuid.UUID) {
+		m.fetched[0].Memory.ExpiresAt = &expires
+		m.fetched[0].Memory.Pinned = true
+	})
+
+	rec := send(f.h, http.MethodGet, f.path(""), "", withCookie(f.c), withHeader("HX-Request", "true"))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	editor := editorForm(t, rec.Body.String())
+	assert.NotContains(t, editor, "data-unsaved")
+	for _, name := range []string{"title", "tags", "expires_at"} {
+		input := regexp.MustCompile(`<input[^>]*name="` + name + `"[^>]*>`).FindString(editor)
+		value := regexp.MustCompile(`\svalue="([^"]*)"`).FindStringSubmatch(input)
+		original := regexp.MustCompile(`data-original="([^"]*)"`).FindStringSubmatch(input)
+		require.Len(t, value, 2, name)
+		require.Len(t, original, 2, name)
+		assert.Equal(t, original[1], value[1], name)
+	}
+	content := regexp.MustCompile(`(?s)<textarea[^>]*name="content"[^>]*data-original="([^"]*)"[^>]*>\n(.*?)</textarea>`).FindStringSubmatch(editor)
+	require.Len(t, content, 3)
+	assert.Equal(t, content[1], content[2])
+	assert.Regexp(t, `<select name="type" data-original="project"`, editor)
+	assert.Contains(t, editor, `<option value="project" selected>`)
+	assert.Regexp(t, `name="pinned"[^>]*data-original="on"[^>]*checked`, editor)
+}
+
 func TestPaneHasExpandToggle(t *testing.T) {
 	t.Parallel()
 	f := newDetailFixture(t, nil)
