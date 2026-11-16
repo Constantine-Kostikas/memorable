@@ -496,6 +496,20 @@ func TestDetailIsAnEditor(t *testing.T) {
 	}
 }
 
+func TestPaneHasExpandToggle(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, nil)
+
+	rec := send(f.h, http.MethodGet, f.path(""), "", withCookie(f.c), withHeader("HX-Request", "true"))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	toggle := regexp.MustCompile(`<button[^>]*data-expand-toggle[^>]*>`).FindString(rec.Body.String())
+	require.NotEmpty(t, toggle, "the pane has an Expand toggle")
+	assert.Contains(t, toggle, `type="button"`)
+	assert.Contains(t, toggle, `aria-pressed="false"`)
+	assert.Regexp(t, `\shidden[\s>]`, toggle, "hidden until app.js reveals it, so it is absent without JS")
+}
+
 func TestDetailHasEditorWithoutJS(t *testing.T) {
 	t.Parallel()
 	f := newDetailFixture(t, nil)

@@ -209,6 +209,32 @@
     background-color: var(--rail);
   }
 
+  .btn:disabled,
+  .btn[aria-disabled=true] {
+    cursor: not-allowed;
+    opacity: 0.55;
+  }
+
+  .btn:disabled:hover,
+  .btn[aria-disabled=true]:hover {
+    background-color: var(--sheet);
+  }
+
+  .btn[aria-pressed=true] {
+    border-color: var(--accent);
+    background-color: var(--rail);
+  }
+
+  .kbd {
+    border: 1px solid currentColor;
+    border-radius: 3px;
+    padding: 0 0.25rem;
+    font-family: inherit;
+    font-size: 10px;
+    line-height: 1.4;
+    opacity: 0.75;
+  }
+
   .btn-primary {
     border-color: var(--accent);
     background-color: var(--accent);
@@ -217,6 +243,10 @@
 
   .btn-primary:hover {
     background-color: color-mix(in srgb, var(--accent) 88%, var(--ink));
+  }
+
+  .btn-primary:disabled:hover {
+    background-color: var(--accent);
   }
 
   .btn-danger {
@@ -343,6 +373,12 @@
     box-shadow: 0 4px 12px rgb(0 0 0 / 0.18);
   }
 
+  @media (prefers-reduced-motion: no-preference) {
+    .toast {
+      animation: toast-in 150ms ease-out;
+    }
+  }
+
   .toast > span {
     flex: 1;
   }
@@ -417,5 +453,53 @@
   .workspace:has(.pane-selected) .list-pane,
   .detail-pane:not(.pane-selected) {
     display: none;
+  }
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+}
+
+/* Expanded editor: unlayered so it beats the workspace grid utilities. Scoped to panes with a toggle, so an empty pane keeps the list. */
+body[data-expanded] .workspace:has([data-expand-toggle]) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+body[data-expanded] .workspace:has([data-expand-toggle]) .list-pane {
+  display: none;
+}
+
+@media (width >= 900px) {
+  body[data-expanded] #content {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 260px;
+    column-gap: 1rem;
+    align-items: start;
+  }
+
+  body[data-expanded] #content > * {
+    grid-column: 1;
+  }
+
+  body[data-expanded] #content > [data-editor-meta] {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    grid-template-columns: minmax(0, 1fr);
+    margin-top: 0;
+    border-left: 1px solid var(--line);
+    border-radius: 6px;
+    background-color: var(--rail);
+    padding: 0.75rem;
+  }
+
+  body[data-expanded] #content > [data-editor-meta] > label {
+    align-self: start;
+  }
+
+  body[data-expanded] #memory-content {
+    min-height: 60vh;
   }
 }

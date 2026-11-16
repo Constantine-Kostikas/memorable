@@ -18,6 +18,7 @@
       <div class="mb-1 flex items-center gap-2 text-meta text-ink-muted">
         <span class="chip chip-warn" data-dirty-marker hidden>Unsaved changes</span>
         <span>{{if .Conflict}}Your edit is based on version {{.Form.Version}}; the latest is version {{.Version}}{{else if .Editable}}Editing version {{.Version}}{{else}}Read only: version {{.Version}}{{end}}</span>
+        <button type="button" class="btn ml-auto px-2 py-0.5" data-expand-toggle aria-pressed="false" aria-keyshortcuts="F" hidden>Expand <kbd class="kbd">F</kbd></button>
       </div>
       <h1><label for="memory-title" class="sr-only">Title</label>
         <input id="memory-title" type="text" name="title" value="{{.Form.Title}}" data-original="{{.Stored.Title}}" required class="field w-full text-page font-bold"{{if not .Editable}} disabled{{end}}>
@@ -38,7 +39,7 @@
       <label for="memory-content" class="sr-only">Content</label>
       <textarea id="memory-content" name="content" rows="14" data-original="{{.Stored.Content}}" required class="field sheet-ruled block w-full resize-y p-3"{{if not .Editable}} disabled{{end}}>
 {{.Form.Content}}</textarea>
-      <div class="mt-3 grid gap-3 min-[600px]:grid-cols-2">
+      <div class="mt-3 grid gap-3 min-[600px]:grid-cols-2" data-editor-meta>
         <label class="flex flex-col gap-1 text-body">Tags (comma-separated)
           <input type="text" name="tags" value="{{.Form.Tags}}" data-original="{{.Stored.Tags}}" class="field"{{if not .Editable}} disabled{{end}}>
         </label>
@@ -57,7 +58,7 @@
     </section>
   </form>
   <div class="mt-3 flex flex-wrap items-start gap-2" data-primary-actions>
-    {{if .Editable}}<button type="submit" form="memory-editor" class="btn btn-primary" data-save>Save</button>
+    {{if .Editable}}<button type="submit" form="memory-editor" class="btn btn-primary" data-save aria-keyshortcuts="Control+S Meta+S">Save</button>
     <a href="{{.Base}}{{.FilterQuery}}" hx-get="{{.Base}}" hx-target="#detail-pane" hx-swap="outerHTML" class="btn" data-discard>Discard</a>{{end}}
     {{if not .ReadOnly}}<details class="more-actions relative">
       <summary class="btn">More actions</summary>
