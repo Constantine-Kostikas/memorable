@@ -215,6 +215,9 @@
     return !!pane && !!target && (target === pane || (target.contains && target.contains(pane)));
   }
 
+  // Set when the user keeps their edits; confirm is synchronous, so a caller can read it right after a click.
+  var paneReplacementDeclined = false;
+
   function guardPaneReplacement(evt) {
     var detail = evt.detail || {};
     var form = currentEditor();
@@ -225,6 +228,8 @@
     if (confirmDiscard(form)) {
       // Skip htmx's own hx-confirm prompt only when the element has none, so Delete still asks its question.
       detail.issueRequest(!detail.question);
+    } else {
+      paneReplacementDeclined = true;
     }
   }
 
@@ -761,6 +766,7 @@
     if (!dialog || dialog.open || typeof dialog.showModal !== 'function') {
       return false;
     }
+    cancelPendingRow();
     var active = document.activeElement;
     dialogOpener = active && active !== document.body ? active : null;
     dialog.showModal();
@@ -885,6 +891,31 @@
         parts.results.setAttribute('aria-busy', 'true');
       }
       renderPalette(parts);
+    }
+  }
+
+  // A lookup for an earlier query can land while the next keystroke's request still waits out its delay;
+  // only a response for the query the input shows may fill the results or clear busy.
+  function isCurrentPaletteLookup(parts, detail) {
+    var config = detail.requestConfig;
+    var query = config && config.formData ? config.formData.get('q') : null;
+    return String(query == null ? '' : query).trim() === parts.input.value.trim();
+  }
+
+  function onPaletteBeforeSwap(evt) {
+    var parts = paletteParts();
+    var detail = evt.detail || {};
+    if (parts && detail.target === parts.results && !isCurrentPaletteLookup(parts, detail)) {
+      detail.shouldSwap = false;
+    }
+  }
+
+  function onPaletteAfterRequest(evt) {
+    var parts = paletteParts();
+    var detail = evt.detail || {};
+    if (parts && detail.target === parts.results && !detail.successful && isCurrentPaletteLookup(parts, detail)) {
+      // No swap will clear busy after a network error, which would leave Enter dead.
+      parts.results.removeAttribute('aria-busy');
     }
   }
 
@@ -1034,12 +1065,27 @@
     });
   }
 
+  function cancelPendingRow() {
+    window.clearTimeout(rowLoadTimer);
+    rowLoadTimer = null;
+    pendingRow = null;
+  }
+
   function loadPendingRow() {
     var link = pendingRow;
     rowLoadTimer = null;
     pendingRow = null;
-    if (link && link.isConnected && pathOf(link.getAttribute('href')) !== pathOf(paneMemoryHref() || '')) {
-      link.click();
+    if (!link || !link.isConnected || pathOf(link.getAttribute('href')) === pathOf(paneMemoryHref() || '')) {
+      return;
+    }
+    paneReplacementDeclined = false;
+    link.click();
+    if (paneReplacementDeclined) {
+      // The user kept their edits: put the selection back on the memory that is still open.
+      var open = rowLinkFor(paneMemoryHref() || '');
+      if (open) {
+        open.focus();
+      }
     }
   }
 
@@ -1125,6 +1171,8 @@
   document.addEventListener('htmx:afterRequest', markSelectedRow);
   document.addEventListener('htmx:configRequest', onLookupConfigRequest);
   document.addEventListener('htmx:afterSwap', onLookupSwap);
+  document.addEventListener('htmx:beforeSwap', onPaletteBeforeSwap);
+  document.addEventListener('htmx:afterRequest', onPaletteAfterRequest);
   document.addEventListener('htmx:afterSwap', onPaletteSwap);
   document.addEventListener('htmx:afterSettle', markPaneRow);
   // Capture phase: these run before the document-level shortcuts below, which skip prevented events.
