@@ -111,11 +111,15 @@
   }
 
   function fieldChanged(field) {
-    var original = field.getAttribute('data-original');
+    var original = normalizeText(field.getAttribute('data-original'));
     if (field.type === 'checkbox') {
       return field.checked !== (original === 'on');
     }
-    return normalizeText(field.value) !== normalizeText(original);
+    if (field.tagName.toLowerCase() === 'input') {
+      // Browsers strip line breaks from a text input's value, so a stored title with one would never match.
+      original = original.replace(/\n/g, '');
+    }
+    return normalizeText(field.value) !== original;
   }
 
   function isDirty(form) {
@@ -218,10 +222,33 @@
       return;
     }
     evt.preventDefault();
-    if (window.confirm('Discard unsaved changes to ' + editorTitle(form) + '?')) {
+    if (confirmDiscard(form)) {
       // Skip htmx's own hx-confirm prompt only when the element has none, so Delete still asks its question.
       detail.issueRequest(!detail.question);
     }
+  }
+
+  function confirmDiscard(form) {
+    return window.confirm('Discard unsaved changes to ' + editorTitle(form) + '?');
+  }
+
+  var lastUrl = window.location.href;
+
+  function rememberUrl() {
+    lastUrl = window.location.href;
+  }
+
+  // Runs before htmx's window.onpopstate (assigned later, during htmx's deferred init), which would swap the body.
+  function guardHistory(evt) {
+    var form = currentEditor();
+    if (!evt.state || !evt.state.htmx || !form || !isDirty(form)) {
+      return;
+    }
+    if (confirmDiscard(form)) {
+      return;
+    }
+    evt.stopImmediatePropagation();
+    window.history.pushState({ htmx: true }, '', lastUrl);
   }
 
   function guardUnload(evt) {
@@ -260,6 +287,7 @@
   }
 
   function onHashChange() {
+    rememberUrl();
     bindTabs(document);
   }
 
@@ -356,7 +384,7 @@
       return;
     }
     if (evt.key === 'Escape') {
-      if (isExpanded()) {
+      if (isExpanded() && document.querySelector('[data-expand-toggle]')) {
         setExpanded(false);
       }
       return;
@@ -384,6 +412,9 @@
   document.addEventListener('click', onToastDismiss);
   document.addEventListener('keydown', saveShortcut);
   document.addEventListener('keydown', expandShortcut);
+  document.addEventListener('htmx:pushedIntoHistory', rememberUrl);
+  document.addEventListener('htmx:replacedInHistory', rememberUrl);
+  window.addEventListener('popstate', guardHistory);
   window.addEventListener('beforeunload', guardUnload);
   window.addEventListener('hashchange', onHashChange);
 })();
