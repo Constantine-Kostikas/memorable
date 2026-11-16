@@ -110,6 +110,15 @@ type detailView struct {
 	Error       string
 	FormError   string
 	Conflict    bool
+	// Row, set after a successful pane action, refreshes the memory's list row out of band.
+	Row *memoryRow
+	// listRow is the memory's list row as loaded; quarantined memories have none.
+	listRow *memoryRow
+}
+
+// refreshRow asks the pane response to also replace the memory's list row, so the list shows the change.
+func (v *detailView) refreshRow() {
+	v.Row = v.listRow
 }
 
 func memoryBase(contextName string, id uuid.UUID) string {
@@ -137,9 +146,14 @@ func (s *Server) handleDetail(w http.ResponseWriter, r *http.Request, rc request
 	s.respondDetail(w, r, rc, view, http.StatusOK)
 }
 
-// handleEdit keeps old /edit links working: the detail pane is where a memory is changed.
+// handleEdit keeps old /edit links working, list filter included: the detail pane is where a memory is changed.
 func (s *Server) handleEdit(w http.ResponseWriter, r *http.Request, rc requestContext, id uuid.UUID) {
-	http.Redirect(w, r, memoryBase(rc.Name, id), http.StatusSeeOther) //nolint:gosec // G710: a same-origin path built from a configured context name and a parsed UUID.
+	filter, _, err := parseMemoryFilter(r.URL.Query())
+	if err != nil {
+		filter = memoryFilter{}
+	}
+	target := withQuery(memoryBase(rc.Name, id), filterValues(filter))
+	http.Redirect(w, r, target, http.StatusSeeOther) //nolint:gosec // G710: a same-origin path built from a configured context name, a parsed UUID, and re-encoded filter values.
 }
 
 func (s *Server) fetchPassive(r *http.Request, rc requestContext, id uuid.UUID) (memory.Fetched, error) {
@@ -172,6 +186,10 @@ func (s *Server) loadDetail(r *http.Request, rc requestContext, id uuid.UUID) (d
 	}
 	m := fetched.Memory
 	fillMemory(&view, m)
+	view.listRow = &memoryRow{
+		ID: id.String(), Title: m.Title, Project: view.Project, Type: view.Type, TypeClass: typeClass(view.Type),
+		Status: view.Status, Age: relativeAge(s.cfg.Now(), m.UpdatedAt), Current: true, OOB: true,
+	}
 	view.CanPurge = !view.ReadOnly && s.admin.minutesLeft() > 0
 	view.Confirm = purgeConfirmation(m)
 	history, err := rc.Backend.Memories.History(r.Context(), id)
@@ -366,9 +384,16 @@ func (s *Server) respondDetail(w http.ResponseWriter, r *http.Request, rc reques
 	view.FilterQuery = withQuery("", filterValues(filter))
 	w.Header().Set("Vary", "HX-Request")
 	if fragment {
+		if view.Row != nil {
+			row := *view.Row
+			row.Href = withQuery(view.Base, filterValues(filter))
+			view.Row = &row
+		}
 		s.renderStatus(w, status, "detail_response", view)
 		return
 	}
+	// The full page rebuilds the list, so no row goes out of band.
+	view.Row = nil
 	list := memoriesView{Context: rc.Name, Filter: filter, SelectedID: view.ID, Selected: &view}
 	if err := s.loadRows(r, rc, &list, nil); err != nil {
 		s.failResponse(w, r, rc, err)

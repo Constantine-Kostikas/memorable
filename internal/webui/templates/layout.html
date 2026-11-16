@@ -11,24 +11,24 @@
   <script src="/static/htmx.min.js" defer></script>
 </head>
 <body hx-headers='{"X-CSRF-Token":"{{.CSRF}}"}' class="bg-paper font-sans text-body text-ink antialiased{{if eq .Page "memories"}} min-[900px]:flex min-[900px]:h-dvh min-[900px]:flex-col{{end}}">
-  <header class="flex shrink-0 flex-wrap items-center gap-4 border-b border-line bg-sheet px-4 py-3">
-    <nav aria-label="Contexts" class="flex gap-2">
+  <header class="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-line bg-sheet px-4 py-3">
+    <nav aria-label="Contexts" class="flex min-w-0 flex-wrap gap-2">
       {{range .Contexts}}<a href="/c/{{.}}/memories"{{if eq . $.Context}} aria-current="page" class="rounded border border-accent bg-accent px-2 py-1 text-accent-ink"{{else}} class="rounded border border-line px-2 py-1 hover:bg-rail"{{end}}>{{.}}</a>{{end}}
     </nav>
-    {{if .Context}}<nav aria-label="Pages" class="flex gap-4">
+    {{if .Context}}<nav aria-label="Pages" class="flex min-w-0 flex-wrap gap-x-4 gap-y-1">
       <a href="/c/{{.Context}}/memories" class="hover:underline">Memories</a>
       <a href="/c/{{.Context}}/review" class="hover:underline">Review{{if not .ReviewCountUnknown}} ({{.ReviewCount}}){{end}}</a>
       <a href="/c/{{.Context}}/profile" class="hover:underline">Profile</a>
       <a href="/c/{{.Context}}/stats" class="hover:underline">Stats</a>
       {{if .AdminUnlockedMinutes}}<a href="/c/{{.Context}}/prune" class="hover:underline">Prune</a>{{end}}
     </nav>{{end}}
-    <div class="ml-auto flex items-center gap-3">
-      {{if .Context}}<form role="search" method="get" action="/c/{{.Context}}/memories" class="flex items-center gap-2">
-        <input type="search" name="q" aria-label="Search memories" placeholder="Search memories" autocomplete="off" class="field w-48">
-        <button type="button" class="btn" data-palette-open aria-keyshortcuts="Control+K Meta+K" hidden>Jump <kbd class="kbd">Ctrl K</kbd></button>
+    <div class="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
+      {{if .Context}}{{if ne .Page "memories"}}<form role="search" method="get" action="/c/{{.Context}}/memories" class="flex min-w-0 max-w-full items-center">
+        <input type="search" name="q" aria-label="Search memories" placeholder="Search memories" autocomplete="off" class="field w-48 min-w-0 max-w-full">
       </form>{{end}}
-      {{if .AdminUnlockedMinutes}}<span class="chip chip-warn px-2 py-1">Admin unlocked, locks in {{.AdminUnlockedMinutes}} min</span>{{end}}
-      <button type="button" class="btn" data-theme-toggle aria-label="Theme: system">Theme: system</button>
+      <button type="button" class="btn whitespace-nowrap" data-palette-open aria-keyshortcuts="Control+K Meta+K" hidden>Jump <kbd class="kbd">Ctrl K</kbd></button>{{end}}
+      {{if .AdminUnlockedMinutes}}<span class="chip chip-warn whitespace-nowrap px-2 py-1"><span class="hidden min-[600px]:inline">Admin unlocked, locks in {{.AdminUnlockedMinutes}} min</span><span class="min-[600px]:hidden">Admin, {{.AdminUnlockedMinutes}} min</span></span>{{end}}
+      <button type="button" class="btn whitespace-nowrap" data-theme-toggle aria-label="Theme: system">Theme: system</button>
     </div>
   </header>
   {{with .AdminLockedMessage}}<p role="alert" class="border-b border-line bg-warn-soft px-4 py-2 text-warn">{{.}}</p>{{end}}

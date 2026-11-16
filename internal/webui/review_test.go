@@ -5,9 +5,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"html/template"
 	"log/slog"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -240,6 +242,8 @@ type conflictMemories struct {
 	reviewMemories
 	byID   map[uuid.UUID]memory.Fetched
 	getErr error
+	// supersedeErr is what Supersede returns.
+	supersedeErr error
 
 	mu    sync.Mutex
 	gets  []memory.GetRequest
@@ -275,7 +279,7 @@ func (c *conflictMemories) Supersede(_ context.Context, old, replacement uuid.UU
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.calls = append(c.calls, call{Name: "Supersede", Args: []any{old, replacement}})
-	return nil
+	return c.supersedeErr
 }
 
 func (c *conflictMemories) recordedGets() []memory.GetRequest {
@@ -382,6 +386,39 @@ func TestConflictDeleteFromReviewAnswersHTMXWithReviewFragment(t *testing.T) {
 	assert.True(t, strings.HasPrefix(strings.TrimSpace(rec.Body.String()), `<div id="review"`), rec.Body.String())
 	assert.Contains(t, rec.Body.String(), "Memory deleted.")
 	assert.Equal(t, []call{{Name: "Delete", Args: []any{from.ID}}}, mem.recordedCalls())
+}
+
+func TestConflictFailedKeepAnswersHTMXWithReviewFragmentAndError(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name   string
+		err    error
+		status int
+		want   string
+	}{
+		{name: "conflict", err: fmt.Errorf("supersede: %w", memory.ErrConflict), status: http.StatusConflict, want: conflictMessage},
+		{name: "validation", err: fmt.Errorf("%w: cannot supersede a memory with itself", memory.ErrValidation),
+			status: http.StatusUnprocessableEntity, want: "cannot supersede a memory with itself"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			from, to := activeMemory("Keep me", "a"), activeMemory("Replace me", "b")
+			mem := newConflictMemories(memory.Link{From: from.ID, To: to.ID, Kind: memory.LinkContradicts}, fetchedOf(from), fetchedOf(to))
+			mem.supersedeErr = tc.err
+			s, h, c := newConflictServer(t, mem)
+
+			form := url.Values{"csrf": {s.session.csrf}, "replacement": {from.ID.String()}, "return": {"review"}}
+			rec := send(h, http.MethodPost, "/c/personal/memories/"+to.ID.String()+"/supersede", form.Encode(),
+				withCookie(c), withHeader("Content-Type", "application/x-www-form-urlencoded"), withHeader("HX-Request", "true"))
+
+			require.Equal(t, tc.status, rec.Code, rec.Body.String())
+			body := rec.Body.String()
+			assert.NotContains(t, body, "<html")
+			assert.True(t, strings.HasPrefix(strings.TrimSpace(body), `<div id="review"`), body)
+			assert.Regexp(t, `<p role="alert"[^>]*>[^<]*`+regexp.QuoteMeta(template.HTMLEscapeString(tc.want)), body)
+			assert.NotContains(t, body, "Memory superseded.")
+		})
+	}
 }
 
 func TestConflictHidesQuarantinedSide(t *testing.T) {

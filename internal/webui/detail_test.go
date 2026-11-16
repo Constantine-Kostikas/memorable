@@ -126,11 +126,35 @@ func (d *detailMemories) Activity(context.Context, uuid.UUID) (memory.Activity, 
 
 func (d *detailMemories) Update(_ context.Context, id uuid.UUID, expected *int, p memory.Patch) (memory.Memory, error) {
 	d.record("Update", id, *expected, p)
+	if d.mutErr == nil {
+		d.applyToFetched(id, func(m *memory.Memory) {
+			if p.Title != nil {
+				m.Title = *p.Title
+			}
+			if p.Type != nil {
+				m.Type = *p.Type
+			}
+		})
+	}
 	return d.updated, d.mutErr
+}
+
+// applyToFetched changes the stored memory the way a successful mutation would, so a reload shows it.
+func (d *detailMemories) applyToFetched(id uuid.UUID, change func(*memory.Memory)) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for i := range d.fetched {
+		if d.fetched[i].Memory.ID == id {
+			change(&d.fetched[i].Memory)
+		}
+	}
 }
 
 func (d *detailMemories) Delete(_ context.Context, id uuid.UUID) error {
 	d.record("Delete", id)
+	if d.mutErr == nil {
+		d.applyToFetched(id, func(m *memory.Memory) { m.Status = memory.StatusDeleted })
+	}
 	return d.mutErr
 }
 
@@ -380,6 +404,26 @@ func TestEditURLRedirects(t *testing.T) {
 	assert.Equal(t, f.path(""), rec.Header().Get("Location"))
 }
 
+func TestEditURLRedirectKeepsListFilter(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, nil)
+
+	for _, tc := range []struct {
+		name, query, want string
+	}{
+		{name: "filter kept", query: "?q=port+map&type=project&tag=go&cursor=" + uuid.NewString(), want: f.path("?q=port+map&tag=go&type=project")},
+		{name: "malformed filter dropped", query: "?type=bogus&q=x", want: f.path("")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			rec := send(f.h, http.MethodGet, f.path("/edit"+tc.query), "", withCookie(f.c))
+
+			assert.Equal(t, http.StatusSeeOther, rec.Code)
+			assert.Equal(t, tc.want, rec.Header().Get("Location"))
+		})
+	}
+}
+
 func TestLineDiffDeterministic(t *testing.T) {
 	t.Parallel()
 
@@ -496,10 +540,16 @@ func TestDetailIsAnEditor(t *testing.T) {
 	assert.NotContains(t, editor[1:], "<form", "no form is nested in the editor")
 	assert.Regexp(t, `<button[^>]*form="memory-editor"[^>]*data-save`, body)
 	assert.Regexp(t, `<a href="`+regexp.QuoteMeta(f.path(""))+`"[^>]*data-discard>Discard</a>`, body)
+	nav := regexp.MustCompile(`(?s)<nav aria-label="Memory sections"[^>]*>.*?</nav>`).FindString(body)
+	require.NotEmpty(t, nav, "section navigation missing")
+	assert.NotContains(t, body, `role="tab`, "sections are in-page links, not tabs")
+	assert.Contains(t, nav, `<a href="#content" aria-current="true"`, "Content is current without JS")
+	assert.Equal(t, 1, strings.Count(nav, "aria-current"))
 	for _, section := range []string{"content", "versions", "links", "activity"} {
-		assert.Contains(t, body, `<a role="tab" href="#`+section+`"`, section)
+		assert.Contains(t, nav, `<a href="#`+section+`"`, section)
 		assert.Contains(t, body, `id="`+section+`"`, section)
 	}
+	assert.Contains(t, editor, "Expires (UTC, empty means never)")
 }
 
 func TestPristineEditorMatchesItsOriginals(t *testing.T) {

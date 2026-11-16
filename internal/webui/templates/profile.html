@@ -14,7 +14,7 @@
       <span class="chip chip-type-{{typeClass .Type}}">{{.Type}}</span>
       <span class="chip chip-status-{{.Status}}">{{.Status}}</span>
     </div>
-    <div class="sheet-ruled mt-2 px-3"><pre class="whitespace-pre-wrap break-words text-ink">{{.Content}}</pre></div>
+    <div class="sheet-ruled mt-2"><pre class="whitespace-pre-wrap break-words text-ink">{{.Content}}</pre></div>
     {{if $.Admin}}
     <details class="mt-2"{{if .Error}} open{{end}}>
       <summary class="cursor-pointer text-body underline">Edit</summary>

@@ -1,4 +1,4 @@
-<li class="memory-row type-tab-{{.TypeClass}}">
+<li{{if and .ID (not .Standalone)}} id="row-{{.ID}}"{{end}}{{if .OOB}} hx-swap-oob="outerHTML"{{end}} class="memory-row type-tab-{{.TypeClass}}">
   <a href="{{.Href}}"{{if not .Standalone}} hx-get="{{.Href}}" hx-target="#detail-pane" hx-swap="outerHTML" hx-push-url="true" data-row-link{{end}}{{if .Current}} aria-current="true"{{end}} class="block px-3 py-2">
     <span class="block font-bold">{{.Title}}</span>
     <span class="block text-meta text-ink-muted">{{.Type}} · {{.Project}} · {{.Age}}{{if ne .Status "active"}} <span class="chip chip-status-{{.Status}}">{{.Status}}</span>{{end}}{{with .Note}} · {{.}}{{end}}</span>

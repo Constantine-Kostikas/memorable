@@ -47,7 +47,7 @@
 <div class="type-tab-{{.TypeClass}} flex flex-col gap-2 rounded-md border border-line bg-sheet p-3">
   <h3 class="font-bold">{{.Title}}</h3>
   <p class="flex flex-wrap gap-2"><span class="chip chip-type-{{.TypeClass}}">{{.Type}}</span><span class="chip chip-status-{{.Status}}">{{.Status}}</span><span class="font-mono text-meta text-ink-muted">{{.ID}}</span></p>
-  <div class="sheet-ruled px-3"><pre class="whitespace-pre-wrap break-words">{{.Preview}}</pre></div>
+  <div class="sheet-ruled"><pre class="whitespace-pre-wrap break-words">{{.Preview}}</pre></div>
   <div class="flex flex-wrap items-center gap-2">
     <a href="{{.Href}}" class="btn">Open</a>
     {{with .KeepURL}}

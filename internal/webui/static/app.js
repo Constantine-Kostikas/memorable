@@ -73,19 +73,6 @@
     });
   }
 
-  function markSelectedRow(evt) {
-    var detail = evt.detail || {};
-    var link = detail.elt;
-    if (!detail.successful || !link || !link.hasAttribute || !link.hasAttribute('data-row-link')) {
-      return;
-    }
-    var current = document.querySelectorAll('[data-row-link][aria-current]');
-    Array.prototype.forEach.call(current, function (row) {
-      row.removeAttribute('aria-current');
-    });
-    link.setAttribute('aria-current', 'true');
-  }
-
   function each(root, selector, fn) {
     if (!root || !root.querySelectorAll) {
       return;
@@ -203,7 +190,7 @@
       return;
     }
     evt.preventDefault();
-    if (isDirty(form) && form.hasAttribute('hx-post')) {
+    if (isDirty(form) && form.hasAttribute('hx-post') && expiryReady(form)) {
       form.requestSubmit();
     }
   }
@@ -243,8 +230,26 @@
     lastUrl = window.location.href;
   }
 
+  function sameDocument(a, b) {
+    return a.pathname === b.pathname && a.search === b.search;
+  }
+
+  function onlyHashChanged() {
+    try {
+      return sameDocument(new URL(lastUrl, window.location.href), window.location);
+    } catch (e) {
+      return false;
+    }
+  }
+
   // Runs before htmx's window.onpopstate (assigned later, during htmx's deferred init), which would swap the body.
   function guardHistory(evt) {
+    if (onlyHashChanged()) {
+      // Back or forward between in-pane anchors (#versions) is not a page change: keep htmx from re-fetching.
+      // This also skips rememberUrl below; hashchange fires next and updates lastUrl and the section nav.
+      evt.stopImmediatePropagation();
+      return;
+    }
     var form = currentEditor();
     if (!evt.state || !evt.state.htmx || !form || !isDirty(form)) {
       return;
@@ -263,14 +268,18 @@
     }
   }
 
-  // Tabs: mark the tab for the section in the URL hash, defaulting to Content.
+  // Section nav: mark the link of the section in the URL hash as current, defaulting to Content.
 
-  var TAB_SECTIONS = ['content', 'versions', 'links', 'activity'];
+  var SECTIONS = ['content', 'versions', 'links', 'activity'];
 
-  function selectTab(root, section) {
-    var active = TAB_SECTIONS.indexOf(section) === -1 ? 'content' : section;
-    each(root, '[role="tab"]', function (tab) {
-      tab.setAttribute('aria-selected', tab.getAttribute('aria-controls') === active ? 'true' : 'false');
+  function selectSection(nav, section) {
+    var active = '#' + (SECTIONS.indexOf(section) === -1 ? 'content' : section);
+    each(nav, 'a[href^="#"]', function (link) {
+      if (link.getAttribute('href') === active) {
+        link.setAttribute('aria-current', 'true');
+      } else {
+        link.removeAttribute('aria-current');
+      }
     });
   }
 
@@ -278,22 +287,22 @@
     return window.location.hash.replace(/^#/, '');
   }
 
-  function bindTabs(root) {
-    each(root, '[role="tablist"]', function (list) {
-      selectTab(list, hashSection());
+  function bindSectionNav(root) {
+    each(root, '[data-section-nav]', function (nav) {
+      selectSection(nav, hashSection());
     });
   }
 
-  function onTabClick(evt) {
-    var tab = evt.target && evt.target.closest && evt.target.closest('[role="tab"]');
-    if (tab) {
-      selectTab(tab.closest('[role="tablist"]') || document, tab.getAttribute('aria-controls'));
+  function onSectionClick(evt) {
+    var link = evt.target && evt.target.closest && evt.target.closest('[data-section-nav] a[href^="#"]');
+    if (link) {
+      selectSection(link.closest('[data-section-nav]'), link.getAttribute('href').replace(/^#/, ''));
     }
   }
 
   function onHashChange() {
     rememberUrl();
-    bindTabs(document);
+    bindSectionNav(document);
   }
 
   // Toasts: dismiss on click; notices leave after five seconds, errors stay until dismissed.
@@ -415,11 +424,76 @@
     if (!input || input.disabled) {
       return;
     }
-    if (input.value !== '') {
+    // A half-typed date already reads as "", but clearing still wipes the typed parts and its invalid mark.
+    if (input.value !== '' || (input.validity && input.validity.badInput)) {
       input.value = '';
       input.dispatchEvent(new Event('input', { bubbles: true }));
     }
     input.focus();
+  }
+
+  // A half-typed date reads as "" and would clear the expiry on save, so saving waits until it is finished or cleared.
+
+  var UNFINISHED_EXPIRY = 'Finish the expiry date or press Never.';
+
+  function showErrorToast(message) {
+    var region = document.getElementById('toasts');
+    if (!region) {
+      return;
+    }
+    var toast = document.createElement('div');
+    toast.setAttribute('role', 'alert');
+    toast.className = 'toast notice-danger';
+    toast.setAttribute('data-toast', '');
+    var text = document.createElement('span');
+    text.textContent = message;
+    var dismiss = document.createElement('button');
+    dismiss.type = 'button';
+    dismiss.className = 'toast-dismiss';
+    dismiss.setAttribute('data-toast-dismiss', '');
+    dismiss.setAttribute('aria-label', 'Dismiss error');
+    dismiss.textContent = '\u00d7';
+    toast.appendChild(text);
+    toast.appendChild(dismiss);
+    region.appendChild(toast);
+    scheduleToast(toast);
+  }
+
+  // Reports whether form may be saved; an unfinished expiry date is marked, focused, and explained instead.
+  function expiryReady(form) {
+    var input = form && form.elements ? form.elements.namedItem('expires_at') : null;
+    if (!input || !input.validity || !input.validity.badInput) {
+      return true;
+    }
+    input.setAttribute('aria-invalid', 'true');
+    input.focus();
+    showErrorToast(UNFINISHED_EXPIRY);
+    return false;
+  }
+
+  function clearExpiryInvalid(evt) {
+    var input = evt.target;
+    if (input && input.name === 'expires_at' && input.hasAttribute && input.hasAttribute('aria-invalid')) {
+      input.removeAttribute('aria-invalid');
+    }
+  }
+
+  // Capture phase: runs before the browser validates the form and before htmx sees the submit.
+  function guardSaveClick(evt) {
+    var save = evt.target && evt.target.closest && evt.target.closest('[data-save]');
+    if (save && !expiryReady(save.form)) {
+      evt.preventDefault();
+      evt.stopPropagation();
+    }
+  }
+
+  // Enter in a field submits without the Save button; stop it here before htmx's submit handler.
+  function guardEditorSubmit(evt) {
+    var form = evt.target;
+    if (form && form.hasAttribute && form.hasAttribute('data-editor') && !expiryReady(form)) {
+      evt.preventDefault();
+      evt.stopPropagation();
+    }
   }
 
   // Tags: chips over the comma-separated tags field. The field stays the submitted value and the dirty
@@ -1162,13 +1236,12 @@
   onReady(bindThemeToggles);
   onReady(bindExpand);
   onReady(bindEditors);
-  onReady(bindTabs);
+  onReady(bindSectionNav);
   onReady(bindToasts);
   onReady(bindExpiryClear);
   onReady(bindTagChips);
   onReady(bindLookups);
   onReady(bindPaletteButtons);
-  document.addEventListener('htmx:afterRequest', markSelectedRow);
   document.addEventListener('htmx:configRequest', onLookupConfigRequest);
   document.addEventListener('htmx:afterSwap', onLookupSwap);
   document.addEventListener('htmx:beforeSwap', onPaletteBeforeSwap);
@@ -1181,19 +1254,23 @@
   document.addEventListener('keydown', onTagKeydown, true);
   document.addEventListener('keydown', onLookupKeydown, true);
   document.addEventListener('submit', onLookupSubmit, true);
+  document.addEventListener('submit', guardEditorSubmit, true);
+  document.addEventListener('click', guardSaveClick, true);
   document.addEventListener('input', onTagInput);
   document.addEventListener('input', onLookupInput);
   document.addEventListener('focusout', onTagBlur);
   document.addEventListener('focusout', onLookupBlur);
   document.addEventListener('mousedown', onLookupMousedown);
   document.addEventListener('click', onExpiryClear);
+  document.addEventListener('input', clearExpiryInvalid);
+  document.addEventListener('change', clearExpiryInvalid);
   document.addEventListener('click', onTagRemove);
   document.addEventListener('htmx:confirm', guardPaneReplacement);
   document.addEventListener('input', onEditorInput);
   document.addEventListener('change', onEditorInput);
   document.addEventListener('click', ignoreCleanDiscard, true);
   document.addEventListener('click', onExpandClick);
-  document.addEventListener('click', onTabClick);
+  document.addEventListener('click', onSectionClick);
   document.addEventListener('click', onToastDismiss);
   document.addEventListener('keydown', saveShortcut);
   document.addEventListener('keydown', expandShortcut);

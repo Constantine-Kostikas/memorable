@@ -77,6 +77,9 @@ func (s *Server) action(do actionFunc) func(http.ResponseWriter, *http.Request, 
 			return
 		}
 		view.Notice, view.Error = notice, message
+		if err == nil {
+			view.refreshRow()
+		}
 		s.respondDetail(w, r, rc, view, status)
 	}
 }
@@ -118,6 +121,7 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request, rc request
 		return
 	}
 	view.Notice = "Saved."
+	view.refreshRow()
 	if updated.Status == memory.StatusQuarantined {
 		view.Notice = quarantinedMessage
 	}

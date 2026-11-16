@@ -59,7 +59,8 @@
   --type-reference: #B17F1A;
   --type-reference-soft: #F7ECD3;
   --type-reference-ink: #7A5208;
-  --sheet-line: 1.25rem;
+  --sheet-line: 1.5rem;
+  --sheet-pad-y: 0.75rem;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -310,26 +311,39 @@
     color: var(--warn);
   }
 
+  /* Line k of the text occupies [pad + k*line, pad + (k+1)*line) from the padding edge, and its rule is that
+     box's last pixel: the rule tile is one line tall, starts at the top padding, and draws only its last 1px.
+     The first layer covers the top padding, where the tile repeats upward, so no rule sits above the text. */
   .sheet-ruled {
     border: 1px solid var(--line);
     border-radius: 6px;
+    padding: var(--sheet-pad-y) 0.75rem;
     background-color: var(--sheet);
-    background-image: repeating-linear-gradient(
-      var(--sheet) 0 calc(var(--sheet-line) - 1px),
-      var(--rule) calc(var(--sheet-line) - 1px) var(--sheet-line)
-    );
-    background-origin: content-box;
+    background-image:
+      linear-gradient(var(--sheet), var(--sheet)),
+      linear-gradient(transparent calc(var(--sheet-line) - 1px), var(--rule) calc(var(--sheet-line) - 1px));
+    background-size: 100% var(--sheet-pad-y), 100% var(--sheet-line);
+    background-repeat: no-repeat, repeat-y;
+    background-position: 0 0, 0 var(--sheet-pad-y);
+    background-origin: padding-box;
     line-height: var(--sheet-line);
   }
 
+  /* Local: the rules scroll with the text instead of staying put behind it. */
   .sheet-ruled.field {
     border-color: var(--ink-muted);
     background-attachment: local;
   }
 
   .sheet-ruled pre {
+    margin: 0;
     font-family: inherit;
     line-height: inherit;
+  }
+
+  .section-nav a[aria-current=true] {
+    color: var(--accent);
+    box-shadow: inset 0 -2px 0 var(--accent);
   }
 
   .notice-ok,

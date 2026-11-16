@@ -45,6 +45,8 @@ type explainView struct {
 }
 
 type memoryRow struct {
+	// ID gives workspace rows the stable element id row-<ID> that pane actions swap out of band.
+	ID        string
 	Href      string
 	Title     string
 	Project   string
@@ -57,6 +59,8 @@ type memoryRow struct {
 	Note      string
 	// Standalone rows are plain links to the workspace, for pages without a detail pane.
 	Standalone bool
+	// OOB marks a row sent beside a pane response, replacing the list's copy of the row.
+	OOB bool
 }
 
 type memoriesView struct {
@@ -243,6 +247,7 @@ func (v *memoriesView) rowsOf(items []memory.Summary, explain map[uuid.UUID]memo
 	rows := make([]memoryRow, 0, len(items))
 	for _, m := range items {
 		row := memoryRow{
+			ID:        m.ID.String(),
 			Href:      withQuery(memoryBase(v.Context, m.ID), query),
 			Title:     m.Title,
 			Project:   globalProject,

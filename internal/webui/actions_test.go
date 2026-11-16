@@ -49,6 +49,87 @@ func TestUpdateCallsService(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), "Saved.")
 }
 
+func oobRow(t *testing.T, body string, id uuid.UUID) string {
+	t.Helper()
+	return regexp.MustCompile(`(?s)<li id="row-` + id.String() + `" hx-swap-oob="outerHTML"[^>]*>.*?</li>`).FindString(body)
+}
+
+func TestPaneSaveRefreshesListRowOutOfBand(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, nil)
+
+	rec := f.post("/update?q=port&type=project", updateForm(nil), withHeader("HX-Request", "true"))
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	row := oobRow(t, rec.Body.String(), f.id)
+	require.NotEmpty(t, row, rec.Body.String())
+	assert.Contains(t, row, "New title")
+	assert.Contains(t, row, "type-tab-feedback")
+	assert.Contains(t, row, `href="`+f.path("?q=port&amp;type=project")+`"`, "the row keeps the list filter")
+	assert.Contains(t, row, `aria-current="true"`)
+	assert.Contains(t, row, "data-row-link")
+}
+
+func TestPaneActionsRefreshListRowOutOfBand(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		action string
+		form   url.Values
+		want   string
+	}{
+		{action: "/delete", form: url.Values{}, want: "chip-status-deleted"},
+		{action: "/restore", form: url.Values{}, want: "Port map"},
+		{action: "/activate", form: url.Values{}, want: "Port map"},
+	} {
+		t.Run(tc.action, func(t *testing.T) {
+			t.Parallel()
+			f := newDetailFixture(t, nil)
+
+			rec := f.post(tc.action, tc.form, withHeader("HX-Request", "true"))
+
+			require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+			row := oobRow(t, rec.Body.String(), f.id)
+			require.NotEmpty(t, row, rec.Body.String())
+			assert.Contains(t, row, tc.want)
+		})
+	}
+}
+
+func TestPaneSupersedeRefreshesListRowOutOfBand(t *testing.T) {
+	t.Parallel()
+	replacement := uuid.New()
+	f := newDetailFixture(t, func(m *detailMemories, _ uuid.UUID) {
+		m.byID[replacement] = memory.Fetched{Ref: replacement.String(), Memory: memory.Memory{ID: replacement, Scope: memory.ScopeGlobal}}
+	})
+
+	rec := f.post("/supersede", url.Values{"replacement": {replacement.String()}}, withHeader("HX-Request", "true"))
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.NotEmpty(t, oobRow(t, rec.Body.String(), f.id))
+}
+
+func TestPaneActionWithoutRowRefresh(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		mut  func(*detailMemories, uuid.UUID)
+		opts []requestOption
+	}{
+		{name: "full page rebuilds the list", opts: nil},
+		{name: "failed save", mut: func(m *detailMemories, _ uuid.UUID) { m.mutErr = fmt.Errorf("update: %w", memory.ErrConflict) },
+			opts: []requestOption{withHeader("HX-Request", "true")}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			f := newDetailFixture(t, tc.mut)
+
+			rec := f.post("/update", updateForm(nil), tc.opts...)
+
+			assert.NotContains(t, rec.Body.String(), "hx-swap-oob=\"outerHTML\"")
+		})
+	}
+}
+
 func TestUpdateConflict(t *testing.T) {
 	t.Parallel()
 	f := newDetailFixture(t, func(m *detailMemories, _ uuid.UUID) { m.mutErr = fmt.Errorf("update: %w", memory.ErrConflict) })

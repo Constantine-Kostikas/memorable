@@ -141,18 +141,6 @@ func TestMemoryRowsCarryTypeTab(t *testing.T) {
 	assert.Contains(t, body, "chip-status-deleted")
 }
 
-func TestAppJSMovesRowSelection(t *testing.T) {
-	t.Parallel()
-
-	js, err := assetFS.ReadFile("static/app.js")
-	require.NoError(t, err)
-
-	body := string(js)
-	assert.Contains(t, body, "document.addEventListener('htmx:afterRequest', markSelectedRow)")
-	assert.Contains(t, body, "'data-row-link'")
-	assert.Contains(t, body, "setAttribute('aria-current', 'true')")
-}
-
 func renderLayout(t *testing.T, page pageData) string {
 	t.Helper()
 
@@ -220,16 +208,54 @@ func TestLayoutWithoutContextHasNoPalette(t *testing.T) {
 	assert.NotContains(t, body, "data-palette-open")
 }
 
+func headerOf(t *testing.T, body string) string {
+	t.Helper()
+	header := regexp.MustCompile(`(?s)<header.*?</header>`).FindString(body)
+	require.NotEmpty(t, header, "top bar missing")
+	return header
+}
+
 func TestTopBarSearchWorksWithoutJS(t *testing.T) {
 	t.Parallel()
 
-	body := renderLayout(t, pageData{Title: "Stats", Context: "work", Contexts: []string{"personal", "work"}})
+	for _, data := range []pageData{
+		{Title: "Error", Message: "nope"},
+		{Title: "Review", Page: pageReview, Review: &reviewView{}},
+		{Title: "Profile", Page: pageProfile, Profile: &profileView{}},
+		{Title: "Stats", Page: pageStats, Stats: &statsView{}},
+	} {
+		data.Context, data.Contexts = "work", []string{"personal", "work"}
+		page := data.Page
+		header := headerOf(t, renderLayout(t, data))
 
-	form := regexp.MustCompile(`(?s)<form role="search" method="get" action="/c/work/memories"[^>]*>.*?</form>`).FindString(body)
-	require.NotEmpty(t, form, "top-bar search form missing")
-	assert.Regexp(t, `<input type="search" name="q"`, form)
-	assert.Contains(t, form, `aria-label="Search memories"`)
-	assert.Regexp(t, `<button type="button"[^>]*data-palette-open[^>]*hidden`, body, "the palette hint stays hidden until JS shows it")
+		form := regexp.MustCompile(`(?s)<form role="search" method="get" action="/c/work/memories"[^>]*>.*?</form>`).FindString(header)
+		require.NotEmpty(t, form, "top-bar search form missing on page %q", page)
+		assert.Regexp(t, `<input type="search" name="q"`, form)
+		assert.Contains(t, form, `aria-label="Search memories"`)
+		assert.Regexp(t, `<button type="button"[^>]*data-palette-open[^>]*hidden`, header, "the palette hint stays hidden until JS shows it")
+	}
+}
+
+func TestWorkspaceTopBarHasNoSecondSearch(t *testing.T) {
+	t.Parallel()
+
+	header := headerOf(t, renderLayout(t, pageData{
+		Title: "Memories", Page: pageMemories, Context: "work", Contexts: []string{"personal", "work"},
+		Memories: &memoriesView{Context: "work"},
+	}))
+
+	assert.NotContains(t, header, `role="search"`, "the list pane has the workspace's search")
+	assert.NotContains(t, header, `name="q"`)
+	assert.Regexp(t, `<button type="button"[^>]*data-palette-open[^>]*hidden`, header, "Jump stays on the workspace")
+}
+
+func TestAdminBadgeHasNarrowVariant(t *testing.T) {
+	t.Parallel()
+
+	header := headerOf(t, renderLayout(t, pageData{Title: "Stats", Page: pageStats, Stats: &statsView{}, Context: "work", Contexts: []string{"work"}, AdminUnlockedMinutes: 15}))
+
+	assert.Contains(t, header, `<span class="hidden min-[600px]:inline">Admin unlocked, locks in 15 min</span>`)
+	assert.Contains(t, header, `<span class="min-[600px]:hidden">Admin, 15 min</span>`)
 }
 
 func TestDetailPaneCarriesMemoryHref(t *testing.T) {

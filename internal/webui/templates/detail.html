@@ -7,11 +7,11 @@
     <p class="mt-2">Status: {{.Status}}. Its content is hidden until it is approved (memorable approve or ui --admin).</p>
   </section>
   {{if .Unsaved}}<label class="mt-3 flex flex-col gap-1 text-body">Your unsaved text (copy it before leaving)
-    <textarea rows="10" readonly class="field sheet-ruled block w-full resize-y p-3">
+    <textarea rows="10" readonly class="field sheet-ruled block w-full resize-y">
 {{.Form.Content}}</textarea>
   </label>{{end}}
   {{else}}
-  <form id="memory-editor" data-editor data-title="{{.Title}}"{{if .Unsaved}} data-unsaved{{end}}{{if .Editable}} method="post" action="{{.Base}}/update{{.FilterQuery}}" hx-post="{{.Base}}/update" hx-target="#detail-pane" hx-swap="outerHTML"{{end}}>
+  <form id="memory-editor" data-editor data-title="{{.Title}}"{{if .Unsaved}} data-unsaved{{end}}{{if .Editable}} method="post" action="{{.Base}}/update{{.FilterQuery}}" hx-post="{{.Base}}/update{{.FilterQuery}}" hx-target="#detail-pane" hx-swap="outerHTML"{{end}}>
     <input type="hidden" name="csrf" value="{{.CSRF}}">
     <input type="hidden" name="version" value="{{.Form.Version}}">
     <header class="mb-3">
@@ -28,16 +28,16 @@
       </p>
       <p class="mt-1 text-meta text-ink-muted">Created {{.CreatedAt}}{{if .ExpiresAt}}, expires {{.ExpiresAt}}{{end}}. {{.Embedding}}</p>
     </header>
-    <nav role="tablist" aria-label="Memory sections" class="mb-3 flex gap-4 border-b border-line pb-2 text-body">
-      <a role="tab" href="#content" aria-controls="content" class="hover:underline">Content</a>
-      <a role="tab" href="#versions" aria-controls="versions" class="hover:underline">Versions {{len .Versions}}</a>
-      <a role="tab" href="#links" aria-controls="links" class="hover:underline">Links {{len .Links}}</a>
-      <a role="tab" href="#activity" aria-controls="activity" class="hover:underline">Activity</a>
+    <nav aria-label="Memory sections" data-section-nav class="section-nav mb-3 flex flex-wrap gap-x-4 gap-y-1 border-b border-line text-body">
+      <a href="#content" aria-current="true" class="pb-2 hover:underline">Content</a>
+      <a href="#versions" class="pb-2 hover:underline">Versions {{len .Versions}}</a>
+      <a href="#links" class="pb-2 hover:underline">Links {{len .Links}}</a>
+      <a href="#activity" class="pb-2 hover:underline">Activity</a>
     </nav>
-    <section id="content" role="tabpanel" aria-label="Content">
-      {{if .FormError}}<p role="alert" class="mb-3 notice-danger p-3">{{.FormError}}{{if .Conflict}} <a href="#versions" class="underline">Load latest version</a> to compare, or <a href="{{.Base}}{{.FilterQuery}}" hx-get="{{.Base}}" hx-target="#detail-pane" hx-swap="outerHTML" class="underline">discard your changes and reload</a>.{{end}}</p>{{end}}
+    <section id="content">
+      {{if .FormError}}<p role="alert" class="mb-3 notice-danger p-3">{{.FormError}}{{if .Conflict}} <a href="#versions" class="underline">Load latest version</a> to compare, or <a href="{{.Base}}{{.FilterQuery}}" hx-get="{{.Base}}{{.FilterQuery}}" hx-target="#detail-pane" hx-swap="outerHTML" class="underline">discard your changes and reload</a>.{{end}}</p>{{end}}
       <label for="memory-content" class="sr-only">Content</label>
-      <textarea id="memory-content" name="content" rows="14" data-original="{{.Stored.Content}}" required class="field sheet-ruled block w-full resize-y p-3"{{if not .Editable}} disabled{{end}}>
+      <textarea id="memory-content" name="content" rows="14" data-original="{{.Stored.Content}}" required class="field sheet-ruled block w-full resize-y"{{if not .Editable}} disabled{{end}}>
 {{.Form.Content}}</textarea>
       <div class="mt-3 grid gap-3 min-[600px]:grid-cols-2" data-editor-meta>
         <div class="flex flex-col gap-1 text-body" data-tags>
@@ -56,7 +56,7 @@
           </select>
         </label>
         <div class="flex flex-col gap-1 text-body">
-          <label for="memory-expires">Expires (empty means never)</label>
+          <label for="memory-expires">Expires (UTC, empty means never)</label>
           <div class="flex gap-2">
             <input type="date" name="expires_at" value="{{.Form.ExpiresAt}}" data-original="{{.Stored.ExpiresAt}}" id="memory-expires" class="field min-w-0 flex-1"{{if not .Editable}} disabled{{end}}>
             {{if .Editable}}<button type="button" class="btn" data-clear-expiry aria-controls="memory-expires" hidden>Never</button>{{end}}
@@ -71,11 +71,11 @@
   </form>
   <div class="mt-3 flex flex-wrap items-start gap-2" data-primary-actions>
     {{if .Editable}}<button type="submit" form="memory-editor" class="btn btn-primary" data-save aria-keyshortcuts="Control+S Meta+S">Save</button>
-    <a href="{{.Base}}{{.FilterQuery}}" hx-get="{{.Base}}" hx-target="#detail-pane" hx-swap="outerHTML" class="btn" data-discard>Discard</a>{{end}}
+    <a href="{{.Base}}{{.FilterQuery}}" hx-get="{{.Base}}{{.FilterQuery}}" hx-target="#detail-pane" hx-swap="outerHTML" class="btn" data-discard>Discard</a>{{end}}
     {{if not .ReadOnly}}<details class="more-actions relative">
       <summary class="btn">More actions</summary>
       <div class="absolute left-0 z-10 mt-1 flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-3 rounded-md border border-line bg-sheet p-3 shadow-md">
-        <form method="post" action="{{.Base}}/feedback{{.FilterQuery}}" hx-post="{{.Base}}/feedback" hx-target="#detail-pane" hx-swap="outerHTML" class="flex flex-col gap-2">
+        <form method="post" action="{{.Base}}/feedback{{.FilterQuery}}" hx-post="{{.Base}}/feedback{{.FilterQuery}}" hx-target="#detail-pane" hx-swap="outerHTML" class="flex flex-col gap-2">
           <input type="hidden" name="csrf" value="{{.CSRF}}">
           <label class="flex flex-col gap-1 text-body">Feedback
             <select name="kind" class="field">
@@ -89,15 +89,15 @@
           </label>
           <button type="submit" class="btn self-start">Send feedback</button>
         </form>
-        {{if .CanActivate}}<form method="post" action="{{.Base}}/activate{{.FilterQuery}}" hx-post="{{.Base}}/activate" hx-target="#detail-pane" hx-swap="outerHTML">
+        {{if .CanActivate}}<form method="post" action="{{.Base}}/activate{{.FilterQuery}}" hx-post="{{.Base}}/activate{{.FilterQuery}}" hx-target="#detail-pane" hx-swap="outerHTML">
           <input type="hidden" name="csrf" value="{{.CSRF}}">
           <button type="submit" class="btn">Activate</button>
         </form>{{end}}
-        {{if .CanRestore}}<form method="post" action="{{.Base}}/restore{{.FilterQuery}}" hx-post="{{.Base}}/restore" hx-target="#detail-pane" hx-swap="outerHTML">
+        {{if .CanRestore}}<form method="post" action="{{.Base}}/restore{{.FilterQuery}}" hx-post="{{.Base}}/restore{{.FilterQuery}}" hx-target="#detail-pane" hx-swap="outerHTML">
           <input type="hidden" name="csrf" value="{{.CSRF}}">
           <button type="submit" class="btn">Restore</button>
         </form>{{end}}
-        <form method="post" action="{{.Base}}/supersede{{.FilterQuery}}" hx-post="{{.Base}}/supersede" hx-target="#detail-pane" hx-swap="outerHTML" class="flex flex-col gap-2">
+        <form method="post" action="{{.Base}}/supersede{{.FilterQuery}}" hx-post="{{.Base}}/supersede{{.FilterQuery}}" hx-target="#detail-pane" hx-swap="outerHTML" class="flex flex-col gap-2">
           <input type="hidden" name="csrf" value="{{.CSRF}}">
           <div class="relative flex flex-col gap-1 text-body">
             <label for="supersede-ref">Superseded by (title, id, or slug)</label>
@@ -107,14 +107,14 @@
           <button type="submit" class="btn self-start">Supersede</button>
         </form>
         {{if .CanDelete}}<hr class="border-line">
-        <form method="post" action="{{.Base}}/delete{{.FilterQuery}}" hx-post="{{.Base}}/delete" hx-target="#detail-pane" hx-swap="outerHTML" hx-confirm="Delete this memory?">
+        <form method="post" action="{{.Base}}/delete{{.FilterQuery}}" hx-post="{{.Base}}/delete{{.FilterQuery}}" hx-target="#detail-pane" hx-swap="outerHTML" hx-confirm="Delete this memory?">
           <input type="hidden" name="csrf" value="{{.CSRF}}">
           <button type="submit" class="btn btn-danger">Delete</button>
         </form>{{end}}
       </div>
     </details>{{end}}
   </div>
-  <section id="versions" role="tabpanel" aria-label="Versions" class="mt-6">
+  <section id="versions" class="mt-6">
     <h2 class="mb-2 font-bold">Versions</h2>
     {{range .Versions}}
     <article class="mb-3 rounded-md border border-line bg-sheet p-3">
@@ -126,7 +126,7 @@
       {{else}}
         <div class="mt-2 text-body"><pre class="whitespace-pre-wrap break-words font-sans">{{.Content}}</pre></div>
       {{end}}
-      {{if and (not .Current) (not $.ReadOnly)}}<form method="post" action="{{$.Base}}/restore{{$.FilterQuery}}" hx-post="{{$.Base}}/restore" hx-target="#detail-pane" hx-swap="outerHTML" class="mt-2">
+      {{if and (not .Current) (not $.ReadOnly)}}<form method="post" action="{{$.Base}}/restore{{$.FilterQuery}}" hx-post="{{$.Base}}/restore{{$.FilterQuery}}" hx-target="#detail-pane" hx-swap="outerHTML" class="mt-2">
         <input type="hidden" name="csrf" value="{{$.CSRF}}">
         <input type="hidden" name="version" value="{{.Version}}">
         <button type="submit" class="btn px-2 py-0.5">Restore this version</button>
@@ -134,13 +134,13 @@
     </article>
     {{else}}<p class="text-meta text-ink-muted">No versions recorded.</p>{{end}}
   </section>
-  <section id="links" role="tabpanel" aria-label="Links" class="mt-6">
+  <section id="links" class="mt-6">
     <h2 class="mb-2 font-bold">Links</h2>
     <ul class="mb-3">
       {{range .Links}}<li class="mb-1 flex items-center gap-2 text-body">
         <span>{{if .Outgoing}}{{.Kind}} to{{else}}{{.Kind}} from{{end}}</span>
         <a href="{{.Href}}" class="underline">{{.OtherID}}</a>
-        {{if and .Outgoing (not $.ReadOnly)}}<form method="post" action="{{$.Base}}/unlink{{$.FilterQuery}}" hx-post="{{$.Base}}/unlink" hx-target="#detail-pane" hx-swap="outerHTML">
+        {{if and .Outgoing (not $.ReadOnly)}}<form method="post" action="{{$.Base}}/unlink{{$.FilterQuery}}" hx-post="{{$.Base}}/unlink{{$.FilterQuery}}" hx-target="#detail-pane" hx-swap="outerHTML">
           <input type="hidden" name="csrf" value="{{$.CSRF}}">
           <input type="hidden" name="to" value="{{.OtherID}}">
           <input type="hidden" name="kind" value="{{.Kind}}">
@@ -148,7 +148,7 @@
         </form>{{end}}
       </li>{{else}}<li class="text-meta text-ink-muted">No links.</li>{{end}}
     </ul>
-    {{if not .ReadOnly}}<form method="post" action="{{.Base}}/link{{.FilterQuery}}" hx-post="{{.Base}}/link" hx-target="#detail-pane" hx-swap="outerHTML" class="flex flex-wrap items-end gap-2">
+    {{if not .ReadOnly}}<form method="post" action="{{.Base}}/link{{.FilterQuery}}" hx-post="{{.Base}}/link{{.FilterQuery}}" hx-target="#detail-pane" hx-swap="outerHTML" class="flex flex-wrap items-end gap-2">
       <input type="hidden" name="csrf" value="{{.CSRF}}">
       <div class="relative flex flex-col text-body">
         <label for="link-ref">Link to (title, id, or slug)</label>
@@ -165,7 +165,7 @@
       <button type="submit" class="btn">Add link</button>
     </form>{{end}}
   </section>
-  <section id="activity" role="tabpanel" aria-label="Activity" class="mt-6">
+  <section id="activity" class="mt-6">
     <h2 class="mb-2 font-bold">Activity</h2>
     <ul>
       {{range .Activity}}<li class="mb-1 text-body"><span class="font-bold">{{.Kind}}</span> · {{.When}} · {{.Summary}}</li>{{else}}<li class="text-meta text-ink-muted">No activity recorded.</li>{{end}}
@@ -184,4 +184,5 @@
   {{end}}
 </section>
 {{define "detail_response"}}{{template "detail.html" .}}
-{{template "toasts_oob" .}}{{end}}
+{{template "toasts_oob" .}}{{with .Row}}
+{{template "memory_row.html" .}}{{end}}{{end}}
