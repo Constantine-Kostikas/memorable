@@ -189,6 +189,9 @@ func (s *Server) contextHome(name string) string {
 }
 
 // handleRoot exchanges the launch token for the session cookie, or sends an existing session home.
+// A successful exchange answers with an interstitial page instead of a redirect: the launch page
+// is a file:// document, so a redirect would continue a cross-site chain and the browser would
+// withhold the SameSite=Strict cookie, while a navigation started by this page is same-site.
 func (s *Server) handleRoot(cookieName string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		home := s.contextHome(s.cfg.Initial)
@@ -204,7 +207,7 @@ func (s *Server) handleRoot(cookieName string) http.HandlerFunc {
 			s.cfg.OnExchange()
 		}
 		http.SetCookie(w, s.session.sessionCookie(cookieName))
-		http.Redirect(w, r, home, http.StatusSeeOther)
+		s.renderTemplate(w, "launch.html", home)
 	}
 }
 

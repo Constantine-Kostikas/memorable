@@ -99,7 +99,7 @@ func TestUI_ServesAndStopsOnSIGTERM(t *testing.T) {
 
 	client := uiClient(t)
 	status, _ := get(t, client, url)
-	require.Equal(t, http.StatusSeeOther, status)
+	require.Equal(t, http.StatusOK, status)
 	status, body := get(t, client, baseURL(url)+"/c/personal/memories")
 	assert.Equal(t, http.StatusOK, status, body)
 	status, body = get(t, client, baseURL(url)+"/c/personal/stats")
@@ -280,7 +280,7 @@ func newUIHarness(t *testing.T, admin bool) *uiHarness {
 	h.client = uiClient(t)
 	t.Cleanup(h.client.CloseIdleConnections)
 	status, _ := get(t, h.client, srv.LaunchURL(port))
-	require.Equal(t, http.StatusSeeOther, status)
+	require.Equal(t, http.StatusOK, status)
 	return h
 }
 

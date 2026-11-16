@@ -4,12 +4,15 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"html"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -143,7 +146,7 @@ func sessionCookie(t *testing.T, rec *httptest.ResponseRecorder) *http.Cookie {
 func login(t *testing.T, s *Server, h http.Handler) *http.Cookie {
 	t.Helper()
 	rec := send(h, http.MethodGet, "/?token="+launchToken(t, s), "")
-	require.Equal(t, http.StatusSeeOther, rec.Code)
+	require.Equal(t, http.StatusOK, rec.Code)
 	return sessionCookie(t, rec)
 }
 
@@ -167,9 +170,21 @@ func TestTokenExchange(t *testing.T) {
 	token := launchToken(t, s)
 
 	first := send(h, http.MethodGet, "/?token="+token, "")
-	require.Equal(t, http.StatusSeeOther, first.Code)
-	assert.Equal(t, "/c/personal/memories", first.Header().Get("Location"))
+	require.Equal(t, http.StatusOK, first.Code)
+	assert.Empty(t, first.Header().Get("Location"))
+	assert.Equal(t, "text/html; charset=utf-8", first.Header().Get("Content-Type"))
+	assert.Equal(t, "no-store", first.Header().Get("Cache-Control"))
+	assert.Equal(t, wantCSP, first.Header().Get("Content-Security-Policy"))
+	assert.Equal(t, "nosniff", first.Header().Get("X-Content-Type-Options"))
+	assert.Equal(t, "no-referrer", first.Header().Get("Referrer-Policy"))
+	body := first.Body.String()
+	assert.Contains(t, body, `<meta http-equiv="refresh" content="0;url=/c/personal/memories">`)
+	assert.Contains(t, body, `href="/c/personal/memories"`)
+	assert.NotContains(t, body, token)
+	assert.NotContains(t, body, "<script")
+	assert.NotContains(t, body, "style=")
 	cookie := sessionCookie(t, first)
+	assert.NotContains(t, body, cookie.Value)
 	assert.Equal(t, "memorable_session_8123", cookie.Name)
 	assert.True(t, cookie.HttpOnly)
 	assert.Equal(t, http.SameSiteStrictMode, cookie.SameSite)
@@ -192,6 +207,76 @@ func TestTokenExchange(t *testing.T) {
 	bare := send(h, http.MethodGet, "/", "", withCookie(cookie))
 	assert.Equal(t, http.StatusSeeOther, bare.Code)
 	assert.Equal(t, "/c/personal/memories", bare.Header().Get("Location"))
+}
+
+var refreshPattern = regexp.MustCompile(`<meta http-equiv="refresh" content="0;url=([^"]+)">`)
+
+func refreshTarget(t *testing.T, body string) string {
+	t.Helper()
+	m := refreshPattern.FindStringSubmatch(body)
+	require.NotNil(t, m, "meta refresh in %q", body)
+	return html.UnescapeString(m[1])
+}
+
+func TestTokenExchangeEscapesInitialContext(t *testing.T) {
+	t.Parallel()
+	cfg := testConfig(&backendRecorder{})
+	cfg.Contexts = []string{"personal", "my work;x"}
+	cfg.Initial = "my work;x"
+	s, err := New(cfg)
+	require.NoError(t, err)
+	t.Cleanup(s.Close)
+
+	rec := send(testHandler(s), http.MethodGet, "/?token="+launchToken(t, s), "")
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "/c/my%20work%3Bx/memories", refreshTarget(t, rec.Body.String()))
+	assert.Contains(t, rec.Body.String(), `href="/c/my%20work%3Bx/memories"`)
+}
+
+// TestTokenExchangeInterstitialReachesHome follows the interstitial the way a browser does: the
+// cookie set by the exchange is sent on the same-site navigation to the meta refresh target.
+func TestTokenExchangeInterstitialReachesHome(t *testing.T) {
+	t.Parallel()
+	cfg := testConfig(&backendRecorder{})
+	cfg.Backend = func(context.Context, string) (Backend, error) {
+		return Backend{Memories: &recordingMemories{}, Store: fakeStore{}}, nil
+	}
+	s, err := New(cfg)
+	require.NoError(t, err)
+	t.Cleanup(s.Close)
+	ts := httptest.NewUnstartedServer(nil)
+	port := ts.Listener.Addr().(*net.TCPAddr).Port //nolint:forcetypeassert // httptest listens on TCP
+	ts.Config.Handler = s.Handler(port)
+	ts.Start()
+	t.Cleanup(ts.Close)
+	jar, err := cookiejar.New(nil)
+	require.NoError(t, err)
+	client := &http.Client{
+		Jar:           jar,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+	fetch := func(target string) (int, string) {
+		resp, err := client.Get(target)
+		require.NoError(t, err)
+		defer func() { _ = resp.Body.Close() }()
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		return resp.StatusCode, string(body)
+	}
+	launchURL, err := url.Parse(s.LaunchURL(port))
+	require.NoError(t, err)
+
+	status, body := fetch(launchURL.String())
+	require.Equal(t, http.StatusOK, status)
+	next, err := launchURL.Parse(refreshTarget(t, body))
+	require.NoError(t, err)
+	assert.Empty(t, next.RawQuery, "the navigation target is token-free")
+	assert.Equal(t, launchURL.Host, next.Host, "the navigation stays on the same site")
+	assert.Equal(t, "/c/personal/memories", next.Path)
+
+	status, body = fetch(next.String())
+	assert.Equal(t, http.StatusOK, status, body)
+	assert.Contains(t, body, "<title>Memories - memorable</title>")
 }
 
 func TestOnExchangeCalledOnceAfterSuccess(t *testing.T) {
@@ -231,7 +316,7 @@ func TestTokenExchangeRejectsWrongToken(t *testing.T) {
 		assert.Empty(t, rec.Header().Get("Set-Cookie"), target)
 	}
 
-	assert.Equal(t, http.StatusSeeOther, send(h, http.MethodGet, "/?token="+token, "").Code,
+	assert.Equal(t, http.StatusOK, send(h, http.MethodGet, "/?token="+token, "").Code,
 		"failed attempts must not consume the token")
 }
 
@@ -254,7 +339,7 @@ func TestTokenExchangeIsSingleUseUnderConcurrency(t *testing.T) {
 	for c := range codes {
 		counts[c]++
 	}
-	assert.Equal(t, map[int]int{http.StatusSeeOther: 1, http.StatusForbidden: attempts - 1}, counts)
+	assert.Equal(t, map[int]int{http.StatusOK: 1, http.StatusForbidden: attempts - 1}, counts)
 }
 
 func TestRejectsBadHost(t *testing.T) {
@@ -283,7 +368,7 @@ func TestRejectsBadHostBeforeTokenExchange(t *testing.T) {
 	rec := send(h, http.MethodGet, "/?token="+token, "", withHost("evil.example:8123"))
 	assert.Equal(t, http.StatusMisdirectedRequest, rec.Code)
 	assert.Empty(t, rec.Header().Get("Set-Cookie"))
-	assert.Equal(t, http.StatusSeeOther, send(h, http.MethodGet, "/?token="+token, "").Code)
+	assert.Equal(t, http.StatusOK, send(h, http.MethodGet, "/?token="+token, "").Code)
 }
 
 func TestRejectsMissingSession(t *testing.T) {
@@ -336,7 +421,7 @@ func TestSessionCookieScopedToPort(t *testing.T) {
 	secondHandler := testHandlerOn(second, otherPort)
 	firstCookie := login(t, first, firstHandler)
 	secondLogin := send(secondHandler, http.MethodGet, "/?token="+launchToken(t, second), "", withHost(otherHost))
-	require.Equal(t, http.StatusSeeOther, secondLogin.Code)
+	require.Equal(t, http.StatusOK, secondLogin.Code)
 	secondCookie := sessionCookie(t, secondLogin)
 	assert.Equal(t, "memorable_session_8123", firstCookie.Name)
 	assert.Equal(t, "memorable_session_8124", secondCookie.Name)
@@ -508,8 +593,9 @@ func TestSecurityHeaders(t *testing.T) {
 	token := launchToken(t, s)
 
 	responses := map[string]*httptest.ResponseRecorder{}
-	responses["token exchange 303"] = send(h, http.MethodGet, "/?token="+token, "")
-	cookie := sessionCookie(t, responses["token exchange 303"])
+	responses["token exchange 200"] = send(h, http.MethodGet, "/?token="+token, "")
+	cookie := sessionCookie(t, responses["token exchange 200"])
+	responses["reopen 303"] = send(h, http.MethodGet, "/", "", withCookie(cookie))
 	responses["missing session 403"] = send(h, http.MethodGet, "/c/personal/probe", "")
 	responses["bad host 421"] = send(h, http.MethodGet, "/", "", withHost("evil.example:8123"))
 	responses["unknown path 404"] = send(h, http.MethodGet, "/nothing", "", withCookie(cookie))
@@ -522,7 +608,8 @@ func TestSecurityHeaders(t *testing.T) {
 	responses["probe 200"] = send(h, http.MethodGet, "/c/personal/probe", "", withCookie(cookie))
 
 	wantCodes := map[string]int{
-		"token exchange 303":  http.StatusSeeOther,
+		"token exchange 200":  http.StatusOK,
+		"reopen 303":          http.StatusSeeOther,
 		"missing session 403": http.StatusForbidden,
 		"bad host 421":        http.StatusMisdirectedRequest,
 		"unknown path 404":    http.StatusNotFound,

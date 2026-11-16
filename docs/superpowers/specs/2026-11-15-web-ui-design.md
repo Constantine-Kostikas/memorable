@@ -108,7 +108,7 @@ Author decisions: loopback only, `--admin` with the password prompted in the ter
 
 | Threat | Control |
 |---|---|
-| Other local processes or users | Per-launch 256-bit random token in the launch URL; exchanged on first request for an `HttpOnly`, `SameSite=Strict` session cookie, then the token is invalidated and the browser redirected to a token-free URL. |
+| Other local processes or users | Per-launch 256-bit random token in the launch URL; exchanged on first request for an `HttpOnly`, `SameSite=Strict` session cookie, then the token is invalidated and the server answers with a script-free interstitial page whose meta refresh (plus a fallback link) navigates to a token-free URL. That navigation is same-site, so the browser sends the `SameSite=Strict` cookie; an HTTP redirect would continue the cross-site chain started by the `file://` launch page and the cookie would be withheld. |
 | Cross-site request forgery | Every state-changing request is POST with a per-session CSRF token (htmx sends it as a header); `Origin` must match the server origin. |
 | DNS rebinding | `Host` must be `127.0.0.1:<port>` or `localhost:<port>`; anything else gets 421. |
 | Clickjacking, script injection | `Content-Security-Policy: default-src 'self'; frame-ancestors 'none'` (no inline scripts), `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`. |

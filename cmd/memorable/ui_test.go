@@ -225,7 +225,7 @@ func TestUIServesOnPrintedLoopbackURL(t *testing.T) {
 	run := startUI(t, d, "--config", uiConfigFile(t), "ui", "--no-browser")
 	launch := run.launchURL(t)
 	status, _ := get(t, uiClient(t), launch)
-	assert.Equal(t, http.StatusSeeOther, status)
+	assert.Equal(t, http.StatusOK, status)
 	require.NoError(t, run.stop(t))
 }
 
@@ -329,7 +329,7 @@ func TestUILaunchFileRemovedAfterExchange(t *testing.T) {
 	require.NoError(t, err, "a failed exchange keeps the launch file")
 
 	status, _ = get(t, client, launch)
-	require.Equal(t, http.StatusSeeOther, status)
+	require.Equal(t, http.StatusOK, status)
 	assert.Eventually(t, func() bool {
 		_, err := os.Stat(filepath.Dir(path))
 		return errors.Is(err, os.ErrNotExist)
@@ -383,7 +383,7 @@ func TestUIContextFailureIsolated(t *testing.T) {
 	client := uiClient(t)
 
 	status, _ := get(t, client, launch)
-	require.Equal(t, http.StatusSeeOther, status)
+	require.Equal(t, http.StatusOK, status)
 
 	status, body := get(t, client, baseURL(launch)+"/c/work/review")
 	assert.Equal(t, http.StatusServiceUnavailable, status)
@@ -478,7 +478,7 @@ func TestUIShutdown(t *testing.T) {
 
 	client := uiClient(t)
 	status, _ := get(t, client, launch)
-	require.Equal(t, http.StatusSeeOther, status)
+	require.Equal(t, http.StatusOK, status)
 	status, _ = get(t, client, baseURL(launch)+"/c/personal/review")
 	require.Equal(t, http.StatusOK, status)
 	client.CloseIdleConnections()
