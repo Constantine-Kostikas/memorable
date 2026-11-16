@@ -366,3 +366,20 @@ func TestAuditDetailsPropagate(t *testing.T) {
 	require.Len(t, pa.Audit, 1)
 	assert.Empty(t, pa.Audit[0].Details)
 }
+
+func TestSummaries_CarryUpdatedAt(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, nil)
+	m := created(t, e, note("Postgres port", "postgres runs on port 5434"))
+	require.False(t, m.UpdatedAt.IsZero())
+
+	list, err := e.svc.List(context.Background(), memory.ListRequest{})
+	require.NoError(t, err)
+	require.Len(t, list.Items, 1)
+	assert.True(t, m.UpdatedAt.Equal(list.Items[0].UpdatedAt), "list summary carries updated_at")
+
+	res, err := e.svc.Search(context.Background(), memory.SearchRequest{Query: "postgres port"})
+	require.NoError(t, err)
+	require.Len(t, res.Results, 1)
+	assert.True(t, m.UpdatedAt.Equal(res.Results[0].UpdatedAt), "search summary carries updated_at")
+}

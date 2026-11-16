@@ -1,0 +1,24 @@
+<li{{if and .ID (not .Standalone)}} id="row-{{.ID}}"{{end}}{{if .OOB}} hx-swap-oob="outerHTML"{{end}} class="memory-row type-tab-{{.TypeClass}}">
+  <a href="{{.Href}}"{{if not .Standalone}} hx-get="{{.Href}}" hx-target="#detail-pane" hx-swap="outerHTML" hx-push-url="true" data-row-link{{end}}{{if .Current}} aria-current="true"{{end}} class="block px-3 py-2">
+    <span class="block font-bold">{{.Title}}</span>
+    <span class="block text-meta text-ink-muted">{{.Type}} · {{.Project}} · {{.Age}}{{if ne .Status "active"}} <span class="chip chip-status-{{.Status}}">{{.Status}}</span>{{end}}{{with .Note}} · {{.}}{{end}}</span>
+  </a>
+  {{with .Explain}}
+  <details class="px-3 pb-2 text-meta">
+    <summary class="cursor-pointer text-ink-muted">Why</summary>
+    <dl class="mt-1 grid grid-cols-2 gap-x-3 gap-y-0.5">
+      <dt class="text-ink-muted">Vector rank</dt><dd>{{.VectorRank}}</dd>
+      <dt class="text-ink-muted">Full-text rank</dt><dd>{{.FTSRank}}</dd>
+      <dt class="text-ink-muted">Trigram rank</dt><dd>{{.TrigramRank}}</dd>
+      <dt class="text-ink-muted">Similarity</dt><dd>{{.Similarity}}</dd>
+      <dt class="text-ink-muted">Fused score (RRF)</dt><dd>{{.RRF}}</dd>
+      <dt class="text-ink-muted">Text match</dt><dd>{{if .Textual}}yes{{else}}no{{end}}</dd>
+      <dt class="text-ink-muted">Project boost</dt><dd>{{.ProjectBoost}}</dd>
+      <dt class="text-ink-muted">Pinned boost</dt><dd>{{.PinnedBoost}}</dd>
+      <dt class="text-ink-muted">Usage boost</dt><dd>{{.UsageBoost}}</dd>
+      <dt class="text-ink-muted">Multiplier</dt><dd>{{.Multiplier}}</dd>
+      <dt class="text-ink-muted">Final score</dt><dd>{{.Final}}</dd>
+    </dl>
+  </details>
+  {{end}}
+</li>

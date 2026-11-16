@@ -16,8 +16,7 @@ import (
 )
 
 const (
-	pageDetail   = "detail"
-	pageEdit     = "edit"
+	detailPaneID = "detail-pane"
 	maxDiffLines = 1000
 	timeLayout   = "2006-01-02 15:04 MST"
 )
@@ -49,19 +48,26 @@ type linkView struct {
 	Href     string
 }
 
-type feedbackView struct {
-	Kind      string
-	Note      string
-	Project   string
-	CreatedAt string
+// activityEntry is one feedback or audit event on a memory, merged into one newest-first list.
+type activityEntry struct {
+	At      time.Time
+	When    string
+	Kind    string
+	Summary string
 }
 
-type auditView struct {
-	Action    string
-	Process   string
-	Cwd       string
-	Details   string
-	CreatedAt string
+// editFields is the editor's form state: the stored memory on load, the submitted values after a failed save.
+type editFields struct {
+	Title   string
+	Content string
+	Tags    string
+	Type    string
+	// ExpiresAt is the date part the date input shows; ExpiresAtOriginal is the full stored timestamp it came
+	// from, so an untouched date keeps its time on save.
+	ExpiresAt         string
+	ExpiresAtOriginal string
+	Pinned            bool
+	Version           int
 }
 
 type detailView struct {
@@ -69,12 +75,13 @@ type detailView struct {
 	ID          string
 	CSRF        string
 	Base        string
-	EditURL     string
+	Lookup      string
 	ListURL     string
+	FilterQuery string
 	Quarantined bool
 	ReadOnly    bool
+	Editable    bool
 	Title       string
-	Content     string
 	Type        string
 	Status      string
 	Scope       string
@@ -87,6 +94,10 @@ type detailView struct {
 	CreatedAt   string
 	UpdatedAt   string
 	Embedding   string
+	Form        editFields
+	Stored      editFields
+	Unsaved     bool
+	Types       []string
 	CanActivate bool
 	CanDelete   bool
 	CanRestore  bool
@@ -94,28 +105,20 @@ type detailView struct {
 	Confirm     string
 	Versions    []versionView
 	Links       []linkView
-	Feedback    []feedbackView
-	Audit       []auditView
+	Activity    []activityEntry
 	Notice      string
 	Error       string
+	FormError   string
+	Conflict    bool
+	// Row, set after a successful pane action, refreshes the memory's list row out of band.
+	Row *memoryRow
+	// listRow is the memory's list row as loaded; quarantined memories have none.
+	listRow *memoryRow
 }
 
-type editView struct {
-	Context   string
-	ID        string
-	CSRF      string
-	Base      string
-	DetailURL string
-	Title     string
-	Content   string
-	Tags      string
-	Type      string
-	Types     []string
-	Pinned    bool
-	ExpiresAt string
-	Version   string
-	Error     string
-	Conflict  bool
+// refreshRow asks the pane response to also replace the memory's list row, so the list shows the change.
+func (v *detailView) refreshRow() {
+	v.Row = v.listRow
 }
 
 func memoryBase(contextName string, id uuid.UUID) string {
@@ -143,26 +146,14 @@ func (s *Server) handleDetail(w http.ResponseWriter, r *http.Request, rc request
 	s.respondDetail(w, r, rc, view, http.StatusOK)
 }
 
+// handleEdit keeps old /edit links working, list filter included: the detail pane is where a memory is changed.
 func (s *Server) handleEdit(w http.ResponseWriter, r *http.Request, rc requestContext, id uuid.UUID) {
-	fetched, err := s.fetchPassive(r, rc, id)
-	if err != nil && !errors.Is(err, memory.ErrQuarantined) {
-		s.failResponse(w, r, rc, err)
-		return
+	filter, _, err := parseMemoryFilter(r.URL.Query())
+	if err != nil {
+		filter = memoryFilter{}
 	}
-	if err != nil || fetched.Memory.Scope == memory.ScopeProfile {
-		s.handleDetail(w, r, rc, id)
-		return
-	}
-	m := fetched.Memory
-	edit := editView{
-		Context: rc.Name, ID: id.String(), CSRF: s.session.csrf, Base: memoryBase(rc.Name, id), DetailURL: memoryBase(rc.Name, id),
-		Title: m.Title, Content: m.Content, Tags: strings.Join(m.Tags, ", "), Type: m.Type.String(),
-		Types: filterTypes, Pinned: m.Pinned, Version: fmt.Sprint(m.Version),
-	}
-	if m.ExpiresAt != nil {
-		edit.ExpiresAt = m.ExpiresAt.UTC().Format(time.RFC3339)
-	}
-	s.respondEdit(w, r, rc, edit, http.StatusOK)
+	target := withQuery(memoryBase(rc.Name, id), filterValues(filter))
+	http.Redirect(w, r, target, http.StatusSeeOther) //nolint:gosec // G710: a same-origin path built from a configured context name, a parsed UUID, and re-encoded filter values.
 }
 
 func (s *Server) fetchPassive(r *http.Request, rc requestContext, id uuid.UUID) (memory.Fetched, error) {
@@ -181,8 +172,8 @@ func (s *Server) fetchPassive(r *http.Request, rc requestContext, id uuid.UUID) 
 func (s *Server) loadDetail(r *http.Request, rc requestContext, id uuid.UUID) (detailView, error) {
 	base := memoryBase(rc.Name, id)
 	view := detailView{
-		Context: rc.Name, ID: id.String(), CSRF: s.session.csrf, Base: base, EditURL: base + "/edit",
-		ListURL: s.contextHome(rc.Name),
+		Context: rc.Name, ID: id.String(), CSRF: s.session.csrf, Base: base, Types: filterTypes,
+		Lookup: contextBase(rc.Name) + "/lookup",
 	}
 	fetched, err := s.fetchPassive(r, rc, id)
 	if errors.Is(err, memory.ErrQuarantined) {
@@ -195,6 +186,10 @@ func (s *Server) loadDetail(r *http.Request, rc requestContext, id uuid.UUID) (d
 	}
 	m := fetched.Memory
 	fillMemory(&view, m)
+	view.listRow = &memoryRow{
+		ID: id.String(), Title: m.Title, Project: view.Project, Type: view.Type, TypeClass: typeClass(view.Type),
+		Status: view.Status, Age: relativeAge(s.cfg.Now(), m.UpdatedAt), Current: true, OOB: true,
+	}
 	view.CanPurge = !view.ReadOnly && s.admin.minutesLeft() > 0
 	view.Confirm = purgeConfirmation(m)
 	history, err := rc.Backend.Memories.History(r.Context(), id)
@@ -207,13 +202,12 @@ func (s *Server) loadDetail(r *http.Request, rc requestContext, id uuid.UUID) (d
 	}
 	view.Versions = versionViews(history, m.Version)
 	view.Links = linkViews(rc.Name, id, fetched.Links)
-	view.Feedback = feedbackViews(activity.Feedback)
-	view.Audit = auditViews(activity.Audit)
+	view.Activity = activityEntries(activity)
 	return view, nil
 }
 
 func fillMemory(view *detailView, m memory.Memory) {
-	view.Title, view.Content = m.Title, m.Content
+	view.Title = m.Title
 	view.Type, view.Status, view.Scope = m.Type.String(), m.Status.String(), m.Scope.String()
 	view.Project = globalProject
 	if m.Project != nil && m.Scope != memory.ScopeGlobal {
@@ -232,6 +226,16 @@ func fillMemory(view *detailView, m memory.Memory) {
 		view.Embedding = fmt.Sprintf("Embedded with %s (version %d).", *m.EmbeddingModel, m.Version)
 	}
 	view.ReadOnly = m.Scope == memory.ScopeProfile
+	view.Editable = !view.ReadOnly && m.Status != memory.StatusDeleted && m.Status != memory.StatusSuperseded
+	view.Form = editFields{
+		Title: m.Title, Content: m.Content, Tags: strings.Join(m.Tags, ", "), Type: m.Type.String(),
+		Pinned: m.Pinned, Version: m.Version,
+	}
+	if m.ExpiresAt != nil {
+		view.Form.ExpiresAt = m.ExpiresAt.UTC().Format(time.DateOnly)
+		view.Form.ExpiresAtOriginal = m.ExpiresAt.UTC().Format(time.RFC3339)
+	}
+	view.Stored = view.Form
 	view.CanActivate = m.Status == memory.StatusFlagged || m.Status == memory.StatusUnverified
 	view.CanRestore = m.Status == memory.StatusDeleted
 	view.CanDelete = m.Status != memory.StatusDeleted
@@ -317,61 +321,94 @@ func linkViews(contextName string, id uuid.UUID, links []memory.Link) []linkView
 	return views
 }
 
-func feedbackViews(entries []memory.FeedbackEntry) []feedbackView {
-	views := make([]feedbackView, 0, len(entries))
-	for _, e := range entries {
-		v := feedbackView{Kind: e.Kind.String(), Note: e.Note, CreatedAt: formatTime(e.CreatedAt)}
+func activityEntries(activity memory.Activity) []activityEntry {
+	entries := make([]activityEntry, 0, len(activity.Feedback)+len(activity.Audit))
+	for _, e := range activity.Feedback {
+		parts := []string{e.Kind.String()}
 		if e.Project != nil {
-			v.Project = *e.Project
+			parts = append(parts, *e.Project)
 		}
-		views = append(views, v)
+		if e.Note != "" {
+			parts = append(parts, e.Note)
+		}
+		entries = append(entries, activityEntry{At: e.CreatedAt, Kind: "feedback", Summary: strings.Join(parts, " · ")})
 	}
-	return views
+	for _, rec := range activity.Audit {
+		parts := []string{rec.Action, rec.Process}
+		if rec.Cwd != "" {
+			parts = append(parts, rec.Cwd)
+		}
+		if details := auditDetails(rec.Details); details != "" {
+			parts = append(parts, details)
+		}
+		entries = append(entries, activityEntry{At: rec.CreatedAt, Kind: "audit", Summary: strings.Join(parts, " · ")})
+	}
+	sort.SliceStable(entries, func(i, j int) bool { return entries[i].At.After(entries[j].At) })
+	for i := range entries {
+		entries[i].When = formatTime(entries[i].At)
+	}
+	return entries
 }
 
-func auditViews(records []memory.AuditRecord) []auditView {
-	views := make([]auditView, 0, len(records))
-	for _, rec := range records {
-		keys := make([]string, 0, len(rec.Details))
-		for k := range rec.Details {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		parts := make([]string, 0, len(keys))
-		for _, k := range keys {
-			parts = append(parts, fmt.Sprintf("%s=%v", k, rec.Details[k]))
-		}
-		views = append(views, auditView{
-			Action: rec.Action, Process: rec.Process, Cwd: rec.Cwd, Details: strings.Join(parts, " "), CreatedAt: formatTime(rec.CreatedAt),
-		})
+func auditDetails(details map[string]any) string {
+	keys := make([]string, 0, len(details))
+	for k := range details {
+		keys = append(keys, k)
 	}
-	return views
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, fmt.Sprintf("%s=%v", k, details[k]))
+	}
+	return strings.Join(parts, " ")
 }
 
 func isFragmentRequest(r *http.Request) bool {
 	return r.Header.Get("HX-Request") == "true" && r.Header.Get("HX-History-Restore-Request") != "true"
 }
 
+// respondDetail answers an htmx request with the detail pane alone and any other request with the
+// workspace: the list rebuilt from the query string's filter beside the memory. The pane alone never
+// renders the list, so a malformed filter does not fail it; it only drops the filter from the pane's links.
 func (s *Server) respondDetail(w http.ResponseWriter, r *http.Request, rc requestContext, view detailView, status int) {
-	w.Header().Set("Vary", "HX-Request")
-	if isFragmentRequest(r) {
-		s.renderStatus(w, status, "detail.html", view)
+	filter, _, err := parseMemoryFilter(r.URL.Query())
+	fragment := isFragmentRequest(r)
+	switch {
+	case err != nil && fragment:
+		filter = memoryFilter{}
+	case err != nil:
+		s.failResponse(w, r, rc, err)
 		return
 	}
-	page := s.contextPage(r, rc, cmpOr(view.Title, "Memory"), "")
-	page.Page, page.Detail = pageDetail, &view
-	s.renderStatus(w, status, "layout.html", page)
+	view.ListURL = memoriesURL(rc.Name, filter, nil)
+	view.FilterQuery = withQuery("", filterValues(filter))
+	w.Header().Set("Vary", "HX-Request")
+	if fragment {
+		if view.Row != nil {
+			row := *view.Row
+			row.Href = withQuery(view.Base, filterValues(filter))
+			view.Row = &row
+		}
+		s.renderStatus(w, status, "detail_response", view)
+		return
+	}
+	// The full page rebuilds the list, so no row goes out of band.
+	view.Row = nil
+	list := memoriesView{Context: rc.Name, Filter: filter, SelectedID: view.ID, Selected: &view}
+	if err := s.loadRows(r, rc, &list, nil); err != nil {
+		s.failResponse(w, r, rc, err)
+		return
+	}
+	s.renderStatus(w, status, "layout.html", s.workspacePage(r, rc, &list, cmpOr(view.Title, "Memory")))
 }
 
-func (s *Server) respondEdit(w http.ResponseWriter, r *http.Request, rc requestContext, view editView, status int) {
-	w.Header().Set("Vary", "HX-Request")
-	if isFragmentRequest(r) {
-		s.renderStatus(w, status, "edit_form.html", view)
-		return
+// listURLFor is the list URL for the Back link: the request's filter, or the plain list when it is malformed.
+func listURLFor(r *http.Request, rc requestContext) string {
+	filter, _, err := parseMemoryFilter(r.URL.Query())
+	if err != nil {
+		filter = memoryFilter{}
 	}
-	page := s.contextPage(r, rc, "Edit memory", "")
-	page.Page, page.Edit = pageEdit, &view
-	s.renderStatus(w, status, "layout.html", page)
+	return memoriesURL(rc.Name, filter, nil)
 }
 
 func (s *Server) renderStatus(w http.ResponseWriter, status int, name string, data any) {
@@ -393,6 +430,10 @@ func (s *Server) failResponse(w http.ResponseWriter, r *http.Request, rc request
 		return
 	}
 	status, message := s.actionStatus(r, err)
-	w.Header().Set("Vary", "HX-Request")
-	s.renderStatus(w, status, "error.html", pageData{Title: "Error", Message: message})
+	w.Header().Set("Vary", "HX-Request, HX-Target")
+	name := "error.html"
+	if r.Header.Get("HX-Target") == detailPaneID {
+		name = "pane_error.html"
+	}
+	s.renderStatus(w, status, name, pageData{Title: "Error", Message: message, ListURL: listURLFor(r, rc)})
 }

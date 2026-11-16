@@ -21,7 +21,9 @@ type statsView struct {
 
 type statsGroup struct {
 	Heading string
-	Rows    []countRow
+	// Typed groups name memory types and show them in their type colors.
+	Typed bool
+	Rows  []countRow
 }
 
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request, rc requestContext) {
@@ -34,7 +36,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request, rc requestC
 		Context: rc.Name, Total: stats.Total, Embedded: stats.Embedded, PendingJobs: stats.PendingJobs,
 		Groups: []statsGroup{
 			{Heading: "By status", Rows: countRows(stats.ByStatus)},
-			{Heading: "By type", Rows: countRows(stats.ByType)},
+			{Heading: "By type", Typed: true, Rows: countRows(stats.ByType)},
 			{Heading: "By project", Rows: countRows(stats.ByProject)},
 		},
 	}

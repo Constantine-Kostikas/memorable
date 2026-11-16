@@ -1,0 +1,8 @@
+{{define "toast_items"}}{{if .Notice}}<div class="toast notice-ok" data-toast>
+  <span>{{.Notice}}</span>
+  <button type="button" class="toast-dismiss" data-toast-dismiss aria-label="Dismiss notice">×</button>
+</div>{{end}}{{if .Error}}<div role="alert" class="toast notice-danger" data-toast>
+  <span>{{.Error}}</span>
+  <button type="button" class="toast-dismiss" data-toast-dismiss aria-label="Dismiss error">×</button>
+</div>{{end}}{{end}}
+{{define "toasts_oob"}}{{if or .Notice .Error}}<div hx-swap-oob="beforeend:#toasts">{{template "toast_items" .}}</div>{{end}}{{end}}

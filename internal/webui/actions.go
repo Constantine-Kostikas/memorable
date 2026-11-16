@@ -54,6 +54,7 @@ func secretRules(err error) string {
 type actionFunc func(r *http.Request, rc requestContext, id uuid.UUID) (notice string, err error)
 
 // action runs a mutation and answers with the re-rendered detail, or the detail with an inline error.
+// A form posted from the Review page (return=review) is answered with the Review page instead.
 func (s *Server) action(do actionFunc) func(http.ResponseWriter, *http.Request, requestContext, uuid.UUID) {
 	return func(w http.ResponseWriter, r *http.Request, rc requestContext, id uuid.UUID) {
 		if err := r.ParseForm(); err != nil {
@@ -66,52 +67,69 @@ func (s *Server) action(do actionFunc) func(http.ResponseWriter, *http.Request, 
 			status, message = s.actionStatus(r, err)
 			notice = ""
 		}
+		if r.PostFormValue("return") == returnToReview {
+			s.respondReview(w, r, rc, status, func(v *reviewView) { v.Notice, v.Error = notice, message })
+			return
+		}
 		view, loadErr := s.loadDetail(r, rc, id)
 		if loadErr != nil {
 			s.failResponse(w, r, rc, loadErr)
 			return
 		}
 		view.Notice, view.Error = notice, message
+		if err == nil {
+			view.refreshRow()
+		}
 		s.respondDetail(w, r, rc, view, status)
 	}
 }
 
+// handleUpdate saves the editor. On any error the pane re-renders around the submitted values, including
+// the submitted version, so a stale form conflicts again instead of overwriting a newer save.
 func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request, rc requestContext, id uuid.UUID) {
 	if err := r.ParseForm(); err != nil {
 		s.failResponse(w, r, rc, fmt.Errorf("%w: malformed form", memory.ErrValidation))
 		return
 	}
-	edit := editView{
-		Context: rc.Name, ID: id.String(), CSRF: s.session.csrf, Base: memoryBase(rc.Name, id), DetailURL: memoryBase(rc.Name, id),
+	rawVersion := r.PostFormValue("version")
+	submitted := editFields{
 		Title: r.PostFormValue("title"), Content: r.PostFormValue("content"), Tags: r.PostFormValue("tags"),
-		Type: r.PostFormValue("type"), Types: filterTypes, Pinned: r.PostFormValue("pinned") != "",
-		ExpiresAt: strings.TrimSpace(r.PostFormValue("expires_at")), Version: r.PostFormValue("version"),
+		Type: r.PostFormValue("type"), Pinned: r.PostFormValue("pinned") != "",
+		ExpiresAt:         strings.TrimSpace(r.PostFormValue("expires_at")),
+		ExpiresAtOriginal: strings.TrimSpace(r.PostFormValue("expires_at_original")),
 	}
-	expected, patch, err := patchFromEdit(edit)
+	expected, patch, err := patchFromEdit(submitted, rawVersion)
 	var updated memory.Memory
 	if err == nil {
 		updated, err = rc.Backend.Memories.Update(r.Context(), id, &expected, patch)
 	}
+	view, loadErr := s.loadDetail(r, rc, id)
 	if err != nil {
+		if loadErr != nil {
+			// The reload failed too (typically the store is down): keep the typed text in a bare editor.
+			view.Editable, view.Title, view.Type = true, submitted.Title, submitted.Type
+		}
 		status, message := s.actionStatus(r, err)
-		edit.Error, edit.Conflict = message, errors.Is(err, memory.ErrConflict)
-		s.respondEdit(w, r, rc, edit, status)
+		submitted.Version, _ = strconv.Atoi(rawVersion)
+		view.Form, view.FormError, view.Conflict = submitted, message, errors.Is(err, memory.ErrConflict)
+		view.Unsaved = true
+		s.respondDetail(w, r, rc, view, status)
 		return
 	}
-	view, err := s.loadDetail(r, rc, id)
-	if err != nil {
-		s.failResponse(w, r, rc, err)
+	if loadErr != nil {
+		s.failResponse(w, r, rc, loadErr)
 		return
 	}
 	view.Notice = "Saved."
+	view.refreshRow()
 	if updated.Status == memory.StatusQuarantined {
 		view.Notice = quarantinedMessage
 	}
 	s.respondDetail(w, r, rc, view, http.StatusOK)
 }
 
-func patchFromEdit(e editView) (int, memory.Patch, error) {
-	expected, err := strconv.Atoi(e.Version)
+func patchFromEdit(e editFields, rawVersion string) (int, memory.Patch, error) {
+	expected, err := strconv.Atoi(rawVersion)
 	if err != nil {
 		return 0, memory.Patch{}, fmt.Errorf("%w: the form is missing the version it was loaded at; reload the page", memory.ErrValidation)
 	}
@@ -119,14 +137,27 @@ func patchFromEdit(e editView) (int, memory.Patch, error) {
 	if err != nil {
 		return 0, memory.Patch{}, fmt.Errorf("%w: unknown type", memory.ErrValidation)
 	}
+	tags := splitTags(e.Tags)
+	patch := memory.Patch{Title: &e.Title, Content: &e.Content, Tags: &tags, Type: &typ, Pinned: &e.Pinned}
+	if expiryUntouched(e) {
+		return expected, patch, nil
+	}
 	expires, err := parseExpiry(e.ExpiresAt)
 	if err != nil {
 		return 0, memory.Patch{}, err
 	}
-	tags := splitTags(e.Tags)
-	return expected, memory.Patch{
-		Title: &e.Title, Content: &e.Content, Tags: &tags, Type: &typ, Pinned: &e.Pinned, ExpiresAt: &expires,
-	}, nil
+	patch.ExpiresAt = &expires
+	return expected, patch, nil
+}
+
+// expiryUntouched reports whether the date input still shows the stored expiry's date, so saving
+// leaves the stored timestamp, time of day included, instead of moving it to midnight.
+func expiryUntouched(e editFields) bool {
+	if e.ExpiresAt == "" {
+		return false
+	}
+	original, err := time.Parse(time.RFC3339, e.ExpiresAtOriginal)
+	return err == nil && original.UTC().Format(time.DateOnly) == e.ExpiresAt
 }
 
 func parseExpiry(raw string) (*time.Time, error) {

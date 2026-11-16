@@ -37,6 +37,43 @@ type detailMemories struct {
 	byID     map[uuid.UUID]memory.Fetched
 	mutErr   error
 	updated  memory.Memory
+	listReqs []memory.ListRequest
+	searches []memory.SearchRequest
+	results  []memory.Summary
+}
+
+func (d *detailMemories) rows() []memory.Summary {
+	var rows []memory.Summary
+	for _, f := range d.fetched {
+		if f.Err == nil {
+			m := f.Memory
+			rows = append(rows, memory.Summary{ID: m.ID, Title: m.Title, Type: m.Type, Scope: m.Scope, Status: m.Status, Project: m.Project, UpdatedAt: m.UpdatedAt})
+		}
+	}
+	return rows
+}
+
+func (d *detailMemories) List(_ context.Context, r memory.ListRequest) (memory.ListResponse, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.listReqs = append(d.listReqs, r)
+	return memory.ListResponse{Items: d.rows()}, nil
+}
+
+func (d *detailMemories) Search(_ context.Context, r memory.SearchRequest) (memory.SearchResponse, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.searches = append(d.searches, r)
+	if d.results != nil {
+		return memory.SearchResponse{Results: d.results}, nil
+	}
+	return memory.SearchResponse{Results: d.rows()}, nil
+}
+
+func (d *detailMemories) lastSearches() []memory.SearchRequest {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return append([]memory.SearchRequest(nil), d.searches...)
 }
 
 func (d *detailMemories) Review(context.Context) (memory.ReviewQueue, error) {
@@ -89,11 +126,35 @@ func (d *detailMemories) Activity(context.Context, uuid.UUID) (memory.Activity, 
 
 func (d *detailMemories) Update(_ context.Context, id uuid.UUID, expected *int, p memory.Patch) (memory.Memory, error) {
 	d.record("Update", id, *expected, p)
+	if d.mutErr == nil {
+		d.applyToFetched(id, func(m *memory.Memory) {
+			if p.Title != nil {
+				m.Title = *p.Title
+			}
+			if p.Type != nil {
+				m.Type = *p.Type
+			}
+		})
+	}
 	return d.updated, d.mutErr
+}
+
+// applyToFetched changes the stored memory the way a successful mutation would, so a reload shows it.
+func (d *detailMemories) applyToFetched(id uuid.UUID, change func(*memory.Memory)) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for i := range d.fetched {
+		if d.fetched[i].Memory.ID == id {
+			change(&d.fetched[i].Memory)
+		}
+	}
 }
 
 func (d *detailMemories) Delete(_ context.Context, id uuid.UUID) error {
 	d.record("Delete", id)
+	if d.mutErr == nil {
+		d.applyToFetched(id, func(m *memory.Memory) { m.Status = memory.StatusDeleted })
+	}
 	return d.mutErr
 }
 
@@ -197,7 +258,7 @@ func TestDetailTabs(t *testing.T) {
 	assert.Contains(t, body, "<html")
 	assert.Contains(t, body, "Port map")
 	assert.Contains(t, body, "Embedded with nomic-embed-text")
-	assert.Contains(t, body, `<pre class="whitespace-pre-wrap break-words">line one`)
+	assert.Contains(t, body, "line one\n&lt;img src=x onerror=alert(1)&gt;</textarea>")
 	assert.NotContains(t, body, hostile)
 	assert.Contains(t, body, "&lt;img src=x onerror=alert(1)&gt;")
 	assert.Contains(t, body, "Version 1")
@@ -271,21 +332,96 @@ func TestDetailFragmentForHtmx(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rec.Code)
 	assert.NotContains(t, rec.Body.String(), "<html")
-	assert.Contains(t, rec.Body.String(), `id="memory-detail"`)
+	assert.Contains(t, rec.Body.String(), `<section id="detail-pane"`)
 }
 
-func TestEditFormCarriesVersion(t *testing.T) {
+func TestDetailFullPageRendersShell(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, nil)
+
+	rec := send(f.h, http.MethodGet, f.path("?q=go"), "", withCookie(f.c))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	body := rec.Body.String()
+	assert.Contains(t, body, "<html")
+	assert.Contains(t, body, `id="memory-rows"`)
+	assert.Contains(t, body, `id="detail-pane"`)
+	assert.Regexp(t, `<a href="`+regexp.QuoteMeta(f.path("?q=go"))+`"[^>]*aria-current="true"`, body)
+	searches := f.mem.lastSearches()
+	require.Len(t, searches, 1)
+	assert.Equal(t, "go", searches[0].Query)
+}
+
+func TestDetailFragmentForPane(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, nil)
+
+	rec := send(f.h, http.MethodGet, f.path("?q=go"), "", withCookie(f.c),
+		withHeader("HX-Request", "true"), withHeader("HX-Target", "detail-pane"))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	body := rec.Body.String()
+	assert.True(t, strings.HasPrefix(body, `<section id="detail-pane"`), body[:min(len(body), 80)])
+	assert.NotContains(t, body, `id="memory-rows"`)
+	assert.Empty(t, f.mem.lastSearches(), "a pane swap does not rebuild the list")
+}
+
+func TestDetailPaneErrorKeepsPaneID(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, func(m *detailMemories, id uuid.UUID) {
+		m.fetched = []memory.Fetched{{Ref: id.String(), Err: memory.ErrNotFound}}
+	})
+
+	rec := send(f.h, http.MethodGet, f.path(""), "", withCookie(f.c),
+		withHeader("HX-Request", "true"), withHeader("HX-Target", "detail-pane"))
+
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+	assert.True(t, strings.HasPrefix(rec.Body.String(), `<section id="detail-pane"`), "later selections still find the pane")
+	assert.Contains(t, rec.Body.String(), "Memory not found.")
+}
+
+func TestHistoryRestoreGetsFullPage(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, nil)
+
+	rec := send(f.h, http.MethodGet, f.path(""), "", withCookie(f.c),
+		withHeader("HX-Request", "true"), withHeader("HX-History-Restore-Request", "true"))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	body := rec.Body.String()
+	assert.Contains(t, body, "<html")
+	assert.Contains(t, body, `id="memory-rows"`)
+	assert.Contains(t, body, `id="detail-pane"`)
+}
+
+func TestEditURLRedirects(t *testing.T) {
 	t.Parallel()
 	f := newDetailFixture(t, nil)
 
 	rec := send(f.h, http.MethodGet, f.path("/edit"), "", withCookie(f.c))
 
-	require.Equal(t, http.StatusOK, rec.Code)
-	body := rec.Body.String()
-	assert.Contains(t, body, `name="version" value="2"`)
-	assert.Contains(t, body, `name="csrf" value="`+f.s.session.csrf+`"`)
-	assert.Contains(t, body, "go, ops")
-	assert.NotContains(t, body, hostile)
+	assert.Equal(t, http.StatusSeeOther, rec.Code)
+	assert.Equal(t, f.path(""), rec.Header().Get("Location"))
+}
+
+func TestEditURLRedirectKeepsListFilter(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, nil)
+
+	for _, tc := range []struct {
+		name, query, want string
+	}{
+		{name: "filter kept", query: "?q=port+map&type=project&tag=go&cursor=" + uuid.NewString(), want: f.path("?q=port+map&tag=go&type=project")},
+		{name: "malformed filter dropped", query: "?type=bogus&q=x", want: f.path("")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			rec := send(f.h, http.MethodGet, f.path("/edit"+tc.query), "", withCookie(f.c))
+
+			assert.Equal(t, http.StatusSeeOther, rec.Code)
+			assert.Equal(t, tc.want, rec.Header().Get("Location"))
+		})
+	}
 }
 
 func TestLineDiffDeterministic(t *testing.T) {
@@ -318,7 +454,7 @@ func TestDetailProfileHidesMutations(t *testing.T) {
 		assert.NotContains(t, body, f.path(action), action)
 	}
 	edit := send(f.h, http.MethodGet, f.path("/edit"), "", withCookie(f.c))
-	assert.NotContains(t, edit.Body.String(), `name="content"`)
+	assert.Equal(t, http.StatusSeeOther, edit.Code)
 }
 
 func TestHtmxConfigMeta(t *testing.T) {
@@ -363,4 +499,248 @@ func TestHtmxConfigMeta(t *testing.T) {
 	}
 	swap, _ := swapped("200")
 	assert.True(t, swap)
+}
+
+func editorForm(t *testing.T, body string) string {
+	t.Helper()
+	start := strings.Index(body, `<form id="memory-editor"`)
+	require.GreaterOrEqual(t, start, 0, "the pane has the editor form")
+	end := strings.Index(body[start:], "</form>")
+	require.Positive(t, end)
+	return body[start : start+end]
+}
+
+func TestDetailIsAnEditor(t *testing.T) {
+	t.Parallel()
+	expires := time.Date(2026, 12, 31, 0, 0, 0, 0, time.UTC)
+	f := newDetailFixture(t, func(m *detailMemories, _ uuid.UUID) {
+		m.fetched[0].Memory.ExpiresAt = &expires
+		m.fetched[0].Memory.Pinned = true
+	})
+
+	rec := send(f.h, http.MethodGet, f.path(""), "", withCookie(f.c), withHeader("HX-Request", "true"))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	body := rec.Body.String()
+	editor := editorForm(t, body)
+	assert.Contains(t, editor, `data-editor`)
+	assert.Contains(t, editor, `data-title="Port map"`)
+	assert.Contains(t, editor, `action="`+f.path("/update")+`"`)
+	assert.Contains(t, editor, `name="title" value="Port map"`)
+	assert.Contains(t, editor, "line one\n&lt;img src=x onerror=alert(1)&gt;</textarea>")
+	assert.Contains(t, editor, `name="tags" value="go, ops"`)
+	assert.Contains(t, editor, `<option value="project" selected>`)
+	assert.Regexp(t, `<input type="date" name="expires_at" value="2026-12-31"`, editor)
+	assert.Contains(t, editor, `name="expires_at_original" value="2026-12-31T00:00:00Z"`)
+	assert.Regexp(t, `<button type="button"[^>]*data-clear-expiry`, editor)
+	assert.Regexp(t, `name="pinned"[^>]*checked`, editor)
+	assert.Contains(t, editor, `name="version" value="2"`)
+	assert.Contains(t, editor, `name="csrf" value="`+f.s.session.csrf+`"`)
+	assert.Regexp(t, `<span[^>]*data-dirty-marker[^>]*hidden`, editor)
+	assert.NotContains(t, editor[1:], "<form", "no form is nested in the editor")
+	assert.Regexp(t, `<button[^>]*form="memory-editor"[^>]*data-save`, body)
+	assert.Regexp(t, `<a href="`+regexp.QuoteMeta(f.path(""))+`"[^>]*data-discard>Discard</a>`, body)
+	nav := regexp.MustCompile(`(?s)<nav aria-label="Memory sections"[^>]*>.*?</nav>`).FindString(body)
+	require.NotEmpty(t, nav, "section navigation missing")
+	assert.NotContains(t, body, `role="tab`, "sections are in-page links, not tabs")
+	assert.Contains(t, nav, `<a href="#content" aria-current="true"`, "Content is current without JS")
+	assert.Equal(t, 1, strings.Count(nav, "aria-current"))
+	for _, section := range []string{"content", "versions", "links", "activity"} {
+		assert.Contains(t, nav, `<a href="#`+section+`"`, section)
+		assert.Contains(t, body, `id="`+section+`"`, section)
+	}
+	assert.Contains(t, editor, "Expires (UTC, empty means never)")
+}
+
+func TestPristineEditorMatchesItsOriginals(t *testing.T) {
+	t.Parallel()
+	expires := time.Date(2026, 12, 31, 15, 30, 0, 0, time.UTC)
+	f := newDetailFixture(t, func(m *detailMemories, _ uuid.UUID) {
+		m.fetched[0].Memory.ExpiresAt = &expires
+		m.fetched[0].Memory.Pinned = true
+	})
+
+	rec := send(f.h, http.MethodGet, f.path(""), "", withCookie(f.c), withHeader("HX-Request", "true"))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	editor := editorForm(t, rec.Body.String())
+	assert.NotContains(t, editor, "data-unsaved")
+	for _, name := range []string{"title", "tags", "expires_at"} {
+		input := regexp.MustCompile(`<input[^>]*name="` + name + `"[^>]*>`).FindString(editor)
+		value := regexp.MustCompile(`\svalue="([^"]*)"`).FindStringSubmatch(input)
+		original := regexp.MustCompile(`data-original="([^"]*)"`).FindStringSubmatch(input)
+		require.Len(t, value, 2, name)
+		require.Len(t, original, 2, name)
+		assert.Equal(t, original[1], value[1], name)
+	}
+	assert.Regexp(t, `name="expires_at" value="2026-12-31" data-original="2026-12-31"`, editor)
+	content := regexp.MustCompile(`(?s)<textarea[^>]*name="content"[^>]*data-original="([^"]*)"[^>]*>\n(.*?)</textarea>`).FindStringSubmatch(editor)
+	require.Len(t, content, 3)
+	assert.Equal(t, content[1], content[2])
+	assert.Regexp(t, `<select name="type" data-original="project"`, editor)
+	assert.Contains(t, editor, `<option value="project" selected>`)
+	assert.Regexp(t, `name="pinned"[^>]*data-original="on"[^>]*checked`, editor)
+}
+
+func TestPaneHasExpandToggle(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, nil)
+
+	rec := send(f.h, http.MethodGet, f.path(""), "", withCookie(f.c), withHeader("HX-Request", "true"))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	toggle := regexp.MustCompile(`<button[^>]*data-expand-toggle[^>]*>`).FindString(rec.Body.String())
+	require.NotEmpty(t, toggle, "the pane has an Expand toggle")
+	assert.Contains(t, toggle, `type="button"`)
+	assert.Contains(t, toggle, `aria-pressed="false"`)
+	assert.Regexp(t, `\shidden[\s>]`, toggle, "hidden until app.js reveals it, so it is absent without JS")
+}
+
+func TestDetailHasEditorWithoutJS(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, nil)
+
+	rec := send(f.h, http.MethodGet, f.path(""), "", withCookie(f.c))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	save := regexp.MustCompile(`<button[^>]*data-save[^>]*>`).FindString(rec.Body.String())
+	require.NotEmpty(t, save)
+	assert.Contains(t, save, `type="submit"`)
+	assert.NotContains(t, save, "disabled")
+}
+
+func TestReadOnlyStatesDisableFields(t *testing.T) {
+	t.Parallel()
+	for name, mutate := range map[string]func(*memory.Memory){
+		"deleted":    func(m *memory.Memory) { m.Status = memory.StatusDeleted },
+		"superseded": func(m *memory.Memory) { m.Status = memory.StatusSuperseded },
+		"profile":    func(m *memory.Memory) { m.Scope = memory.ScopeProfile },
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			f := newDetailFixture(t, func(m *detailMemories, _ uuid.UUID) { mutate(&m.fetched[0].Memory) })
+
+			rec := send(f.h, http.MethodGet, f.path(""), "", withCookie(f.c))
+
+			require.Equal(t, http.StatusOK, rec.Code)
+			body := rec.Body.String()
+			editor := editorForm(t, body)
+			assert.Regexp(t, `<input[^>]*name="title"[^>]*disabled`, editor)
+			assert.Regexp(t, `<textarea[^>]*name="content"[^>]*disabled`, editor)
+			assert.NotContains(t, body, "data-save")
+			assert.NotContains(t, body, f.path("/update"))
+		})
+	}
+}
+
+func TestDeletedMemoryKeepsRestore(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, func(m *detailMemories, _ uuid.UUID) { m.fetched[0].Memory.Status = memory.StatusDeleted })
+
+	rec := send(f.h, http.MethodGet, f.path(""), "", withCookie(f.c))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), `action="`+f.path("/restore")+`"`)
+}
+
+func TestActivityMergesFeedbackAndAudit(t *testing.T) {
+	t.Parallel()
+	t1 := time.Date(2026, 11, 1, 9, 0, 0, 0, time.UTC)
+	t2, t3 := t1.Add(time.Hour), t1.Add(2*time.Hour)
+
+	entries := activityEntries(memory.Activity{
+		Feedback: []memory.FeedbackEntry{{Kind: memory.FeedbackWrong, Note: "stale", CreatedAt: t2}},
+		Audit: []memory.AuditRecord{
+			{Action: "create", Process: "mcp:1", CreatedAt: t1},
+			{Action: "update", Process: "ui:2", Details: map[string]any{"via": "ui"}, CreatedAt: t3},
+		},
+	})
+
+	require.Len(t, entries, 3)
+	assert.Equal(t, []time.Time{t3, t2, t1}, []time.Time{entries[0].At, entries[1].At, entries[2].At})
+	assert.Equal(t, formatTime(t3), entries[0].When)
+	assert.Contains(t, entries[0].Summary, "update")
+	assert.Contains(t, entries[0].Summary, "via=ui")
+	assert.Contains(t, entries[1].Summary, "wrong")
+	assert.Contains(t, entries[1].Summary, "stale")
+	assert.NotEqual(t, entries[0].Kind, entries[1].Kind)
+}
+
+func TestDangerActionsSeparated(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, nil)
+
+	body := send(f.h, http.MethodGet, f.path(""), "", withCookie(f.c)).Body.String()
+
+	more := regexp.MustCompile(`(?s)<details[^>]*>\s*<summary[^>]*>More actions</summary>.*?</details>`).FindString(body)
+	require.NotEmpty(t, more, "a More actions disclosure")
+	divider := strings.Index(more, "<hr")
+	deleteAt := strings.Index(more, `action="`+f.path("/delete")+`"`)
+	require.Positive(t, divider)
+	assert.Greater(t, deleteAt, divider, "Delete comes after the divider")
+	for _, action := range []string{"/feedback", "/supersede"} {
+		at := strings.Index(more, `action="`+f.path(action)+`"`)
+		assert.True(t, at >= 0 && at < divider, action)
+	}
+	assert.Equal(t, 1, strings.Count(body, `action="`+f.path("/delete")+`"`), "Delete only in the menu")
+	assert.NotContains(t, body, "/purge", "no purge without admin")
+
+	slug := "port-map"
+	m := memory.Memory{ID: uuid.New(), Slug: &slug, Title: "Port map", Status: memory.StatusActive, Scope: memory.ScopeProject}
+	admin := newAdminFixture(t, func(_ *Config, _ *adminFactory, mem *detailMemories, _ *pageStore) {
+		mem.byID[m.ID] = memory.Fetched{Ref: m.ID.String(), Memory: m}
+	})
+	page := getPage(admin.h, admin.c, "/c/personal/memories/"+m.ID.String()).Body.String()
+	activity := page[strings.Index(page, `id="activity"`):]
+	zone := activity[strings.Index(activity, "Danger zone"):]
+	assert.Contains(t, zone, `action="/c/personal/memories/`+m.ID.String()+`/purge"`)
+	assert.Contains(t, zone, `name="confirm"`)
+	assert.Equal(t, 1, strings.Count(page, "/purge\""), "Purge only in the danger zone")
+}
+
+func TestPaneIgnoresMalformedFilter(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, nil)
+
+	rec := send(f.h, http.MethodGet, f.path("?type=bogus&cursor=x"), "", withCookie(f.c),
+		withHeader("HX-Request", "true"), withHeader("HX-Target", "detail-pane"))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), `href="/c/personal/memories" class="underline">Back to memories`)
+}
+
+func TestPaneErrorHasBackLink(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, func(m *detailMemories, id uuid.UUID) {
+		m.fetched = []memory.Fetched{{Ref: id.String(), Err: memory.ErrNotFound}}
+	})
+
+	rec := send(f.h, http.MethodGet, f.path("?q=go"), "", withCookie(f.c),
+		withHeader("HX-Request", "true"), withHeader("HX-Target", "detail-pane"))
+
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+	assert.Contains(t, rec.Body.String(), `href="/c/personal/memories?q=go" class="underline">Back to memories`)
+}
+
+func TestPaneFormsCarryListFilter(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, nil)
+
+	body := send(f.h, http.MethodGet, f.path("?q=go&type=project"), "", withCookie(f.c)).Body.String()
+
+	for _, action := range []string{"/update", "/feedback", "/delete", "/supersede", "/link"} {
+		assert.Contains(t, body, `action="`+f.path(action)+`?q=go&amp;type=project"`, action)
+	}
+}
+
+func TestToastRegionInLayout(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, nil)
+
+	body := f.post("/feedback", url.Values{"kind": {"useful"}}).Body.String()
+
+	region := body[strings.Index(body, `<div id="toasts" role="status" aria-live="polite"`):]
+	assert.Contains(t, region[:strings.Index(region, "</main>")+1], "Feedback recorded.")
+	assert.NotContains(t, body, "hx-swap-oob", "full pages render toasts inline")
+	assert.Regexp(t, `<button type="button"[^>]*data-toast-dismiss`, body)
 }

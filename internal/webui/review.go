@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -16,33 +18,48 @@ const (
 	pageStats   = "stats"
 )
 
-type reviewItem struct {
-	Href    string
-	Title   string
-	Project string
-	Type    string
-	Status  string
-	Note    string
-}
+const (
+	conflictPreviewLines = 12
+	previewEllipsis      = "…"
+	returnToReview       = "review"
+)
 
 type reviewSection struct {
 	Heading string
 	Empty   string
-	Items   []reviewItem
+	Rows    []memoryRow
 }
 
-type conflictItem struct {
+// conflictSide is one memory of a conflict. Hidden sides (quarantined) and Unavailable sides
+// (failed to load) carry only their id and offer no actions.
+type conflictSide struct {
+	ID          string
+	Title       string
+	Type        string
+	TypeClass   string
+	Status      string
+	Href        string
+	Preview     string
+	Hidden      bool
+	Unavailable bool
+	DeleteURL   string
+	CSRF        string
+	// KeepURL supersedes the other side with this one; empty when either side cannot be acted on.
+	KeepURL string
+}
+
+type conflictView struct {
 	Kind     string
-	FromHref string
-	FromID   string
-	ToHref   string
-	ToID     string
+	From, To conflictSide
 }
 
 type reviewView struct {
 	Context          string
+	CSRF             string
+	Notice           string
+	Error            string
 	Sections         []reviewSection
-	Conflicts        []conflictItem
+	Conflicts        []conflictView
 	QuarantinedCount int
 	// Quarantined is the admin view of quarantined memories; nil while admin is absent or locked.
 	Quarantined *quarantinedView
@@ -67,9 +84,15 @@ func (s *Server) contextPage(r *http.Request, rc requestContext, title, message 
 	return page
 }
 
-// handleReview shows the review queue. With admin unlocked, quarantined memories are listed in
-// full; acquiring admin access first means an expiry found here already shows as locked.
+// handleReview shows the review queue.
 func (s *Server) handleReview(w http.ResponseWriter, r *http.Request, rc requestContext) {
+	s.respondReview(w, r, rc, http.StatusOK, nil)
+}
+
+// respondReview renders the review queue, the whole page or, for htmx, the #review fragment; edit
+// adjusts the view (notices, errors). With admin unlocked, quarantined memories are listed in full;
+// acquiring admin access first means an expiry found here already shows as locked.
+func (s *Server) respondReview(w http.ResponseWriter, r *http.Request, rc requestContext, status int, edit func(*reviewView)) {
 	var quarantined *quarantinedView
 	if s.admin != nil {
 		ops, err := s.adminOps(r, rc)
@@ -83,11 +106,19 @@ func (s *Server) handleReview(w http.ResponseWriter, r *http.Request, rc request
 	}
 	page, err := s.reviewPage(r, rc)
 	if err != nil {
-		s.fail(w, r, rc, err)
+		s.failResponse(w, r, rc, err)
 		return
 	}
 	page.Review.Quarantined = quarantined
-	s.renderTemplate(w, "layout.html", page)
+	if edit != nil {
+		edit(page.Review)
+	}
+	w.Header().Set("Vary", "HX-Request")
+	if isFragmentRequest(r) {
+		s.renderStatus(w, status, "review.html", page.Review)
+		return
+	}
+	s.renderStatus(w, status, "layout.html", page)
 }
 
 func (s *Server) reviewPage(r *http.Request, rc requestContext) (pageData, error) {
@@ -95,15 +126,16 @@ func (s *Server) reviewPage(r *http.Request, rc requestContext) (pageData, error
 	if err != nil {
 		return pageData{}, fmt.Errorf("load review queue: %w", err)
 	}
+	now := s.cfg.Now()
 	view := reviewView{
-		Context: rc.Name,
+		Context: rc.Name, CSRF: s.session.csrf,
 		Sections: []reviewSection{
-			{Heading: "Flagged", Empty: "Nothing is flagged.", Items: reviewItems(rc.Name, queue.Flagged, flaggedNote)},
-			{Heading: "Expired", Empty: "Nothing has expired.", Items: reviewItems(rc.Name, queue.Expired, expiredNote)},
-			{Heading: "Stale", Empty: "Nothing is stale.", Items: reviewItems(rc.Name, queue.Stale, staleNote)},
-			{Heading: "Unverified", Empty: "Nothing is unverified.", Items: reviewItems(rc.Name, queue.Unverified, unverifiedNote)},
+			{Heading: "Flagged", Empty: "Nothing is flagged.", Rows: reviewRows(rc.Name, queue.Flagged, flaggedNote, now)},
+			{Heading: "Expired", Empty: "Nothing has expired.", Rows: reviewRows(rc.Name, queue.Expired, expiredNote, now)},
+			{Heading: "Stale", Empty: "Nothing is stale.", Rows: reviewRows(rc.Name, queue.Stale, staleNote, now)},
+			{Heading: "Unverified", Empty: "Nothing is unverified.", Rows: reviewRows(rc.Name, queue.Unverified, unverifiedNote, now)},
 		},
-		Conflicts:        conflictItems(rc.Name, queue.Conflicts),
+		Conflicts:        s.conflictViews(r, rc, queue.Conflicts),
 		QuarantinedCount: queue.QuarantinedCount,
 	}
 	page := s.authenticatedPage("Review", "")
@@ -124,15 +156,18 @@ func expiredNote(m memory.Memory) string {
 
 func staleNote(m memory.Memory) string { return "Last updated " + formatTime(m.UpdatedAt) + "." }
 
-func reviewItems(contextName string, mems []memory.Memory, note func(memory.Memory) string) []reviewItem {
-	items := make([]reviewItem, 0, len(mems))
+// reviewRows adapts review items to list rows. Review has no detail pane, so the rows link to the
+// workspace as plain links.
+func reviewRows(contextName string, mems []memory.Memory, note func(memory.Memory) string, now time.Time) []memoryRow {
+	rows := make([]memoryRow, 0, len(mems))
 	for _, m := range mems {
-		items = append(items, reviewItem{
+		rows = append(rows, memoryRow{
 			Href: memoryBase(contextName, m.ID), Title: m.Title, Project: projectOf(m),
-			Type: m.Type.String(), Status: m.Status.String(), Note: note(m),
+			Type: m.Type.String(), TypeClass: typeClass(m.Type.String()), Status: m.Status.String(),
+			Age: relativeAge(now, m.UpdatedAt), Note: note(m), Standalone: true,
 		})
 	}
-	return items
+	return rows
 }
 
 func projectOf(m memory.Memory) string {
@@ -142,15 +177,57 @@ func projectOf(m memory.Memory) string {
 	return globalProject
 }
 
-func conflictItems(contextName string, links []memory.Link) []conflictItem {
-	items := make([]conflictItem, 0, len(links))
+// conflictViews loads both sides of each conflict with one passive Get. A failed Get only marks
+// its sides unavailable; it is logged and never fails the page.
+func (s *Server) conflictViews(r *http.Request, rc requestContext, links []memory.Link) []conflictView {
+	views := make([]conflictView, 0, len(links))
 	for _, l := range links {
-		items = append(items, conflictItem{
-			Kind: l.Kind, FromHref: memoryBase(contextName, l.From), FromID: shortID(l.From),
-			ToHref: memoryBase(contextName, l.To), ToID: shortID(l.To),
-		})
+		res, err := rc.Backend.Memories.Get(r.Context(), memory.GetRequest{IDs: []uuid.UUID{l.From, l.To}, Passive: true})
+		if err != nil {
+			s.logger.WarnContext(r.Context(), "load conflict", "context", rc.Name, "from", l.From, "to", l.To, "error", err)
+		}
+		from, to := conflictSideOf(rc.Name, l.From, res), conflictSideOf(rc.Name, l.To, res)
+		from.CSRF, to.CSRF = s.session.csrf, s.session.csrf
+		if actionable(from) && actionable(to) {
+			from.KeepURL = memoryBase(rc.Name, l.To) + "/supersede"
+			to.KeepURL = memoryBase(rc.Name, l.From) + "/supersede"
+		}
+		views = append(views, conflictView{Kind: l.Kind, From: from, To: to})
 	}
-	return items
+	return views
 }
 
-func shortID(id uuid.UUID) string { return id.String()[:8] }
+func actionable(side conflictSide) bool { return !side.Hidden && !side.Unavailable }
+
+// conflictSideOf finds id among the fetched results by id, never by position. A quarantined side
+// carries only its id and status, so nothing else is read from it.
+func conflictSideOf(contextName string, id uuid.UUID, res []memory.Fetched) conflictSide {
+	base := memoryBase(contextName, id)
+	side := conflictSide{ID: id.String(), Href: base, Unavailable: true}
+	for _, f := range res {
+		if f.Ref != id.String() && f.Memory.ID != id {
+			continue
+		}
+		switch {
+		case errors.Is(f.Err, memory.ErrQuarantined):
+			return conflictSide{ID: id.String(), Href: base, Hidden: true, Status: memory.StatusQuarantined.String()}
+		case f.Err != nil || f.Memory.ID != id:
+			return side
+		}
+		m := f.Memory
+		return conflictSide{
+			ID: id.String(), Href: base, Title: m.Title, Type: m.Type.String(), TypeClass: typeClass(m.Type.String()),
+			Status: m.Status.String(), Preview: previewOf(m.Content), DeleteURL: base + "/delete",
+		}
+	}
+	return side
+}
+
+// previewOf is the first conflictPreviewLines lines of content, with an ellipsis line when cut.
+func previewOf(content string) string {
+	lines := strings.Split(strings.TrimRight(content, "\n"), "\n")
+	if len(lines) <= conflictPreviewLines {
+		return strings.Join(lines, "\n")
+	}
+	return strings.Join(append(lines[:conflictPreviewLines:conflictPreviewLines], previewEllipsis), "\n")
+}

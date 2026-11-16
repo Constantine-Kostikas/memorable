@@ -1,2 +1,573 @@
 @import "tailwindcss";
 @source "./templates";
+
+@custom-variant dark {
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme=light]), :root:not([data-theme=light]) *) {
+      @slot;
+    }
+  }
+  &:where(:root[data-theme=dark], :root[data-theme=dark] *) {
+    @slot;
+  }
+}
+
+@font-face {
+  font-family: "Atkinson Hyperlegible";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/static/atkinson-hyperlegible-regular.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Atkinson Hyperlegible";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/static/atkinson-hyperlegible-bold.woff2") format("woff2");
+}
+
+:root {
+  color-scheme: light;
+  --paper: #F5F7FA;
+  --sheet: #FFFFFF;
+  --rail: #EBEFF5;
+  --ink: #1B2433;
+  --ink-muted: #5B6678;
+  --line: #D3DAE5;
+  --rule: #EEF2F8;
+  --accent: #2F5BEA;
+  --accent-ink: #FFFFFF;
+  --danger: #B42318;
+  --danger-soft: #FDECEA;
+  --ok: #1D6B44;
+  --ok-soft: #E2F3EA;
+  --warn: #7A5208;
+  --warn-soft: #FBEFD5;
+  --neutral: #5B6678;
+  --neutral-soft: #E6EBF2;
+  --type-project: #2F5BEA;
+  --type-project-soft: #E3EAFD;
+  --type-project-ink: #1E43C0;
+  --type-user: #0F8B8D;
+  --type-user-soft: #DDF2F2;
+  --type-user-ink: #0B6466;
+  --type-feedback: #7A4FD6;
+  --type-feedback-soft: #ECE5FB;
+  --type-feedback-ink: #5B34B5;
+  --type-reference: #B17F1A;
+  --type-reference-soft: #F7ECD3;
+  --type-reference-ink: #7A5208;
+  --sheet-line: 1.5rem;
+  --sheet-pad-y: 0.75rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme=light]) {
+    color-scheme: dark;
+    --paper: #141A24;
+    --sheet: #1A2230;
+    --rail: #18202C;
+    --ink: #DCE3EE;
+    --ink-muted: #8593A8;
+    --line: #263142;
+    --rule: #1F2836;
+    --accent: #6F8FFF;
+    --accent-ink: #141A24;
+    --danger: #F97066;
+    --danger-soft: #3A1C1C;
+    --ok: #8FD9AE;
+    --ok-soft: #173A2A;
+    --warn: #E0AE48;
+    --warn-soft: #3A2E14;
+    --neutral: #A3B0C2;
+    --neutral-soft: #263142;
+    --type-project: #6F8FFF;
+    --type-project-soft: #1E2F5C;
+    --type-project-ink: #A9BFFF;
+    --type-user: #3FC1C3;
+    --type-user-soft: #133839;
+    --type-user-ink: #3FC1C3;
+    --type-feedback: #A98BFF;
+    --type-feedback-soft: #2D2350;
+    --type-feedback-ink: #A98BFF;
+    --type-reference: #E0AE48;
+    --type-reference-soft: #3A2E14;
+    --type-reference-ink: #E0AE48;
+  }
+}
+
+:root[data-theme=dark] {
+  color-scheme: dark;
+  --paper: #141A24;
+  --sheet: #1A2230;
+  --rail: #18202C;
+  --ink: #DCE3EE;
+  --ink-muted: #8593A8;
+  --line: #263142;
+  --rule: #1F2836;
+  --accent: #6F8FFF;
+  --accent-ink: #141A24;
+  --danger: #F97066;
+  --danger-soft: #3A1C1C;
+  --ok: #8FD9AE;
+  --ok-soft: #173A2A;
+  --warn: #E0AE48;
+  --warn-soft: #3A2E14;
+  --neutral: #A3B0C2;
+  --neutral-soft: #263142;
+  --type-project: #6F8FFF;
+  --type-project-soft: #1E2F5C;
+  --type-project-ink: #A9BFFF;
+  --type-user: #3FC1C3;
+  --type-user-soft: #133839;
+  --type-user-ink: #3FC1C3;
+  --type-feedback: #A98BFF;
+  --type-feedback-soft: #2D2350;
+  --type-feedback-ink: #A98BFF;
+  --type-reference: #E0AE48;
+  --type-reference-soft: #3A2E14;
+  --type-reference-ink: #E0AE48;
+}
+
+@theme inline {
+  --font-sans: "Atkinson Hyperlegible", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --text-meta: 12px;
+  --text-meta--line-height: 1.125rem;
+  --text-body: 13px;
+  --text-body--line-height: 1.25rem;
+  --text-title: 15px;
+  --text-title--line-height: 1.375rem;
+  --text-page: 18px;
+  --text-page--line-height: 1.625rem;
+
+  --color-paper: var(--paper);
+  --color-sheet: var(--sheet);
+  --color-rail: var(--rail);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-line: var(--line);
+  --color-rule: var(--rule);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-neutral: var(--neutral);
+  --color-neutral-soft: var(--neutral-soft);
+  --color-type-project: var(--type-project);
+  --color-type-project-soft: var(--type-project-soft);
+  --color-type-user: var(--type-user);
+  --color-type-user-soft: var(--type-user-soft);
+  --color-type-feedback: var(--type-feedback);
+  --color-type-feedback-soft: var(--type-feedback-soft);
+  --color-type-reference: var(--type-reference);
+  --color-type-reference-soft: var(--type-reference-soft);
+}
+
+@layer base {
+  body {
+    font-family: var(--font-sans);
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  input[type=checkbox] {
+    accent-color: var(--accent);
+  }
+
+  ::placeholder {
+    color: var(--ink-muted);
+    opacity: 1;
+  }
+}
+
+@layer components {
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    background-color: var(--sheet);
+    color: var(--ink);
+    padding: 0.25rem 0.75rem;
+    cursor: pointer;
+  }
+
+  .btn:hover {
+    background-color: var(--rail);
+  }
+
+  .btn:disabled,
+  .btn[aria-disabled=true] {
+    cursor: not-allowed;
+    opacity: 0.55;
+  }
+
+  .btn:disabled:hover,
+  .btn[aria-disabled=true]:hover {
+    background-color: var(--sheet);
+  }
+
+  .btn[aria-pressed=true] {
+    border-color: var(--accent);
+    background-color: var(--rail);
+  }
+
+  .kbd {
+    border: 1px solid currentColor;
+    border-radius: 3px;
+    padding: 0 0.25rem;
+    font-family: inherit;
+    font-size: 10px;
+    line-height: 1.4;
+    opacity: 0.75;
+  }
+
+  .btn-primary {
+    border-color: var(--accent);
+    background-color: var(--accent);
+    color: var(--accent-ink);
+  }
+
+  .btn-primary:hover {
+    background-color: color-mix(in srgb, var(--accent) 88%, var(--ink));
+  }
+
+  .btn-primary:disabled:hover {
+    background-color: var(--accent);
+  }
+
+  .btn-danger {
+    border-color: var(--danger);
+    color: var(--danger);
+  }
+
+  .btn-danger:hover {
+    background-color: var(--danger-soft);
+  }
+
+  /* Fields are always editable, so their boundary must reach 3:1 against the surface: ink-muted, not line. */
+  .field {
+    border: 1px solid var(--ink-muted);
+    border-radius: 4px;
+    background-color: var(--sheet);
+    color: var(--ink);
+    padding: 0.25rem 0.5rem;
+  }
+
+  .chip {
+    display: inline-block;
+    border-radius: 4px;
+    background-color: var(--neutral-soft);
+    color: var(--neutral);
+    padding: 0 0.375rem;
+    font-size: var(--text-meta);
+    line-height: var(--text-meta--line-height);
+  }
+
+  .chip-type-project {
+    background-color: var(--type-project-soft);
+    color: var(--type-project-ink);
+  }
+
+  .chip-type-user {
+    background-color: var(--type-user-soft);
+    color: var(--type-user-ink);
+  }
+
+  .chip-type-feedback {
+    background-color: var(--type-feedback-soft);
+    color: var(--type-feedback-ink);
+  }
+
+  .chip-type-reference {
+    background-color: var(--type-reference-soft);
+    color: var(--type-reference-ink);
+  }
+
+  .chip-status-active {
+    background-color: var(--ok-soft);
+    color: var(--ok);
+  }
+
+  .chip-status-unverified,
+  .chip-status-flagged,
+  .chip-status-quarantined,
+  .chip-warn {
+    background-color: var(--warn-soft);
+    color: var(--warn);
+  }
+
+  /* Line k of the text occupies [pad + k*line, pad + (k+1)*line) from the padding edge, and its rule is that
+     box's last pixel: the rule tile is one line tall, starts at the top padding, and draws only its last 1px.
+     The first layer covers the top padding, where the tile repeats upward, so no rule sits above the text. */
+  .sheet-ruled {
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: var(--sheet-pad-y) 0.75rem;
+    background-color: var(--sheet);
+    background-image:
+      linear-gradient(var(--sheet), var(--sheet)),
+      linear-gradient(transparent calc(var(--sheet-line) - 1px), var(--rule) calc(var(--sheet-line) - 1px));
+    background-size: 100% var(--sheet-pad-y), 100% var(--sheet-line);
+    background-repeat: no-repeat, repeat-y;
+    background-position: 0 0, 0 var(--sheet-pad-y);
+    background-origin: padding-box;
+    line-height: var(--sheet-line);
+  }
+
+  /* Local: the rules scroll with the text instead of staying put behind it. */
+  .sheet-ruled.field {
+    border-color: var(--ink-muted);
+    background-attachment: local;
+  }
+
+  .sheet-ruled pre {
+    margin: 0;
+    font-family: inherit;
+    line-height: inherit;
+  }
+
+  .section-nav a[aria-current=true] {
+    color: var(--accent);
+    box-shadow: inset 0 -2px 0 var(--accent);
+  }
+
+  .notice-ok,
+  .notice-warn,
+  .notice-danger {
+    border: 1px solid color-mix(in srgb, currentColor 35%, transparent);
+    border-radius: 6px;
+  }
+
+  .notice-ok {
+    background-color: var(--ok-soft);
+    color: var(--ok);
+  }
+
+  .notice-warn {
+    background-color: var(--warn-soft);
+    color: var(--warn);
+  }
+
+  .notice-danger {
+    background-color: var(--danger-soft);
+    color: var(--danger);
+  }
+
+  .toasts {
+    position: fixed;
+    right: 1rem;
+    bottom: 1rem;
+    z-index: 50;
+    display: flex;
+    max-width: min(24rem, calc(100vw - 2rem));
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .toast {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    box-shadow: 0 4px 12px rgb(0 0 0 / 0.18);
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .toast {
+      animation: toast-in 150ms ease-out;
+    }
+  }
+
+  .toast > span {
+    flex: 1;
+  }
+
+  .toast-dismiss {
+    border: 0;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    font-size: var(--text-title);
+    line-height: 1;
+  }
+
+  .more-actions > summary {
+    list-style: none;
+  }
+
+  .tag-chips:focus-within {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .tag-entry {
+    border: 0;
+    background: transparent;
+    color: inherit;
+  }
+
+  .tag-entry:focus-visible {
+    outline: none;
+  }
+
+  .tag-remove {
+    border: 0;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    line-height: 1;
+  }
+
+  .dialog {
+    margin: 10vh auto auto;
+    width: min(36rem, calc(100vw - 2rem));
+    max-height: 80vh;
+    overflow-y: auto;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background-color: var(--sheet);
+    color: var(--ink);
+    padding: 1rem;
+    box-shadow: 0 10px 30px color-mix(in srgb, var(--ink) 25%, transparent);
+  }
+
+  .dialog::backdrop {
+    background-color: color-mix(in srgb, var(--ink) 35%, transparent);
+  }
+
+  .palette-list {
+    max-height: 50vh;
+    overflow-y: auto;
+  }
+
+  .lookup-option:hover,
+  .lookup-option[aria-selected=true] {
+    background-color: var(--neutral-soft);
+  }
+
+  .lookup-option[aria-selected=true] {
+    box-shadow: inset 3px 0 0 var(--accent);
+  }
+
+  .more-actions > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .diff-add {
+    background-color: var(--ok-soft);
+    color: var(--ok);
+  }
+
+  .diff-del {
+    background-color: var(--danger-soft);
+    color: var(--danger);
+  }
+
+  .memory-row > a:hover {
+    background-color: color-mix(in srgb, var(--sheet) 50%, var(--rail));
+  }
+
+  .memory-row:has(> a[aria-current=true]) {
+    background-color: var(--sheet);
+  }
+
+  .memory-row:has(> a[aria-current=true]) > a {
+    background-color: transparent;
+  }
+}
+
+/* Unlayered so the tab color beats utility border colors such as divide-line. */
+.type-tab-project,
+.type-tab-user,
+.type-tab-feedback,
+.type-tab-reference,
+.type-tab-other {
+  border-left: 4px solid var(--ink-muted);
+}
+
+.type-tab-project {
+  border-left-color: var(--type-project);
+}
+
+.type-tab-user {
+  border-left-color: var(--type-user);
+}
+
+.type-tab-feedback {
+  border-left-color: var(--type-feedback);
+}
+
+.type-tab-reference {
+  border-left-color: var(--type-reference);
+}
+
+/* Unlayered so the narrow layout beats display utilities such as flex on the panes. */
+@media (width < 900px) {
+  .workspace:has(.pane-selected) .list-pane,
+  .detail-pane:not(.pane-selected) {
+    display: none;
+  }
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+}
+
+/* Expanded editor: unlayered so it beats the workspace grid utilities. Scoped to panes with a toggle, so an empty pane keeps the list. */
+body[data-expanded] .workspace:has([data-expand-toggle]) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+body[data-expanded] .workspace:has([data-expand-toggle]) .list-pane {
+  display: none;
+}
+
+@media (width >= 900px) {
+  body[data-expanded] #content {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 260px;
+    column-gap: 1rem;
+    align-items: start;
+  }
+
+  body[data-expanded] #content > * {
+    grid-column: 1;
+  }
+
+  body[data-expanded] #content > [data-editor-meta] {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    grid-template-columns: minmax(0, 1fr);
+    margin-top: 0;
+    border-left: 1px solid var(--line);
+    border-radius: 6px;
+    background-color: var(--rail);
+    padding: 0.75rem;
+  }
+
+  body[data-expanded] #content > [data-editor-meta] > * {
+    align-self: start;
+  }
+
+  body[data-expanded] #memory-content {
+    min-height: 60vh;
+  }
+}
