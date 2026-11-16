@@ -88,3 +88,54 @@ func TestTemplatesHaveNoInlineStyleOrScript(t *testing.T) {
 		}
 	}
 }
+
+func TestLayoutHasThemeToggle(t *testing.T) {
+	t.Parallel()
+
+	tmpl, err := parseTemplates()
+	require.NoError(t, err)
+
+	var out bytes.Buffer
+	err = tmpl.ExecuteTemplate(&out, "layout.html", pageData{Title: "Memories", Context: "personal", Contexts: []string{"personal"}})
+	require.NoError(t, err)
+
+	body := out.String()
+	assert.Contains(t, body, `<html lang="en">`)
+	assert.NotRegexp(t, `<html[^>]*data-theme`, body)
+	assert.Regexp(t, `<button type="button"[^>]*data-theme-toggle`, body)
+}
+
+func TestTypeClass(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct{ in, want string }{
+		{"project", "project"},
+		{"user", "user"},
+		{"feedback", "feedback"},
+		{"reference", "reference"},
+		{"custom", "other"},
+		{"", "other"},
+	} {
+		assert.Equal(t, tc.want, typeClass(tc.in), tc.in)
+	}
+}
+
+func TestMemoryRowsCarryTypeTab(t *testing.T) {
+	t.Parallel()
+
+	tmpl, err := parseTemplates()
+	require.NoError(t, err)
+
+	var out bytes.Buffer
+	err = tmpl.ExecuteTemplate(&out, "memory_rows.html", memoriesView{Rows: []memoryRow{
+		{Href: "/a", Title: "A", Type: "user", Status: "active"},
+		{Href: "/b", Title: "B", Type: "custom", Status: "deleted"},
+	}})
+	require.NoError(t, err)
+
+	body := out.String()
+	assert.Contains(t, body, "type-tab-user")
+	assert.Contains(t, body, "type-tab-other")
+	assert.Contains(t, body, "chip-status-active")
+	assert.Contains(t, body, "chip-status-deleted")
+}

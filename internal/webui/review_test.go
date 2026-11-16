@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -182,8 +183,10 @@ func TestProfileReadOnly(t *testing.T) {
 	assert.Contains(t, body, "No em dashes.")
 	assert.Contains(t, body, "style")
 	assert.NotContains(t, body, hostile)
-	assert.NotContains(t, body, "<form")
-	assert.NotContains(t, body, "<button")
+	_, main, found := strings.Cut(body, "<main")
+	require.True(t, found)
+	assert.NotContains(t, main, "<form")
+	assert.NotContains(t, main, "<button")
 }
 
 func TestProfileEmpty(t *testing.T) {

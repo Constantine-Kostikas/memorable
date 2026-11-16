@@ -1,32 +1,32 @@
-{{if .VectorUnavailable}}<p class="mb-3 rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-900">Showing text matches only: vector search unavailable.</p>{{end}}
+{{if .VectorUnavailable}}<p class="mb-3 notice-warn p-2">Showing text matches only: vector search unavailable.</p>{{end}}
 {{if .Rows}}
-<ul class="divide-y divide-gray-200 rounded border border-gray-200">
+<ul class="divide-y divide-line rounded-md border border-line bg-sheet">
   {{range .Rows}}
-  <li class="p-3">
+  <li class="type-tab-{{typeClass .Type}} p-3">
     <div class="flex flex-wrap items-baseline gap-3">
-      <a href="{{.Href}}" class="font-medium hover:underline">{{.Title}}</a>
-      <span class="text-sm text-gray-600">{{.Project}}</span>
-      <span class="text-sm text-gray-600">{{.Type}}</span>
-      <span class="rounded bg-gray-100 px-1 text-sm">{{.Status}}</span>
-      <span class="ml-auto text-sm text-gray-600">{{.Score}}</span>
+      <a href="{{.Href}}" class="font-bold hover:underline">{{.Title}}</a>
+      <span class="text-meta text-ink-muted">{{.Project}}</span>
+      <span class="chip chip-type-{{typeClass .Type}}">{{.Type}}</span>
+      <span class="chip chip-status-{{.Status}}">{{.Status}}</span>
+      <span class="ml-auto text-meta text-ink-muted">{{.Score}}</span>
     </div>
-    <pre class="mt-1 whitespace-pre-wrap break-words text-sm text-gray-700">{{.Snippet}}</pre>
-    {{if .Tags}}<p class="mt-1 flex flex-wrap gap-1 text-xs">{{range .Tags}}<span class="rounded border border-gray-300 px-1">{{.}}</span>{{end}}</p>{{end}}
+    <pre class="mt-1 whitespace-pre-wrap break-words font-sans text-ink">{{.Snippet}}</pre>
+    {{if .Tags}}<p class="mt-1 flex flex-wrap gap-1 text-meta">{{range .Tags}}<span class="chip">{{.}}</span>{{end}}</p>{{end}}
     {{with .Explain}}
-    <details class="mt-2 text-sm">
-      <summary class="cursor-pointer text-gray-600">Why this result</summary>
+    <details class="mt-2 text-body">
+      <summary class="cursor-pointer text-ink-muted">Why this result</summary>
       <dl class="mt-1 grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-4">
-        <dt class="text-gray-500">Vector rank</dt><dd>{{.VectorRank}}</dd>
-        <dt class="text-gray-500">Full-text rank</dt><dd>{{.FTSRank}}</dd>
-        <dt class="text-gray-500">Trigram rank</dt><dd>{{.TrigramRank}}</dd>
-        <dt class="text-gray-500">Similarity</dt><dd>{{.Similarity}}</dd>
-        <dt class="text-gray-500">Fused score (RRF)</dt><dd>{{.RRF}}</dd>
-        <dt class="text-gray-500">Text match</dt><dd>{{if .Textual}}yes{{else}}no{{end}}</dd>
-        <dt class="text-gray-500">Project boost</dt><dd>{{.ProjectBoost}}</dd>
-        <dt class="text-gray-500">Pinned boost</dt><dd>{{.PinnedBoost}}</dd>
-        <dt class="text-gray-500">Usage boost</dt><dd>{{.UsageBoost}}</dd>
-        <dt class="text-gray-500">Multiplier</dt><dd>{{.Multiplier}}</dd>
-        <dt class="text-gray-500">Final score</dt><dd>{{.Final}}</dd>
+        <dt class="text-ink-muted">Vector rank</dt><dd>{{.VectorRank}}</dd>
+        <dt class="text-ink-muted">Full-text rank</dt><dd>{{.FTSRank}}</dd>
+        <dt class="text-ink-muted">Trigram rank</dt><dd>{{.TrigramRank}}</dd>
+        <dt class="text-ink-muted">Similarity</dt><dd>{{.Similarity}}</dd>
+        <dt class="text-ink-muted">Fused score (RRF)</dt><dd>{{.RRF}}</dd>
+        <dt class="text-ink-muted">Text match</dt><dd>{{if .Textual}}yes{{else}}no{{end}}</dd>
+        <dt class="text-ink-muted">Project boost</dt><dd>{{.ProjectBoost}}</dd>
+        <dt class="text-ink-muted">Pinned boost</dt><dd>{{.PinnedBoost}}</dd>
+        <dt class="text-ink-muted">Usage boost</dt><dd>{{.UsageBoost}}</dd>
+        <dt class="text-ink-muted">Multiplier</dt><dd>{{.Multiplier}}</dd>
+        <dt class="text-ink-muted">Final score</dt><dd>{{.Final}}</dd>
       </dl>
     </details>
     {{end}}
@@ -34,6 +34,6 @@
   {{end}}
 </ul>
 {{else}}
-<p class="text-gray-600">No memories match.</p>
+<p class="text-ink-muted">No memories match.</p>
 {{end}}
-{{if .NextURL}}<p class="mt-3"><a href="{{.NextURL}}" class="rounded border border-gray-300 px-3 py-1 hover:bg-gray-100">Next page</a></p>{{end}}
+{{if .NextURL}}<p class="mt-3"><a href="{{.NextURL}}" class="btn">Next page</a></p>{{end}}
