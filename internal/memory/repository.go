@@ -42,10 +42,34 @@ type Link struct {
 	Kind string
 }
 
+// FeedbackEntry is one recorded feedback verdict.
+type FeedbackEntry struct {
+	Kind      FeedbackKind
+	Note      string
+	Project   *string
+	CreatedAt time.Time
+}
+
+// AuditRecord is one stored audit log row; it never carries content.
+type AuditRecord struct {
+	Action    string
+	Process   string
+	Cwd       string
+	Details   map[string]any
+	CreatedAt time.Time
+}
+
+// Activity is the feedback and audit history of a memory, newest first.
+type Activity struct {
+	Feedback []FeedbackEntry
+	Audit    []AuditRecord
+}
+
 // Repository persists memories. Implemented by store.Store.
 type Repository interface {
 	Insert(ctx context.Context, m *Memory, a AuditEntry) error
 	InsertSuperseding(ctx context.Context, m *Memory, old uuid.UUID, a AuditEntry) error
+	MarkSuperseded(ctx context.Context, old, replacement uuid.UUID, a AuditEntry) error
 	GetByIDs(ctx context.Context, ids []uuid.UUID) ([]Memory, error)
 	GetBySlugs(ctx context.Context, owner string, slugs []string) ([]Memory, error)
 	FindByHash(ctx context.Context, owner string, hash []byte) (*Memory, error)
@@ -56,6 +80,7 @@ type Repository interface {
 	SetEmbedding(ctx context.Context, id uuid.UUID, version int, vec []float32, model string) error
 	RecordAccess(ctx context.Context, id uuid.UUID, project *string, weight float64, now time.Time, halfLife time.Duration) error
 	AddFeedback(ctx context.Context, id uuid.UUID, k FeedbackKind, note string, project *string) error
+	Activity(ctx context.Context, id uuid.UUID) (Activity, error)
 	AddLink(ctx context.Context, l Link) error
 	RemoveLink(ctx context.Context, l Link) error
 	LinksFor(ctx context.Context, ids []uuid.UUID) ([]Link, error)

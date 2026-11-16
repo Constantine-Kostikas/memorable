@@ -35,6 +35,32 @@ func TestBoost(t *testing.T) {
 	assert.InDelta(t, 0.5*1.45, Boost(0.5, true, true, 1e9), 1e-12)
 }
 
+func TestBoostPartsMatchesBoost(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name           string
+		project, pin   bool
+		effectiveScore float64
+	}{
+		{"plain", false, false, 0},
+		{"project", true, false, 0},
+		{"project and pinned", true, true, 0},
+		{"capped usage", true, true, 1e9},
+		{"usage", false, false, 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := BoostParts(0.5, tc.project, tc.pin, tc.effectiveScore)
+			assert.InDelta(t, Boost(0.5, tc.project, tc.pin, tc.effectiveScore), got.Final, 1e-12)
+		})
+	}
+	p := BoostParts(0.5, true, true, 0)
+	assert.InDelta(t, 0.20, p.Project, 1e-12)
+	assert.InDelta(t, 0.10, p.Pinned, 1e-12)
+	assert.InDelta(t, 1.30, p.Multiplier, 1e-12)
+}
+
 func TestDecay(t *testing.T) {
 	t.Parallel()
 	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)

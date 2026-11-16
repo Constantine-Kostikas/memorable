@@ -1,0 +1,10 @@
+<section id="prune">
+  <h1 class="mb-4 text-xl font-semibold">Prune access events</h1>
+  {{if .Notice}}<p role="status" class="mb-4 rounded border border-green-200 bg-green-50 p-3 text-green-900">{{.Notice}}</p>{{end}}
+  {{if .Error}}<p role="alert" class="mb-4 rounded border border-red-200 bg-red-50 p-3 text-red-900">{{.Error}}</p>{{end}}
+  <p class="mb-4">Dry run: pruning now would delete {{.Count}} access events older than the retention period.</p>
+  <form method="post" action="{{.Action}}" hx-post="{{.Action}}" hx-target="#prune" hx-swap="outerHTML" hx-confirm="Delete old access events?">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <button type="submit" class="rounded border border-red-300 px-3 py-1 text-red-800 hover:bg-red-50">Prune</button>
+  </form>
+</section>

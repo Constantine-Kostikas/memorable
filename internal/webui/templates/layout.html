@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{.CSRF}}">
+  <meta name="htmx-config" content='{"includeIndicatorStyles":false,"allowEval":false,"historyCacheSize":0,"responseHandling":[{"code":"204","swap":false},{"code":"[23]..","swap":true},{"code":"404|409|422|429|500|503","swap":true,"error":true},{"code":"...","swap":false,"error":true}]}'>
+  <title>{{block "title" .}}{{.Title}}{{end}} - memorable</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/htmx.min.js" defer></script>
+</head>
+<body hx-headers='{"X-CSRF-Token":"{{.CSRF}}"}' class="bg-white text-gray-900 antialiased">
+  <header class="flex items-center gap-4 border-b border-gray-200 px-4 py-3">
+    <nav aria-label="Contexts" class="flex gap-2">
+      {{range .Contexts}}<a href="/c/{{.}}/memories"{{if eq . $.Context}} aria-current="page" class="rounded bg-gray-900 px-2 py-1 text-white"{{else}} class="rounded border border-gray-300 px-2 py-1 hover:bg-gray-100"{{end}}>{{.}}</a>{{end}}
+    </nav>
+    {{if .Context}}<nav aria-label="Pages" class="flex gap-4">
+      <a href="/c/{{.Context}}/memories" class="hover:underline">Memories</a>
+      <a href="/c/{{.Context}}/review" class="hover:underline">Review{{if not .ReviewCountUnknown}} ({{.ReviewCount}}){{end}}</a>
+      <a href="/c/{{.Context}}/profile" class="hover:underline">Profile</a>
+      <a href="/c/{{.Context}}/stats" class="hover:underline">Stats</a>
+      {{if .AdminUnlockedMinutes}}<a href="/c/{{.Context}}/prune" class="hover:underline">Prune</a>{{end}}
+    </nav>{{end}}
+    {{if .AdminUnlockedMinutes}}<span class="ml-auto rounded bg-amber-100 px-2 py-1 text-sm text-amber-900">Admin unlocked, locks in {{.AdminUnlockedMinutes}} min</span>{{end}}
+  </header>
+  {{with .AdminLockedMessage}}<p role="alert" class="border-b border-amber-200 bg-amber-50 px-4 py-2 text-amber-900">{{.}}</p>{{end}}
+  <main class="mx-auto max-w-5xl px-4 py-6">
+    {{block "content" .}}{{if eq .Page "memories"}}{{template "memories.html" .Memories}}{{else if eq .Page "detail"}}{{template "detail.html" .Detail}}{{else if eq .Page "review"}}{{template "review.html" .Review}}{{else if eq .Page "profile"}}{{template "profile.html" .Profile}}{{else if eq .Page "stats"}}{{template "stats.html" .Stats}}{{else if eq .Page "edit"}}{{template "edit_form.html" .Edit}}{{else if eq .Page "prune"}}{{template "prune.html" .Prune}}{{else if .Message}}{{template "error.html" .}}{{end}}{{end}}
+  </main>
+</body>
+</html>

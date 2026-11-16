@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"maps"
 	"time"
 
 	"github.com/google/uuid"
@@ -16,19 +17,44 @@ import (
 
 // Admin performs privileged operations with the admin role.
 type Admin struct {
-	pool  *pgxpool.Pool
-	owner string
+	pool         *pgxpool.Pool
+	owner        string
+	auditProcess string
+	auditDetails map[string]any
+}
+
+// AdminOption configures an Admin.
+type AdminOption func(*Admin)
+
+// WithAuditDetails attaches d to every audit entry the Admin writes, for example {"via": "ui"}.
+func WithAuditDetails(d map[string]any) AdminOption {
+	return func(a *Admin) { a.auditDetails = maps.Clone(d) }
+}
+
+// WithAuditProcess records p as the process of every audit entry the Admin writes, for example "ui:<pid>@<start>".
+func WithAuditProcess(p string) AdminOption {
+	return func(a *Admin) { a.auditProcess = p }
 }
 
 // OpenAdmin opens an admin-role pool bound to schema.
-func OpenAdmin(ctx context.Context, db config.Database, password, schema, owner string) (*Admin, error) {
+func OpenAdmin(ctx context.Context, db config.Database, password, schema, owner string, opts ...AdminOption) (*Admin, error) {
 	adminDB := db
 	adminDB.AppUser = db.AdminUser
 	s, err := Open(ctx, adminDB, password, schema, owner)
 	if err != nil {
 		return nil, err
 	}
-	return &Admin{pool: s.pool, owner: owner}, nil
+	a := &Admin{pool: s.pool, owner: owner}
+	for _, opt := range opts {
+		opt(a)
+	}
+	return a, nil
+}
+
+func (a *Admin) audit(e memory.AuditEntry) memory.AuditEntry {
+	e.Process = a.auditProcess
+	e.Details = maps.Clone(a.auditDetails)
+	return e
 }
 
 // Close releases the pool.
@@ -69,7 +95,7 @@ func (a *Admin) Approve(ctx context.Context, id uuid.UUID) error {
 		if cur.Source == memory.SourceToolOutput {
 			st = memory.StatusUnverified
 		}
-		if err := setStatus(ctx, tx, a.owner, id, st, "status", memory.AuditEntry{Action: "approve"}, true); err != nil {
+		if err := setStatus(ctx, tx, a.owner, id, st, "status", a.audit(memory.AuditEntry{Action: "approve"}), true); err != nil {
 			return err
 		}
 		// Quarantined writes were never embedded; queue it now that it is searchable.
@@ -94,8 +120,17 @@ func (a *Admin) Purge(ctx context.Context, id uuid.UUID) error {
 		if _, err := tx.Exec(ctx, `DELETE FROM memories WHERE id = $1`, id); err != nil {
 			return mapErr("purge memory", err)
 		}
-		return insertAudit(ctx, tx, a.owner, memory.AuditEntry{Action: "purge", MemoryID: id, ContentHash: hash})
+		return insertAudit(ctx, tx, a.owner, a.audit(memory.AuditEntry{Action: "purge", MemoryID: id, ContentHash: hash}))
 	})
+}
+
+// PruneCount reports how many access events Prune would delete for the same cutoff.
+func (a *Admin) PruneCount(ctx context.Context, before time.Time) (int64, error) {
+	var n int64
+	if err := a.pool.QueryRow(ctx, `SELECT count(*) FROM access_events WHERE created_at < $1`, before).Scan(&n); err != nil {
+		return 0, mapErr("prune count", err)
+	}
+	return n, nil
 }
 
 // Prune deletes access events older than before.
@@ -112,6 +147,9 @@ func (a *Admin) ProfileInsert(ctx context.Context, m *memory.Memory, vec []float
 	return a.withTx(ctx, func(tx pgx.Tx) error {
 		if m.Tags == nil {
 			m.Tags = []string{}
+		}
+		if m.Owner == "" {
+			m.Owner = a.owner
 		}
 		var emb any
 		var embModel *string
@@ -192,12 +230,7 @@ func (a *Admin) ProfileDelete(ctx context.Context, id uuid.UUID) error {
 
 // ProfileList returns non-deleted profile memories.
 func (a *Admin) ProfileList(ctx context.Context) ([]memory.Memory, error) {
-	rows, err := a.pool.Query(ctx, `SELECT `+memCols+`, true AS is_profile FROM mem_profile.memories
-		WHERE status <> 'deleted' ORDER BY created_at`)
-	if err != nil {
-		return nil, mapErr("profile list", err)
-	}
-	return collectMemories(rows, "profile list")
+	return listProfile(ctx, a.pool)
 }
 
 // ProfileSetEmbedding stores a profile memory's embedding.

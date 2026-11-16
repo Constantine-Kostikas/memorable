@@ -22,6 +22,7 @@ jobs:
       - uses: golangci/golangci-lint-action@v8
         with:
           version: v2.15.0
+      - run: make css-check htmx-check
 
   test:
     runs-on: ubuntu-latest

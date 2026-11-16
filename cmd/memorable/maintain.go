@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"charm.land/huh/v2"
 	"github.com/google/uuid"
@@ -143,7 +142,7 @@ func newApproveCmd(d deps, flags *rootFlags) *cobra.Command {
 				return err
 			}
 			defer t.Close()
-			mems, err := t.admin.QuarantinedList(cmd.Context())
+			mems, err := t.ops.QuarantinedList(cmd.Context())
 			if err != nil {
 				return err //nolint:wrapcheck // shown to the user as is
 			}
@@ -169,7 +168,7 @@ func newApproveCmd(d deps, flags *rootFlags) *cobra.Command {
 					if err := confirm(cmd, d, "Release this memory from quarantine?", yes); err != nil {
 						return err
 					}
-					if err := t.admin.Approve(cmd.Context(), id); err != nil {
+					if err := t.ops.Approve(cmd.Context(), id); err != nil {
 						return err //nolint:wrapcheck // shown to the user as is
 					}
 					p.Success("approved " + id.String())
@@ -210,7 +209,7 @@ func newPurgeCmd(d deps, flags *rootFlags) *cobra.Command {
 				return err
 			}
 			defer t.Close()
-			if err := t.admin.Purge(cmd.Context(), id); err != nil {
+			if err := t.ops.Purge(cmd.Context(), id); err != nil {
 				return err //nolint:wrapcheck // shown to the user as is
 			}
 			p.Success("purged " + id.String())
@@ -239,8 +238,7 @@ func newPruneCmd(d deps, flags *rootFlags) *cobra.Command {
 				return err
 			}
 			defer t.Close()
-			before := time.Now().Add(-time.Duration(t.cfg.Retention.AccessEventsDays) * 24 * time.Hour)
-			n, err := t.admin.Prune(cmd.Context(), before)
+			n, err := t.ops.Prune(cmd.Context())
 			if err != nil {
 				return err //nolint:wrapcheck // shown to the user as is
 			}

@@ -1,0 +1,69 @@
+<div id="profile">
+<h1 class="mb-4 text-xl font-semibold">Profile</h1>
+{{if .Admin}}<p class="mb-4 text-sm text-gray-600">Profile memories apply to every context. Admin is unlocked: you can add, edit, and delete them.</p>
+{{else}}<p class="mb-4 text-sm text-gray-600">Profile memories apply to every context and are read-only here.</p>{{end}}
+{{if .Notice}}<p role="status" class="mb-4 rounded border border-green-200 bg-green-50 p-3 text-green-900">{{.Notice}}</p>{{end}}
+{{if .Error}}<p role="alert" class="mb-4 rounded border border-red-200 bg-red-50 p-3 text-red-900">{{.Error}}</p>{{end}}
+{{if .Rows}}
+<ul class="divide-y divide-gray-200 rounded border border-gray-200">
+  {{range .Rows}}
+  <li class="p-3">
+    <div class="flex flex-wrap items-baseline gap-3">
+      <a href="{{.Href}}" class="font-medium hover:underline">{{.Title}}</a>
+      {{if .Slug}}<span class="font-mono text-sm text-gray-600">{{.Slug}}</span>{{end}}
+      <span class="text-sm text-gray-600">{{.Type}}</span>
+      <span class="rounded bg-gray-100 px-1 text-sm">{{.Status}}</span>
+    </div>
+    <pre class="mt-1 whitespace-pre-wrap break-words text-sm text-gray-700">{{.Content}}</pre>
+    {{if $.Admin}}
+    <details class="mt-2"{{if .Error}} open{{end}}>
+      <summary class="cursor-pointer text-sm underline">Edit</summary>
+      {{if .Error}}<p role="alert" class="my-2 rounded border border-red-200 bg-red-50 p-3 text-red-900">{{.Error}}</p>{{end}}
+      <form method="post" action="{{.UpdateURL}}" hx-post="{{.UpdateURL}}" hx-target="#profile" hx-swap="outerHTML" class="mt-2 flex flex-col gap-3">
+        <input type="hidden" name="csrf" value="{{$.CSRF}}">
+        {{template "profile_fields" .Form}}
+        <div><button type="submit" class="rounded bg-gray-900 px-3 py-1 text-white">Save</button></div>
+      </form>
+    </details>
+    <form method="post" action="{{.DeleteURL}}" hx-post="{{.DeleteURL}}" hx-target="#profile" hx-swap="outerHTML" hx-confirm="Delete this profile memory?" class="mt-2">
+      <input type="hidden" name="csrf" value="{{$.CSRF}}">
+      <button type="submit" class="rounded border border-red-300 px-3 py-1 text-red-800 hover:bg-red-50">Delete</button>
+    </form>
+    {{end}}
+  </li>
+  {{end}}
+</ul>
+{{else}}
+<p class="text-gray-600">No profile memories.</p>
+{{end}}
+{{if .Admin}}
+<section class="mt-6">
+  <h2 class="mb-2 text-lg font-semibold">Add a profile memory</h2>
+  {{if .AddError}}<p role="alert" class="mb-3 rounded border border-red-200 bg-red-50 p-3 text-red-900">{{.AddError}}</p>{{end}}
+  <form method="post" action="{{.AddURL}}" hx-post="{{.AddURL}}" hx-target="#profile" hx-swap="outerHTML" class="flex flex-col gap-3">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    {{template "profile_fields" .Add}}
+    <div><button type="submit" class="rounded bg-gray-900 px-3 py-1 text-white">Add</button></div>
+  </form>
+</section>
+{{end}}
+</div>
+{{define "profile_fields"}}
+<label class="flex flex-col text-sm">Title
+  <input type="text" name="title" value="{{.Title}}" required class="rounded border border-gray-300 px-2 py-1">
+</label>
+<label class="flex flex-col text-sm">Content
+  <textarea name="content" rows="6" required class="rounded border border-gray-300 px-2 py-1 font-mono">{{.Content}}</textarea>
+</label>
+<label class="flex flex-col text-sm">Tags (comma-separated)
+  <input type="text" name="tags" value="{{.Tags}}" class="rounded border border-gray-300 px-2 py-1">
+</label>
+<label class="flex flex-col text-sm">Type
+  <select name="type" class="rounded border border-gray-300 px-2 py-1">
+    {{range .Types}}<option value="{{.}}"{{if eq . $.Type}} selected{{end}}>{{.}}</option>{{end}}
+  </select>
+</label>
+<label class="flex items-center gap-2 text-sm">
+  <input type="checkbox" name="pinned" value="on"{{if .Pinned}} checked{{end}}> Pinned
+</label>
+{{end}}

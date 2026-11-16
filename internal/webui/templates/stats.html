@@ -1,0 +1,20 @@
+<h1 class="mb-4 text-xl font-semibold">Stats</h1>
+<dl class="mb-6 grid grid-cols-3 gap-4">
+  <div class="rounded border border-gray-200 p-3"><dt class="text-sm text-gray-600">Total</dt><dd class="text-2xl font-semibold">{{.Total}}</dd></div>
+  <div class="rounded border border-gray-200 p-3"><dt class="text-sm text-gray-600">Embedded</dt><dd class="text-2xl font-semibold">{{.Embedded}}</dd></div>
+  <div class="rounded border border-gray-200 p-3"><dt class="text-sm text-gray-600">Pending jobs</dt><dd class="text-2xl font-semibold">{{.PendingJobs}}</dd></div>
+</dl>
+<div class="grid gap-6 sm:grid-cols-3">
+  {{range .Groups}}
+  <section>
+    <h2 class="mb-2 text-lg font-semibold">{{.Heading}}</h2>
+    {{if .Rows}}
+    <table class="w-full text-left text-sm">
+      <tbody class="divide-y divide-gray-200">
+        {{range .Rows}}<tr><th scope="row" class="py-1 font-normal">{{.Name}}</th><td class="py-1 text-right">{{.Count}}</td></tr>{{end}}
+      </tbody>
+    </table>
+    {{else}}<p class="text-gray-600">None.</p>{{end}}
+  </section>
+  {{end}}
+</div>

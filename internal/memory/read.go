@@ -150,8 +150,10 @@ type ListRequest struct {
 	Types       []Type
 	Statuses    []Status
 	AllProjects bool
-	Cursor      *uuid.UUID
-	Limit       int
+	// Project overrides the session project and restricts results to it plus context-global memories.
+	Project *string
+	Cursor  *uuid.UUID
+	Limit   int
 }
 
 // ListResponse is one page of memories.
@@ -179,6 +181,9 @@ func (s *Service) List(ctx context.Context, r ListRequest) (ListResponse, error)
 	}
 	f := s.filter()
 	f.Tags, f.Types, f.AllProjects = r.Tags, r.Types, r.AllProjects
+	if r.Project != nil {
+		f.Project, f.AllProjects = r.Project, false
+	}
 	mems, next, err := s.repo.List(ctx, f, statuses, r.Cursor, r.Limit)
 	if err != nil {
 		return ListResponse{}, err //nolint:wrapcheck // repository errors are already contextual
@@ -218,4 +223,19 @@ func (s *Service) Preload(ctx context.Context) ([]Summary, error) {
 		}
 	}
 	return out, nil
+}
+
+// Activity returns a memory's feedback and audit entries, newest first.
+func (s *Service) Activity(ctx context.Context, id uuid.UUID) (Activity, error) {
+	ms, err := s.repo.GetByIDs(ctx, []uuid.UUID{id})
+	if err != nil {
+		return Activity{}, err //nolint:wrapcheck // repository errors are already contextual
+	}
+	switch {
+	case len(ms) == 0:
+		return Activity{}, fmt.Errorf("memory %s: %w", id, ErrNotFound)
+	case ms[0].Status == StatusQuarantined:
+		return Activity{}, fmt.Errorf("memory %s: %w", id, ErrQuarantined)
+	}
+	return s.repo.Activity(ctx, id) //nolint:wrapcheck // repository errors are already contextual
 }

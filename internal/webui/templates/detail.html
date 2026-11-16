@@ -1,0 +1,136 @@
+<div id="memory-detail">
+  <p class="mb-3 text-sm"><a href="{{.ListURL}}" class="underline">Back to memories</a></p>
+  {{if .Notice}}<p role="status" class="mb-4 rounded border border-green-200 bg-green-50 p-3 text-green-900">{{.Notice}}</p>{{end}}
+  {{if .Error}}<p role="alert" class="mb-4 rounded border border-red-200 bg-red-50 p-3 text-red-900">{{.Error}}</p>{{end}}
+  {{if .Quarantined}}
+  <section class="rounded border border-amber-200 bg-amber-50 p-4">
+    <h1 class="text-lg font-semibold text-amber-900">Memory {{.ID}}</h1>
+    <p class="mt-2 text-amber-900">Status: {{.Status}}. Its content is hidden until it is approved (memorable approve or ui --admin).</p>
+  </section>
+  {{else}}
+  <header class="mb-4">
+    <h1 class="text-xl font-semibold">{{.Title}}</h1>
+    <p class="mt-1 text-sm text-gray-600">
+      <span>{{.Type}}</span> · <span>{{.Status}}</span> · <span>{{.Project}}</span> · <span>version {{.Version}}</span>{{if .Slug}} · <span>{{.Slug}}</span>{{end}}{{if .Pinned}} · <span>pinned</span>{{end}}
+    </p>
+    <p class="mt-1 text-sm text-gray-600">{{range .Tags}}<span class="mr-1 rounded bg-gray-100 px-1">{{.}}</span>{{end}}</p>
+    <p class="mt-1 text-sm text-gray-600">Created {{.CreatedAt}}, updated {{.UpdatedAt}}{{if .ExpiresAt}}, expires {{.ExpiresAt}}{{end}}</p>
+    <p class="mt-1 text-sm text-gray-600">{{.Embedding}}</p>
+  </header>
+  <nav aria-label="Memory sections" class="mb-4 flex gap-4 border-b border-gray-200 pb-2 text-sm">
+    <a href="#content" class="hover:underline">Content</a>
+    <a href="#versions" class="hover:underline">Versions</a>
+    <a href="#links" class="hover:underline">Links</a>
+    <a href="#feedback" class="hover:underline">Feedback</a>
+    <a href="#audit" class="hover:underline">Audit</a>
+  </nav>
+  <section id="content" class="mb-6">
+    <h2 class="mb-2 font-semibold">Content</h2>
+    <div class="rounded border border-gray-200 bg-gray-50 p-3"><pre class="whitespace-pre-wrap break-words">{{.Content}}</pre></div>
+    {{if not .ReadOnly}}<div class="mt-3 flex flex-wrap items-center gap-3">
+      <a href="{{.EditURL}}" hx-get="{{.EditURL}}" hx-target="#memory-detail" hx-swap="outerHTML" hx-push-url="true" class="rounded border border-gray-300 px-3 py-1 hover:bg-gray-100">Edit</a>
+      {{if .CanActivate}}<form method="post" action="{{.Base}}/activate" hx-post="{{.Base}}/activate" hx-target="#memory-detail" hx-swap="outerHTML">
+        <input type="hidden" name="csrf" value="{{.CSRF}}">
+        <button type="submit" class="rounded border border-gray-300 px-3 py-1 hover:bg-gray-100">Activate</button>
+      </form>{{end}}
+      {{if .CanDelete}}<form method="post" action="{{.Base}}/delete" hx-post="{{.Base}}/delete" hx-target="#memory-detail" hx-swap="outerHTML" hx-confirm="Delete this memory?">
+        <input type="hidden" name="csrf" value="{{.CSRF}}">
+        <button type="submit" class="rounded border border-red-300 px-3 py-1 text-red-800 hover:bg-red-50">Delete</button>
+      </form>{{end}}
+      {{if .CanRestore}}<form method="post" action="{{.Base}}/restore" hx-post="{{.Base}}/restore" hx-target="#memory-detail" hx-swap="outerHTML">
+        <input type="hidden" name="csrf" value="{{.CSRF}}">
+        <button type="submit" class="rounded border border-gray-300 px-3 py-1 hover:bg-gray-100">Restore</button>
+      </form>{{end}}
+    </div>
+    <form method="post" action="{{.Base}}/supersede" hx-post="{{.Base}}/supersede" hx-target="#memory-detail" hx-swap="outerHTML" class="mt-3 flex flex-wrap items-end gap-2">
+      <input type="hidden" name="csrf" value="{{.CSRF}}">
+      <label class="flex flex-col text-sm">Superseded by (id or slug)
+        <input type="text" name="replacement" required class="rounded border border-gray-300 px-2 py-1">
+      </label>
+      <button type="submit" class="rounded border border-gray-300 px-3 py-1 hover:bg-gray-100">Supersede</button>
+    </form>
+    {{if .CanPurge}}<form method="post" action="{{.Base}}/purge" class="mt-3 flex flex-wrap items-end gap-2">
+      <input type="hidden" name="csrf" value="{{.CSRF}}">
+      <label class="flex flex-col text-sm">Type <span class="font-mono">{{.Confirm}}</span> to purge permanently
+        <input type="text" name="confirm" required autocomplete="off" class="rounded border border-gray-300 px-2 py-1">
+      </label>
+      <button type="submit" class="rounded border border-red-300 px-3 py-1 text-red-800 hover:bg-red-50">Purge</button>
+    </form>{{end}}{{end}}
+  </section>
+  <section id="versions" class="mb-6">
+    <h2 class="mb-2 font-semibold">Versions</h2>
+    {{range .Versions}}
+    <article class="mb-3 rounded border border-gray-200 p-3">
+      <h3 class="text-sm font-semibold">Version {{.Version}}{{if .Current}} (current){{end}}</h3>
+      <p class="text-sm text-gray-600">{{.ChangeKind}} · {{.ChangedAt}} · {{.Type}}</p>
+      {{if .HasDiff}}
+        {{if .DiffNote}}<p class="mt-2 text-sm text-gray-600">{{.DiffNote}}</p>{{else}}
+        <div class="mt-2 text-sm"><pre class="whitespace-pre-wrap break-words">{{range .Diff}}{{if eq .Op "+"}}<span class="block bg-green-50 text-green-900">{{.Prefix}}{{.Text}}</span>{{else if eq .Op "-"}}<span class="block bg-red-50 text-red-900">{{.Prefix}}{{.Text}}</span>{{else}}<span class="block">{{.Prefix}}{{.Text}}</span>{{end}}{{end}}</pre></div>{{end}}
+      {{else}}
+        <div class="mt-2 text-sm"><pre class="whitespace-pre-wrap break-words">{{.Content}}</pre></div>
+      {{end}}
+      {{if and (not .Current) (not $.ReadOnly)}}<form method="post" action="{{$.Base}}/restore" hx-post="{{$.Base}}/restore" hx-target="#memory-detail" hx-swap="outerHTML" class="mt-2">
+        <input type="hidden" name="csrf" value="{{$.CSRF}}">
+        <input type="hidden" name="version" value="{{.Version}}">
+        <button type="submit" class="rounded border border-gray-300 px-2 py-1 text-sm hover:bg-gray-100">Restore this version</button>
+      </form>{{end}}
+    </article>
+    {{else}}<p class="text-sm text-gray-600">No versions recorded.</p>{{end}}
+  </section>
+  <section id="links" class="mb-6">
+    <h2 class="mb-2 font-semibold">Links</h2>
+    <ul class="mb-3">
+      {{range .Links}}<li class="mb-1 flex items-center gap-2 text-sm">
+        <span>{{if .Outgoing}}{{.Kind}} to{{else}}{{.Kind}} from{{end}}</span>
+        <a href="{{.Href}}" class="underline">{{.OtherID}}</a>
+        {{if and .Outgoing (not $.ReadOnly)}}<form method="post" action="{{$.Base}}/unlink" hx-post="{{$.Base}}/unlink" hx-target="#memory-detail" hx-swap="outerHTML">
+          <input type="hidden" name="csrf" value="{{$.CSRF}}">
+          <input type="hidden" name="to" value="{{.OtherID}}">
+          <input type="hidden" name="kind" value="{{.Kind}}">
+          <button type="submit" class="rounded border border-gray-300 px-2 hover:bg-gray-100">Remove</button>
+        </form>{{end}}
+      </li>{{else}}<li class="text-sm text-gray-600">No links.</li>{{end}}
+    </ul>
+    {{if not .ReadOnly}}<form method="post" action="{{.Base}}/link" hx-post="{{.Base}}/link" hx-target="#memory-detail" hx-swap="outerHTML" class="flex flex-wrap items-end gap-2">
+      <input type="hidden" name="csrf" value="{{.CSRF}}">
+      <label class="flex flex-col text-sm">Link to (id or slug)
+        <input type="text" name="to" required class="rounded border border-gray-300 px-2 py-1">
+      </label>
+      <label class="flex flex-col text-sm">Kind
+        <select name="kind" class="rounded border border-gray-300 px-2 py-1">
+          <option value="related">related</option>
+          <option value="supersedes">supersedes</option>
+          <option value="contradicts">contradicts</option>
+        </select>
+      </label>
+      <button type="submit" class="rounded border border-gray-300 px-3 py-1 hover:bg-gray-100">Add link</button>
+    </form>{{end}}
+  </section>
+  <section id="feedback" class="mb-6">
+    <h2 class="mb-2 font-semibold">Feedback</h2>
+    <ul class="mb-3">
+      {{range .Feedback}}<li class="mb-1 text-sm"><span class="font-medium">{{.Kind}}</span> · {{.CreatedAt}}{{if .Project}} · {{.Project}}{{end}}{{if .Note}} · {{.Note}}{{end}}</li>{{else}}<li class="text-sm text-gray-600">No feedback yet.</li>{{end}}
+    </ul>
+    {{if not .ReadOnly}}<form method="post" action="{{.Base}}/feedback" hx-post="{{.Base}}/feedback" hx-target="#memory-detail" hx-swap="outerHTML" class="flex flex-wrap items-end gap-2">
+      <input type="hidden" name="csrf" value="{{.CSRF}}">
+      <label class="flex flex-col text-sm">Verdict
+        <select name="kind" class="rounded border border-gray-300 px-2 py-1">
+          <option value="useful">useful</option>
+          <option value="wrong">wrong</option>
+          <option value="outdated">outdated</option>
+        </select>
+      </label>
+      <label class="flex flex-col text-sm">Note
+        <input type="text" name="note" class="rounded border border-gray-300 px-2 py-1">
+      </label>
+      <button type="submit" class="rounded border border-gray-300 px-3 py-1 hover:bg-gray-100">Send feedback</button>
+    </form>{{end}}
+  </section>
+  <section id="audit" class="mb-6">
+    <h2 class="mb-2 font-semibold">Audit</h2>
+    <ul>
+      {{range .Audit}}<li class="mb-1 text-sm"><span class="font-medium">{{.Action}}</span> · {{.CreatedAt}} · {{.Process}}{{if .Cwd}} · {{.Cwd}}{{end}}{{if .Details}} · {{.Details}}{{end}}</li>{{else}}<li class="text-sm text-gray-600">No audit records.</li>{{end}}
+    </ul>
+  </section>
+  {{end}}
+</div>
