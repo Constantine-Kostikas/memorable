@@ -3,6 +3,7 @@ package backup
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -24,7 +25,10 @@ type Options struct {
 	Keep      int
 }
 
-const prefix = "memorable-"
+const (
+	prefix       = "memorable-"
+	archiveMagic = "PGDMP"
+)
 
 // DefaultDir returns $XDG_DATA_HOME/memorable/backups, or ~/.local/share/memorable/backups.
 func DefaultDir(getenv func(string) string) (string, error) {
@@ -55,17 +59,40 @@ func Backup(ctx context.Context, run Runner, o Options, now time.Time) (string, 
 	}
 	runErr := run(ctx, f, "docker", "exec", o.Container, "pg_dump", "-U", o.User, "-Fc", o.Database)
 	closeErr := f.Close()
-	if runErr != nil || closeErr != nil {
+	if err := errors.Join(wrap("pg_dump", runErr), wrap("writing dump", closeErr)); err != nil {
 		_ = os.Remove(tmp)
-		if runErr != nil {
-			return "", fmt.Errorf("pg_dump: %w", runErr)
-		}
-		return "", fmt.Errorf("writing dump: %w", closeErr)
+		return "", err
+	}
+	// Rotation deletes older dumps, so a dump that cannot be restored must never replace them.
+	if err := checkArchive(tmp); err != nil {
+		_ = os.Remove(tmp)
+		return "", err
 	}
 	if err := os.Rename(tmp, path); err != nil {
 		return "", fmt.Errorf("finishing dump: %w", err)
 	}
 	return path, rotate(o.Dir, o.Keep)
+}
+
+func wrap(op string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("%s: %w", op, err)
+}
+
+// checkArchive confirms path starts with the pg_dump custom-format magic.
+func checkArchive(path string) error {
+	f, err := os.Open(path) //nolint:gosec // path built from our own dir
+	if err != nil {
+		return fmt.Errorf("checking dump: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+	head := make([]byte, len(archiveMagic))
+	if _, err := io.ReadFull(f, head); err != nil || string(head) != archiveMagic {
+		return errors.New("checking dump: output is not a pg_dump archive")
+	}
+	return nil
 }
 
 func rotate(dir string, keep int) error {
