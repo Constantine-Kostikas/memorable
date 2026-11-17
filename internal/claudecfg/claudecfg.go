@@ -23,6 +23,8 @@ const (
 	endMarker   = "<!-- memorable:end -->"
 	// HookCommand is the SessionStart hook command.
 	HookCommand = "memorable hook session-start"
+	// PromptHookCommand is the UserPromptSubmit hook command.
+	PromptHookCommand = "memorable hook prompt-submit"
 )
 
 // Runner runs a command and returns its stdout.
@@ -104,23 +106,40 @@ func MergePermissions(settings []byte, allow, ask, deny []string) ([]byte, error
 
 // AddSessionStartHook registers command as a SessionStart hook unless it already is.
 func AddSessionStartHook(settings []byte, command string) ([]byte, error) {
+	return AddHook(settings, "SessionStart", command)
+}
+
+// AddHook registers command as a hook for event unless it already is.
+func AddHook(settings []byte, event, command string) ([]byte, error) {
 	doc, err := normalizeJSON(settings)
 	if err != nil {
 		return nil, err
 	}
-	for _, entry := range gjson.GetBytes(doc, "hooks.SessionStart").Array() {
-		for _, h := range entry.Get("hooks").Array() {
-			if h.Get("command").String() == command {
-				return pretty.PrettyOptions(doc, &pretty.Options{Indent: "  ", Width: 1}), nil
-			}
-		}
+	if hasHook(doc, event, command) {
+		return pretty.PrettyOptions(doc, &pretty.Options{Indent: "  ", Width: 1}), nil
 	}
 	entry := map[string]any{"hooks": []map[string]string{{"type": "command", "command": command}}}
-	out, err := sjson.SetBytes(doc, "hooks.SessionStart.-1", entry)
+	out, err := sjson.SetBytes(doc, "hooks."+event+".-1", entry)
 	if err != nil {
 		return nil, fmt.Errorf("adding hook: %w", err)
 	}
 	return pretty.PrettyOptions(out, &pretty.Options{Indent: "  ", Width: 1}), nil
+}
+
+// HasHook reports whether settings register command as a hook for event; invalid JSON has no hooks.
+func HasHook(settings []byte, event, command string) bool {
+	return gjson.ValidBytes(settings) && hasHook(settings, event, command)
+}
+
+func hasHook(doc []byte, event, command string) bool {
+	for _, entry := range gjson.GetBytes(doc, "hooks."+event).Array() {
+		for _, h := range entry.Get("hooks").Array() {
+			if h.Get("command").String() == command {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // Change is a planned file edit.

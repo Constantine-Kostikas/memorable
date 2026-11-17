@@ -74,6 +74,25 @@ func TestAddSessionStartHook(t *testing.T) {
 	assert.JSONEq(t, string(out), string(again))
 }
 
+func TestAddHookIdempotent(t *testing.T) {
+	t.Parallel()
+	out, err := AddHook([]byte(`{}`), "UserPromptSubmit", PromptHookCommand)
+	require.NoError(t, err)
+	assert.Equal(t, "memorable hook prompt-submit", gjson.GetBytes(out, "hooks.UserPromptSubmit.0.hooks.0.command").String())
+	again, err := AddHook(out, "UserPromptSubmit", PromptHookCommand)
+	require.NoError(t, err)
+	assert.JSONEq(t, string(out), string(again))
+}
+
+func TestHasHook(t *testing.T) {
+	t.Parallel()
+	out, err := AddHook([]byte(`{}`), "UserPromptSubmit", PromptHookCommand)
+	require.NoError(t, err)
+	assert.True(t, HasHook(out, "UserPromptSubmit", PromptHookCommand))
+	assert.False(t, HasHook(out, "SessionStart", PromptHookCommand))
+	assert.False(t, HasHook([]byte(`not json`), "UserPromptSubmit", PromptHookCommand))
+}
+
 func TestRegisterMCP(t *testing.T) {
 	t.Parallel()
 	var calls [][]string

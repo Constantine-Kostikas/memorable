@@ -52,7 +52,7 @@ func (s *Store) LogGet(ctx context.Context, id uuid.UUID, searchID *uuid.UUID, p
 const sessionShownSQL = `WITH reset AS (
 	SELECT (SELECT id FROM access_events
 		WHERE owner = $1 AND session_id = $2 AND kind = 'preload'
-			AND details->>'hook_source' IN ('startup', 'clear', 'compact')
+			AND details->>'hook_source' IN ('startup', 'clear', 'compact', 'fork')
 		ORDER BY id DESC LIMIT 1) AS id)
 SELECT DISTINCT shown FROM access_events e CROSS JOIN reset CROSS JOIN LATERAL unnest(e.returned_ids) AS shown
 WHERE e.owner = $1 AND e.session_id = $2 AND e.kind IN ('preload', 'inject') AND (reset.id IS NULL OR e.id >= reset.id)`

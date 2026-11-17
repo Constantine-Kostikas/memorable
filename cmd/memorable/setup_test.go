@@ -49,6 +49,7 @@ func TestSetup_DryRunAppliesNothing(t *testing.T) {
 		"memorable-backup.timer",
 		"[contexts.personal]",
 		"Shell completion",
+		"would ask: Also show relevant memories on every prompt",
 		"unrecognized shell",
 		"dry run: nothing was changed",
 	} {

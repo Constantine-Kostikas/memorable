@@ -605,7 +605,7 @@ func (r *Repo) SessionShown(_ context.Context, sessionID string) ([]uuid.UUID, e
 	start := 0
 	for i, l := range r.logged {
 		if l.e.SessionID == sessionID && l.e.Kind == memory.EventPreload &&
-			slices.Contains([]string{"startup", "clear", "compact"}, l.e.Details.HookSource) {
+			slices.Contains([]string{"startup", "clear", "compact", "fork"}, l.e.Details.HookSource) {
 			start = i
 		}
 	}
