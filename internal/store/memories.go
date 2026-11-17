@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -136,7 +137,7 @@ func (s *Store) Update(ctx context.Context, id uuid.UUID, expectedVersion *int, 
 			return fmt.Errorf("memory %s is at version %d, not %d: %w", id, cur.Version, *expectedVersion, memory.ErrConflict)
 		}
 		next := applyPatch(cur, p)
-		textChanged := next.Title != cur.Title || next.Content != cur.Content
+		textChanged := next.Title != cur.Title || next.Content != cur.Content || !slices.Equal(next.Tags, cur.Tags)
 		if hash == nil {
 			hash = memory.ContentHash(next.Title, next.Content)
 		}
@@ -256,7 +257,7 @@ func (s *Store) Restore(ctx context.Context, id uuid.UUID, version *int, a memor
 			if next.Type, err = memory.ParseType(typ); err != nil {
 				return err
 			}
-			textChanged = next.Title != cur.Title || next.Content != cur.Content
+			textChanged = next.Title != cur.Title || next.Content != cur.Content || !slices.Equal(next.Tags, cur.Tags)
 		} else if cur.Status != memory.StatusDeleted {
 			return fmt.Errorf("%w: memory %s is not deleted", memory.ErrValidation, id)
 		}

@@ -492,3 +492,20 @@ func TestCandidatesFTS_MatchesTags(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []uuid.UUID{profileID}, ids(spelling))
 }
+
+func TestClaimJobs_CarriesTags(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f := newFixture(t)
+	m := insertWith(t, f, "Job", "Body", nil, -1)
+	tags := []string{"ci", "go"}
+	updated, err := f.store.Update(ctx, m.ID, nil, memory.Patch{Tags: &tags}, nil, audit("update"))
+	require.NoError(t, err)
+	require.NoError(t, f.store.EnqueueEmbedding(ctx, m.ID, updated.Version))
+
+	jobs, err := f.store.ClaimJobs(ctx, 10, time.Now())
+
+	require.NoError(t, err)
+	require.Len(t, jobs, 1)
+	assert.Equal(t, []string{"ci", "go"}, jobs[0].Tags)
+}

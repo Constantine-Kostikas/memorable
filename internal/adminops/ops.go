@@ -104,7 +104,7 @@ func (o *Ops) ProfileAdd(ctx context.Context, in ProfileInput) (memory.Memory, e
 	}
 	m := memory.Memory{ID: uuid.Must(uuid.NewV7()), Type: in.Type, Title: in.Title, Content: in.Content,
 		Tags: in.Tags, Source: memory.SourceUserStated, Pinned: in.Pinned, ContentHash: memory.ContentHash(in.Title, in.Content)}
-	vec, model := o.embedding(ctx, in.Title, in.Content)
+	vec, model := o.embedding(ctx, in.Title, in.Tags, in.Content)
 	if err := o.admin.ProfileInsert(ctx, &m, vec, model); err != nil {
 		return memory.Memory{}, err //nolint:wrapcheck // shown to the user as is
 	}
@@ -139,8 +139,8 @@ func (o *Ops) ProfileEdit(ctx context.Context, id uuid.UUID, in ProfileInput) (m
 	}
 	var vec []float32
 	model := ""
-	if patch.Title != nil || patch.Content != nil {
-		vec, model = o.embedding(ctx, in.Title, in.Content)
+	if patch.Title != nil || patch.Content != nil || patch.Tags != nil {
+		vec, model = o.embedding(ctx, in.Title, in.Tags, in.Content)
 	}
 	return o.admin.ProfileUpdate(ctx, id, patch, vec, model) //nolint:wrapcheck // shown to the user as is
 }
@@ -171,11 +171,11 @@ func isEmpty(p memory.Patch) bool {
 }
 
 // embedding returns nil when no embedder is configured or it is unavailable: text search still works.
-func (o *Ops) embedding(ctx context.Context, title, content string) ([]float32, string) {
+func (o *Ops) embedding(ctx context.Context, title string, tags []string, content string) ([]float32, string) {
 	if o.emb == nil {
 		return nil, ""
 	}
-	vecs, err := o.emb.Embed(ctx, memory.EmbedDocument, []string{memory.DocumentText(title, content)})
+	vecs, err := o.emb.Embed(ctx, memory.EmbedDocument, []string{memory.DocumentText(title, tags, content)})
 	if err != nil || len(vecs) == 0 {
 		return nil, ""
 	}

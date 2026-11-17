@@ -155,3 +155,30 @@ func TestWorker_StopsOnCancel(t *testing.T) {
 		require.NoError(t, <-errc)
 	})
 }
+
+type recordingEmbedder struct {
+	*memorytest.Embedder
+	texts []string
+}
+
+func (r *recordingEmbedder) Embed(ctx context.Context, kind memory.EmbedKind, texts []string) ([][]float32, error) {
+	r.texts = append(r.texts, texts...)
+	return r.Embedder.Embed(ctx, kind, texts) //nolint:wrapcheck // test double
+}
+
+func TestWorker_EmbedsJobTags(t *testing.T) {
+	t.Parallel()
+	jobs := newFakeJobs(1)
+	for _, j := range jobs.jobs {
+		j.Tags = []string{"ci", "go"}
+	}
+	emb := &recordingEmbedder{Embedder: memorytest.NewEmbedder()}
+	w := New(jobs, jobs, emb, quiet())
+
+	n, err := w.RunOnce(context.Background())
+
+	require.NoError(t, err)
+	require.Equal(t, 1, n)
+	require.Len(t, emb.texts, 1)
+	assert.Contains(t, emb.texts[0], "| tags: ci, go |")
+}

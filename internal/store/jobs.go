@@ -31,7 +31,7 @@ func (s *Store) EnqueueEmbedding(ctx context.Context, id uuid.UUID, version int)
 func (s *Store) ClaimJobs(ctx context.Context, n int, now time.Time) ([]memory.Job, error) {
 	var jobs []memory.Job
 	err := s.withTx(ctx, func(tx pgx.Tx) error {
-		rows, err := tx.Query(ctx, `SELECT j.memory_id, j.target_version, j.attempts, v.title, v.content
+		rows, err := tx.Query(ctx, `SELECT j.memory_id, j.target_version, j.attempts, v.title, v.tags, v.content
 			FROM embedding_jobs j JOIN memory_versions v ON v.memory_id = j.memory_id AND v.version = j.target_version
 			WHERE j.done_at IS NULL AND j.next_attempt_at <= $1
 			ORDER BY j.next_attempt_at LIMIT $2 FOR UPDATE OF j SKIP LOCKED`, now, n)
@@ -40,7 +40,7 @@ func (s *Store) ClaimJobs(ctx context.Context, n int, now time.Time) ([]memory.J
 		}
 		jobs, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (memory.Job, error) {
 			var j memory.Job
-			err := r.Scan(&j.MemoryID, &j.Version, &j.Attempts, &j.Title, &j.Content)
+			err := r.Scan(&j.MemoryID, &j.Version, &j.Attempts, &j.Title, &j.Tags, &j.Content)
 			return j, err //nolint:wrapcheck // wrapped by mapErr below
 		})
 		if err != nil {

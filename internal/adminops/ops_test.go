@@ -282,3 +282,18 @@ func TestProfileEditNormalizesTags(t *testing.T) {
 	require.NoError(t, err)
 	assert.Zero(t, fa.updateCalls, "a differently cased tag is not a change")
 }
+
+func TestProfileEdit_TagChangeReembeds(t *testing.T) {
+	t.Parallel()
+	id := uuid.New()
+	cur := memory.Memory{ID: id, Title: "Spelling", Content: "Use US spelling.", Tags: []string{"style"}, Type: memory.TypeUser, Pinned: true}
+	fa := &fakeAdmin{profile: []memory.Memory{cur}}
+	ops := adminops.New(fa, &fakeEmbedder{}, newScanner(t), 90, time.Now)
+
+	in := validInput()
+	in.Tags = []string{"style", "writing"}
+	_, err := ops.ProfileEdit(context.Background(), id, in)
+
+	require.NoError(t, err)
+	assert.NotNil(t, fa.updatedVec)
+}

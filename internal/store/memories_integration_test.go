@@ -376,3 +376,45 @@ func TestStoreProfileListAppRole(t *testing.T) {
 	assert.Equal(t, "Style", got[0].Title)
 	assert.Equal(t, memory.ScopeProfile, got[0].Scope)
 }
+
+func TestUpdate_ClearsEmbeddingOnTagChange(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f := newFixture(t)
+	m := newMem("t", "c")
+	require.NoError(t, f.store.Insert(ctx, m, audit("create")))
+	require.NoError(t, f.store.SetEmbedding(ctx, m.ID, 1, unitVec(768, 1), "embeddinggemma"))
+
+	tags := []string{"db"}
+	_, err := f.store.Update(ctx, m.ID, nil, memory.Patch{Tags: &tags}, nil, audit("update"))
+	require.NoError(t, err)
+	var has bool
+	require.NoError(t, f.admin.QueryRow(ctx, "SELECT embedding IS NOT NULL FROM mem_personal.memories WHERE id=$1", m.ID).Scan(&has))
+	assert.True(t, has, "the same tags keep the embedding")
+
+	tags = []string{"db", "infra"}
+	_, err = f.store.Update(ctx, m.ID, nil, memory.Patch{Tags: &tags}, nil, audit("update"))
+	require.NoError(t, err)
+	require.NoError(t, f.admin.QueryRow(ctx, "SELECT embedding IS NOT NULL FROM mem_personal.memories WHERE id=$1", m.ID).Scan(&has))
+	assert.False(t, has, "a tag change clears the embedding")
+}
+
+func TestRestore_VersionWithDifferentTagsClearsEmbedding(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f := newFixture(t)
+	m := newMem("t", "c")
+	require.NoError(t, f.store.Insert(ctx, m, audit("create")))
+	tags := []string{"infra"}
+	_, err := f.store.Update(ctx, m.ID, nil, memory.Patch{Tags: &tags}, nil, audit("update"))
+	require.NoError(t, err)
+	require.NoError(t, f.store.SetEmbedding(ctx, m.ID, 2, unitVec(768, 1), "embeddinggemma"))
+
+	one := 1
+	_, err = f.store.Restore(ctx, m.ID, &one, audit("restore"))
+	require.NoError(t, err)
+
+	var has bool
+	require.NoError(t, f.admin.QueryRow(ctx, "SELECT embedding IS NOT NULL FROM mem_personal.memories WHERE id=$1", m.ID).Scan(&has))
+	assert.False(t, has, "restoring different tags clears the embedding")
+}

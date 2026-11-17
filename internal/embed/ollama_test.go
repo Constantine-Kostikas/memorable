@@ -71,7 +71,7 @@ func TestEmbed_RequestShape(t *testing.T) {
 	assert.Equal(t, "embeddinggemma", req.Model)
 	assert.Equal(t, []string{"task: search result | query: postgres port"}, req.Input)
 
-	doc := memory.DocumentText("Ports", "5434")
+	doc := memory.DocumentText("Ports", nil, "5434")
 	_, err = o.Embed(context.Background(), memory.EmbedDocument, []string{doc})
 	require.NoError(t, err)
 	assert.Equal(t, []string{"title: Ports | text: 5434"}, (<-seen).Input)

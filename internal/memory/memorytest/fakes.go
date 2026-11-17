@@ -820,7 +820,7 @@ func (r *Repo) ClaimJobs(_ context.Context, n int, _ time.Time) ([]memory.Job, e
 		}
 		for _, v := range r.versions[id] {
 			if v.Version == j.Version {
-				j.Title, j.Content = v.Title, v.Content
+				j.Title, j.Tags, j.Content = v.Title, v.Tags, v.Content
 			}
 		}
 		out = append(out, *j)
@@ -881,7 +881,7 @@ func (e *Embedder) Embed(_ context.Context, _ memory.EmbedKind, texts []string) 
 		}
 		v := make([]float32, e.Dims)
 		for _, w := range words(t) {
-			if w == "title" || w == "text" {
+			if w == "title" || w == "tags" || w == "text" {
 				continue
 			}
 			h := fnv.New32a()

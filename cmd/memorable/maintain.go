@@ -413,7 +413,7 @@ func reembedProfile(ctx context.Context, admin *store.Admin, emb memory.Embedder
 		return err //nolint:wrapcheck // shown to the user as is
 	}
 	for _, m := range mems {
-		vecs, err := emb.Embed(ctx, memory.EmbedDocument, []string{memory.DocumentText(m.Title, m.Content)})
+		vecs, err := emb.Embed(ctx, memory.EmbedDocument, []string{memory.DocumentText(m.Title, m.Tags, m.Content)})
 		if err != nil {
 			return err //nolint:wrapcheck // shown to the user as is
 		}

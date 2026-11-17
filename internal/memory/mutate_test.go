@@ -249,3 +249,53 @@ func TestUpdate_NormalizesTags(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []string{"infra", "web-ui"}, got.Tags)
 }
+
+func TestUpdate_TagsOnlyReembeds(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, nil)
+	m := created(t, e, note("Ports", "postgres on 5433"))
+	before := e.repo.Vector(m.ID)
+	calls := e.emb.Calls
+
+	tags := []string{"infra"}
+	_, err := e.svc.Update(context.Background(), m.ID, nil, memory.Patch{Tags: &tags})
+	require.NoError(t, err)
+
+	assert.Equal(t, calls+1, e.emb.Calls)
+	assert.NotEqual(t, before, e.repo.Vector(m.ID))
+}
+
+func TestUpdate_UnchangedTagsDoNotReembed(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, nil)
+	n := note("Ports", "postgres on 5433")
+	n.Tags = []string{"infra"}
+	m := created(t, e, n)
+	calls := e.emb.Calls
+
+	tags := []string{"Infra"}
+	pinned := true
+	_, err := e.svc.Update(context.Background(), m.ID, nil, memory.Patch{Tags: &tags, Pinned: &pinned})
+	require.NoError(t, err)
+
+	assert.Equal(t, calls, e.emb.Calls)
+}
+
+func TestRestore_VersionWithDifferentTagsReembeds(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, nil)
+	n := note("Ports", "postgres on 5433")
+	n.Tags = []string{"infra"}
+	m := created(t, e, n)
+	original := e.repo.Vector(m.ID)
+	tags := []string{"database"}
+	_, err := e.svc.Update(context.Background(), m.ID, nil, memory.Patch{Tags: &tags})
+	require.NoError(t, err)
+	require.NotEqual(t, original, e.repo.Vector(m.ID))
+
+	one := 1
+	_, err = e.svc.Restore(context.Background(), m.ID, &one)
+	require.NoError(t, err)
+
+	assert.Equal(t, original, e.repo.Vector(m.ID), "the restored tags are embedded again")
+}

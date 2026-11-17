@@ -108,7 +108,7 @@ func (s *Service) writeOne(ctx context.Context, n NewMemory) (WriteResult, error
 		return WriteResult{Outcome: OutcomeDuplicate, Memory: existing, Reason: "identical memory exists"}, nil
 	}
 
-	vec, embedErr := s.embedOne(ctx, EmbedDocument, DocumentText(m.Title, m.Content))
+	vec, embedErr := s.embedOne(ctx, EmbedDocument, DocumentText(m.Title, m.Tags, m.Content))
 	res, done, err := s.checkSimilar(ctx, n, m, vec, embedErr == nil)
 	if err != nil || done {
 		return res, err

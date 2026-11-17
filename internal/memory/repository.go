@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -132,6 +133,7 @@ type Job struct {
 	Version  int
 	Attempts int
 	Title    string
+	Tags     []string
 	Content  string
 }
 
@@ -160,7 +162,11 @@ type Embedder interface {
 	Dimensions() int
 }
 
-// DocumentText formats a memory for document embedding.
-func DocumentText(title, content string) string {
-	return "title: " + title + " | text: " + content
+// DocumentText formats a memory for document embedding. The tags segment is omitted when there are
+// no tags, so untagged memories keep their original text.
+func DocumentText(title string, tags []string, content string) string {
+	if len(tags) == 0 {
+		return "title: " + title + " | text: " + content
+	}
+	return "title: " + title + " | tags: " + strings.Join(tags, ", ") + " | text: " + content
 }
