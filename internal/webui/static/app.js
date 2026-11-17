@@ -308,7 +308,8 @@
     openSectionFold(hashSection());
   }
 
-  // Section folds: each detail section collapses on its heading; the collapsed set persists across selections and reloads.
+  // Section folds: a heading button collapses its section. Only heading clicks change the stored collapsed set;
+  // opening a section for a link, a validation error, find-in-page, or the expanded editor is not a preference.
 
   var COLLAPSED_KEY = 'memorable.collapsed';
 
@@ -321,10 +322,14 @@
     }
   }
 
-  function storeCollapsed(collapsed) {
+  function storeCollapsed(name, collapsed) {
+    var names = storedCollapsed().filter(function (other) { return other !== name; });
+    if (collapsed) {
+      names.push(name);
+    }
     try {
-      if (collapsed.length) {
-        window.localStorage.setItem(COLLAPSED_KEY, JSON.stringify(collapsed));
+      if (names.length) {
+        window.localStorage.setItem(COLLAPSED_KEY, JSON.stringify(names));
       } else {
         window.localStorage.removeItem(COLLAPSED_KEY);
       }
@@ -333,50 +338,66 @@
     }
   }
 
-  function openFold(fold) {
-    if (fold && !fold.open) {
-      fold.open = true;
+  function setFoldOpen(fold, open) {
+    var button = fold && fold.querySelector('[data-section-toggle]');
+    var body = fold && fold.querySelector('[data-section-body]');
+    if (!button || !body) {
+      return;
+    }
+    button.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) {
+      body.removeAttribute('hidden');
+    } else {
+      body.setAttribute('hidden', 'until-found');
     }
   }
 
+  function isFoldOpen(fold) {
+    var body = fold.querySelector('[data-section-body]');
+    return !!body && !body.hasAttribute('hidden');
+  }
+
   function openSectionFold(section) {
-    if (SECTIONS.indexOf(section) === -1) {
-      return;
+    if (SECTIONS.indexOf(section) !== -1) {
+      setFoldOpen(document.querySelector('[data-section-fold="' + section + '"]'), true);
     }
-    var target = document.getElementById(section);
-    openFold(target && target.querySelector('[data-section-fold]'));
+  }
+
+  function isForcedOpen(name) {
+    return name === hashSection() || (name === 'content' && isExpanded());
   }
 
   function bindSectionFolds(root) {
     var collapsed = storedCollapsed();
-    var linked = hashSection();
     each(root, '[data-section-fold]', function (fold) {
       var name = fold.getAttribute('data-section-fold');
-      var forcedOpen = name === linked || (name === 'content' && isExpanded());
-      if (collapsed.indexOf(name) !== -1 && !forcedOpen) {
-        fold.open = false;
+      if (collapsed.indexOf(name) !== -1 && !isForcedOpen(name)) {
+        setFoldOpen(fold, false);
       }
     });
   }
 
-  // toggle does not bubble; the capture phase still sees it.
-  function onSectionFoldToggle(evt) {
-    var fold = evt.target;
-    if (!fold || !fold.hasAttribute || !fold.hasAttribute('data-section-fold')) {
+  function onSectionToggle(evt) {
+    var button = evt.target && evt.target.closest && evt.target.closest('[data-section-toggle]');
+    var fold = button && button.closest('[data-section-fold]');
+    if (!fold) {
       return;
     }
     var name = fold.getAttribute('data-section-fold');
-    var collapsed = storedCollapsed().filter(function (other) { return other !== name; });
-    if (!fold.open) {
-      collapsed.push(name);
+    if (name === 'content' && isExpanded()) {
+      return;
     }
-    storeCollapsed(collapsed);
+    var open = !isFoldOpen(fold);
+    setFoldOpen(fold, open);
+    storeCollapsed(name, !open);
   }
 
-  // A required field inside a collapsed section cannot show its validation message: open the section first.
-  function onInvalidInFold(evt) {
+  // invalid and beforematch do not bubble; the capture phase still sees them.
+  function openEnclosingFold(evt) {
     var fold = evt.target && evt.target.closest && evt.target.closest('[data-section-fold]');
-    openFold(fold);
+    if (fold && !isFoldOpen(fold)) {
+      setFoldOpen(fold, true);
+    }
   }
 
   // Toasts: dismiss on click; notices leave after five seconds, errors stay until dismissed.
@@ -1264,6 +1285,7 @@
     if (!content || content.disabled) {
       return false;
     }
+    openSectionFold('content');
     content.focus();
     return true;
   }
@@ -1354,8 +1376,9 @@
   document.addEventListener('click', ignoreCleanDiscard, true);
   document.addEventListener('click', onExpandClick);
   document.addEventListener('click', onSectionClick);
-  document.addEventListener('toggle', onSectionFoldToggle, true);
-  document.addEventListener('invalid', onInvalidInFold, true);
+  document.addEventListener('click', onSectionToggle);
+  document.addEventListener('invalid', openEnclosingFold, true);
+  document.addEventListener('beforematch', openEnclosingFold, true);
   document.addEventListener('click', onToastDismiss);
   document.addEventListener('keydown', saveShortcut);
   document.addEventListener('keydown', expandShortcut);

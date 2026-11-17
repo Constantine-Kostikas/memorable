@@ -34,11 +34,10 @@
       <a href="#links" class="pb-2 hover:underline">Links {{len .Links}}</a>
       <a href="#activity" class="pb-2 hover:underline">Activity</a>
     </nav>
-    <section id="content">
-      <details open data-section-fold="content" class="section-fold">
-      <summary class="section-heading"><h2>Content</h2></summary>
-      <div class="section-body" data-section-body>
+    <section id="content" data-section-fold="content">
+      <h2 class="section-heading"><button type="button" class="section-toggle" data-section-toggle aria-expanded="true" aria-controls="content-body">Content</button></h2>
       {{if .FormError}}<p role="alert" class="mb-3 notice-danger p-3">{{.FormError}}{{if .Conflict}} <a href="#versions" class="underline">Load latest version</a> to compare, or <a href="{{.Base}}{{.FilterQuery}}" hx-get="{{.Base}}{{.FilterQuery}}" hx-target="#detail-pane" hx-swap="outerHTML" class="underline">discard your changes and reload</a>.{{end}}</p>{{end}}
+      <div id="content-body" data-section-body>
       <label for="memory-content" class="sr-only">Content</label>
       <textarea id="memory-content" name="content" rows="14" data-original="{{.Stored.Content}}" required class="field sheet-ruled block w-full resize-y"{{if not .Editable}} disabled{{end}}>
 {{.Form.Content}}</textarea>
@@ -71,7 +70,6 @@
         </label>
       </div>
       </div>
-      </details>
     </section>
   </form>
   <div class="mt-3 flex flex-wrap items-start gap-2" data-primary-actions>
@@ -119,10 +117,9 @@
       </div>
     </details>{{end}}
   </div>
-  <section id="versions" class="mt-6">
-    <details open data-section-fold="versions" class="section-fold">
-      <summary class="section-heading"><h2>Versions <span class="section-count">{{len .Versions}}</span></h2></summary>
-      <div class="section-body" data-section-body>
+  <section id="versions" class="mt-6" data-section-fold="versions">
+    <h2 class="section-heading"><button type="button" class="section-toggle" data-section-toggle aria-expanded="true" aria-controls="versions-body">Versions <span class="section-count"><span class="sr-only">(</span>{{len .Versions}}<span class="sr-only">)</span></span></button></h2>
+      <div id="versions-body" data-section-body>
     {{range .Versions}}
     <article class="mb-3 rounded-md border border-line bg-sheet p-3">
       <h3 class="text-body font-bold">Version {{.Version}}{{if .Current}} (current){{end}}</h3>
@@ -141,12 +138,10 @@
     </article>
     {{else}}<p class="text-meta text-ink-muted">No versions recorded.</p>{{end}}
       </div>
-    </details>
   </section>
-  <section id="links" class="mt-6">
-    <details open data-section-fold="links" class="section-fold">
-      <summary class="section-heading"><h2>Links <span class="section-count">{{len .Links}}</span></h2></summary>
-      <div class="section-body" data-section-body>
+  <section id="links" class="mt-6" data-section-fold="links">
+    <h2 class="section-heading"><button type="button" class="section-toggle" data-section-toggle aria-expanded="true" aria-controls="links-body">Links <span class="section-count"><span class="sr-only">(</span>{{len .Links}}<span class="sr-only">)</span></span></button></h2>
+      <div id="links-body" data-section-body>
     <ul class="mb-3">
       {{range .Links}}<li class="mb-1 flex items-center gap-2 text-body">
         <span>{{if .Outgoing}}{{.Kind}} to{{else}}{{.Kind}} from{{end}}</span>
@@ -176,12 +171,10 @@
       <button type="submit" class="btn">Add link</button>
     </form>{{end}}
       </div>
-    </details>
   </section>
-  <section id="activity" class="mt-6">
-    <details open data-section-fold="activity" class="section-fold">
-      <summary class="section-heading"><h2>Activity <span class="section-count">{{len .Activity}}</span></h2></summary>
-      <div class="section-body" data-section-body>
+  <section id="activity" class="mt-6" data-section-fold="activity">
+    <h2 class="section-heading"><button type="button" class="section-toggle" data-section-toggle aria-expanded="true" aria-controls="activity-body">Activity <span class="section-count"><span class="sr-only">(</span>{{len .Activity}}<span class="sr-only">)</span></span></button></h2>
+      <div id="activity-body" data-section-body>
     <ul>
       {{range .Activity}}<li class="mb-1 text-body"><span class="font-bold">{{.Kind}}</span> · {{.When}} · {{.Summary}}</li>{{else}}<li class="text-meta text-ink-muted">No activity recorded.</li>{{end}}
     </ul>
@@ -196,7 +189,6 @@
       </form>
     </div>{{end}}
       </div>
-    </details>
   </section>
   {{end}}
 </section>
