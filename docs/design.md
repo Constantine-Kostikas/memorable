@@ -127,6 +127,7 @@ unset PGPW
 A context is the hard isolation boundary. Each context has its own schema `mem_<context>`.
 
 - The server resolves the context once at startup and sets `search_path` on every pooled connection (`AfterConnect`). No tool parameter can choose a context.
+- Every pooled session also sets `statement_timeout = 30s`, `lock_timeout = 5s`, and `idle_in_transaction_session_timeout = 60s`, so a stuck query or held lock cannot exhaust the 4-connection pool. Timeouts surface as `ErrUnavailable`. Migrations use their own connection and are not bounded.
 - Resolution order: MCP client roots, then process working directory, then path-prefix match in config.
 - **Unmatched directory:** writes are refused with `ErrReadOnly`. Reads use `fallback_context` if configured (read-only); otherwise every tool returns a clear "no context for this directory" error that names `memorable context add`.
 - Author's machine: one context, `personal` = `~/development/projects`, `~/development/OBSIDIAN`; `fallback_context = "personal"`. Colleagues: `fallback_context` unset by default.
@@ -290,7 +291,7 @@ Sentinel errors in `memory`: `ErrNotFound`, `ErrConflict`, `ErrValidation`, `Err
 
 ### Preload (hook and `memorable://top`)
 
-Pinned first, then highest `rank_key` among `active` memories whose source is not `tool_output`, across current project, context-global, and profile. Budget: 10 items, 4,000 characters. Titles, slugs, and snippets only. One extra line, `Tags in use: a (12), b (7)`, lists the top 20 tags by count; it sits outside the character budget and is omitted when no tags exist.
+Pinned first, then highest `rank_key` among `active` memories whose source is not `tool_output`, across current project, context-global, and profile. Budget: 10 items, 4,000 characters. Titles, slugs, and snippets only. One extra line, `Tags in use: a (12), b (7)`, lists the top 20 tags by count; it sits outside the character budget and is omitted when no tags exist. The SessionStart hook bounds all of its work with a 3-second deadline and prints nothing on any failure, so a stopped database delays session start by seconds at most.
 
 ### Embedding worker
 
@@ -316,7 +317,7 @@ Primary: memory poisoning and secret leakage. Secondary: context leakage, destru
 | SQL injection | Parameterized queries only; `websearch_to_tsquery`; identifiers via `pgx.Identifier`. |
 | Runaway agent | Content 2,000 chars, title 120, 10 tags, batch 20, query 500 chars, k 20, 60 writes per minute per process. |
 | Forensics | Append-only audit log with content hashes. |
-| Dependencies | Minimal set, pinned; `govulncheck` and `gosec` via `tool` directives and CI. |
+| Dependencies | Minimal set, pinned; `govulncheck` and `gosec` via `tool` directives and CI. GitHub Actions pinned by commit SHA; Dependabot opens weekly update PRs for Go modules and Actions. |
 | Web UI: other local processes | `memorable ui` binds `127.0.0.1` only, on a random free port by default. A per-launch 256-bit single-use token in the launch URL is exchanged for an `HttpOnly`, `SameSite=Strict` session cookie. The browser is opened on a 0600 redirect file in a private 0700 temp directory, so the token never appears in a process argument list. |
 | Web UI: cross-site and rebinding | State changes are POST with a per-session CSRF token; cross-origin requests are refused (`Origin` and `Sec-Fetch-Site`); a `Host` other than `127.0.0.1:<port>` or `localhost:<port>` gets 421. |
 | Web UI: script injection | Memory content renders only as escaped text. `Content-Security-Policy: default-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`. htmx, app.js, fonts, and Tailwind CSS are embedded: no CDN, no Node at build or runtime. |
@@ -366,7 +367,7 @@ Imperatives aimed at the agent ("ignore previous", "you must always", "system pr
 | `memorable profile add/edit/list/delete` | Manage profile memories (admin) |
 | `memorable prune` | Apply retention (admin) |
 | `memorable reembed [--pending] [--all]` | Process jobs or re-embed after a model change; handles dimension changes |
-| `memorable backup` | `pg_dump -Fc` inside the container; keeps the last 14 in `~/.local/share/memorable/backups` |
+| `memorable backup` | `pg_dump -Fc` inside the container; keeps the last 14 in `~/.local/share/memorable/backups`. A dump that does not start with the custom-format header is discarded before rotation, so a failed dump never deletes a good one |
 | `memorable export [--format json or md]` / `import <path>` | Portable export; import JSON or Claude Code `memory/*.md` files with full scanning |
 | `memorable hook session-start` | Reads hook JSON on stdin; prints the preload set |
 | `memorable stats` | Counts per status, type, project; embedding coverage |
@@ -452,10 +453,11 @@ backups_keep = 14
 ## 12. Testing
 
 - **Unit** (default `go test`, no Docker): scope resolution, scanners, RRF and boost math, decay and `rank_key` ordering, validation, config, CLI rendering in TTY and plain modes.
-- **Fuzz:** scanners, slug and tag validation, config parsing.
+- **Fuzz:** scanners, slug and tag validation, config loading, and both import parsers (JSON export and Markdown front matter).
 - **Time:** decay and backoff with `testing/synctest`.
-- **Goroutines:** `goleak.VerifyTestMain` in worker and mcpserver packages.
-- **Integration** (`//go:build integration`): testcontainers with the same pgvector image; every MCP tool, status transitions, grants (app role cannot DELETE or write profile), context isolation, migrations up from empty and from the previous version, `EXPLAIN` index usage on 10,000 seeded rows.
+- **Goroutines:** `goleak.VerifyTestMain` in the worker, mcpserver, and webui packages; `goleak.VerifyNone` around the `memorable ui` shutdown test.
+- **Panics:** an MCP receiving middleware recovers handler panics, logs the stack, and returns `internal error`, so one bad request cannot end the `serve` session.
+- **Integration** (`//go:build integration`): testcontainers with the same pgvector image; every MCP tool, status transitions, grants (app role cannot DELETE or write profile), context isolation, migrations up from empty and from the previous version, `EXPLAIN` index usage on 10,000 seeded rows, session timeouts, and a backup restored into a fresh database.
 - **MCP end-to-end:** go-sdk in-memory transport; output wrapping; quarantined content never appears.
 - **Search evaluation** (`//go:build eval`): about 50 synthetic memories and 100 queries authored by Claude, real cases added later; runs against real Ollama; reports recall@5 and MRR; compares `embeddinggemma` and `qwen3-embedding:0.6b` before the default is frozen.
 
