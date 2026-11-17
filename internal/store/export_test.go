@@ -36,3 +36,10 @@ func (s *Store) Explain(ctx context.Context, sql string, args []any, noSeqScan b
 	b, err := json.Marshal(plan)
 	return string(b), err
 }
+
+// Setting returns a run-time parameter as the store's own sessions see it.
+func (s *Store) Setting(ctx context.Context, name string) (string, error) {
+	var v string
+	err := s.pool.QueryRow(ctx, "SELECT current_setting($1)", name).Scan(&v)
+	return v, err
+}

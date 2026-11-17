@@ -418,3 +418,31 @@ func TestRestore_VersionWithDifferentTagsClearsEmbedding(t *testing.T) {
 	require.NoError(t, f.admin.QueryRow(ctx, "SELECT embedding IS NOT NULL FROM mem_personal.memories WHERE id=$1", m.ID).Scan(&has))
 	assert.False(t, has, "restoring different tags clears the embedding")
 }
+
+func TestOpen_BoundsStatementsAndLocks(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f := newFixture(t)
+	for name, want := range map[string]string{
+		"statement_timeout":                   "30s",
+		"lock_timeout":                        "5s",
+		"idle_in_transaction_session_timeout": "1min",
+	} {
+		got, err := f.store.Setting(ctx, name)
+		require.NoError(t, err)
+		assert.Equal(t, want, got, name)
+	}
+}
+
+func TestInsert_LockTimeoutIsUnavailable(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f := newFixture(t)
+	tx, err := f.admin.Begin(ctx)
+	require.NoError(t, err)
+	defer func() { _ = tx.Rollback(ctx) }()
+	_, err = tx.Exec(ctx, "LOCK TABLE mem_personal.memories IN ACCESS EXCLUSIVE MODE")
+	require.NoError(t, err)
+	err = f.store.Insert(ctx, newMem("locked", "locked"), audit("create"))
+	require.ErrorIs(t, err, memory.ErrUnavailable)
+}
