@@ -306,7 +306,7 @@ func searchTool(ctx context.Context, svc *memory.Service, in searchInput) (strin
 		return "", err
 	}
 	res, err := svc.Search(ctx, memory.SearchRequest{Query: in.Query, K: in.K, Tags: in.Tags, TagsAny: in.TagsAny, Types: types,
-		AllProjects: in.AllProjects, IncludeFlagged: in.IncludeFlagged, IncludeSuperseded: in.IncludeSuperseded})
+		AllProjects: in.AllProjects, IncludeFlagged: in.IncludeFlagged, IncludeSuperseded: in.IncludeSuperseded, Origin: memory.OriginMCP})
 	if err != nil {
 		return "", err //nolint:wrapcheck // mapped at the boundary
 	}

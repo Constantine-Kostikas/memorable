@@ -58,7 +58,7 @@ func newSearchCmd(d deps, flags *rootFlags) *cobra.Command {
 				return err
 			}
 			return withApp(cmd, d, flags, func(ctx context.Context, a *app) error {
-				res, err := a.svc.Search(ctx, memory.SearchRequest{Query: strings.Join(args, " "), K: k, Tags: tags, TagsAny: tagsAny, Types: typ, AllProjects: all})
+				res, err := a.svc.Search(ctx, memory.SearchRequest{Query: strings.Join(args, " "), K: k, Tags: tags, TagsAny: tagsAny, Types: typ, AllProjects: all, Origin: memory.OriginCLI})
 				if err != nil {
 					return err //nolint:wrapcheck // shown to the user as is
 				}

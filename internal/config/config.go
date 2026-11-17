@@ -21,6 +21,17 @@ type Config struct {
 	Preload         Preload            `toml:"preload"`
 	Limits          Limits             `toml:"limits"`
 	Retention       Retention          `toml:"retention"`
+	Recall          Recall             `toml:"recall"`
+}
+
+// Recall controls the UserPromptSubmit hook that adds relevant memories to each prompt.
+type Recall struct {
+	// MinRelevance is the calibrated relevance, between 0 and 1, a memory needs to be shown.
+	MinRelevance float64 `toml:"min_relevance"`
+	MaxItems     int     `toml:"max_items"`
+	// MinWords skips prompts shorter than this many words.
+	MinWords   int `toml:"min_words"`
+	DeadlineMS int `toml:"deadline_ms"`
 }
 
 // Database holds Postgres connection settings.
@@ -89,6 +100,7 @@ func Default() Config {
 		Preload:   Preload{MaxItems: 10, MaxChars: 4000},
 		Limits:    Limits{WritesPerMinute: 60},
 		Retention: Retention{AccessEventsDays: 90, BackupsKeep: 14},
+		Recall:    Recall{MinRelevance: 0.70, MaxItems: 3, MinWords: 3, DeadlineMS: 1500},
 	}
 }
 
@@ -148,10 +160,28 @@ func (c *Config) Validate() error {
 		c.Retention.AccessEventsDays <= 0 || c.Retention.BackupsKeep <= 0 {
 		errs = append(errs, errors.New("half_life_days, preload, limits, and retention values must be positive"))
 	}
+	errs = append(errs, c.Recall.validate()...)
 	if err := errors.Join(errs...); err != nil {
 		return fmt.Errorf("invalid config: %w", err)
 	}
 	return nil
+}
+
+func (r Recall) validate() []error {
+	var errs []error
+	if r.MinRelevance <= 0 || r.MinRelevance >= 1 {
+		errs = append(errs, errors.New("recall min_relevance must be between 0 and 1"))
+	}
+	if r.MaxItems < 1 || r.MaxItems > 10 {
+		errs = append(errs, errors.New("recall max_items must be between 1 and 10"))
+	}
+	if r.MinWords < 1 {
+		errs = append(errs, errors.New("recall min_words must be at least 1"))
+	}
+	if r.DeadlineMS < 200 || r.DeadlineMS > 5000 {
+		errs = append(errs, errors.New("recall deadline_ms must be between 200 and 5000"))
+	}
+	return errs
 }
 
 // CheckEmbeddingURL rejects non-local embedding URLs unless remote use is allowed.
