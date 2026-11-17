@@ -472,3 +472,62 @@ func TestList_ReturnsRowUpdatedAt(t *testing.T) {
 	require.Len(t, got, 1)
 	assert.True(t, want.Equal(got[0].UpdatedAt), "got %s", got[0].UpdatedAt)
 }
+
+func TestCandidatesFTS_MatchesTags(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f := newFixture(t)
+	tagged := insertWith(t, f, "Workflow notes", "GitHub Actions runs lint first", func(m *memory.Memory) { m.Tags = []string{"ci"} }, -1)
+	profileID := uuid.Must(uuid.NewV7())
+	_, err := f.admin.Exec(ctx, `INSERT INTO mem_profile.memories (id, owner, type, title, content, tags, source, status, content_hash)
+		VALUES ($1, 'dev', 'user', 'Writing habits', 'prefers short sentences', '{spelling}', 'user_stated', 'active', '\x00')`, profileID)
+	require.NoError(t, err)
+	filter := memory.Filter{Owner: "dev", Now: time.Now()}
+
+	ci, err := f.store.CandidatesFTS(ctx, "ci", filter, 10)
+	require.NoError(t, err)
+	assert.Equal(t, []uuid.UUID{tagged.ID}, ids(ci))
+
+	spelling, err := f.store.CandidatesFTS(ctx, "spelling", filter, 10)
+	require.NoError(t, err)
+	assert.Equal(t, []uuid.UUID{profileID}, ids(spelling))
+}
+
+func TestClaimJobs_CarriesTags(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f := newFixture(t)
+	m := insertWith(t, f, "Job", "Body", nil, -1)
+	tags := []string{"ci", "go"}
+	updated, err := f.store.Update(ctx, m.ID, nil, memory.Patch{Tags: &tags}, nil, audit("update"))
+	require.NoError(t, err)
+	require.NoError(t, f.store.EnqueueEmbedding(ctx, m.ID, updated.Version))
+
+	jobs, err := f.store.ClaimJobs(ctx, 10, time.Now())
+
+	require.NoError(t, err)
+	require.Len(t, jobs, 1)
+	assert.Equal(t, []string{"ci", "go"}, jobs[0].Tags)
+}
+
+func TestCandidates_TagsAny(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f := newFixture(t)
+	a := insertWith(t, f, "Tagged a", "shared words here", func(m *memory.Memory) { m.Tags = []string{"a"} }, -1)
+	b := insertWith(t, f, "Tagged b", "shared words here", func(m *memory.Memory) { m.Tags = []string{"b"} }, -1)
+	insertWith(t, f, "Tagged c", "shared words here", func(m *memory.Memory) { m.Tags = []string{"c"} }, -1)
+	filter := memory.Filter{Owner: "dev", Now: time.Now()}
+
+	anyOf := filter
+	anyOf.TagsAny = []string{"a", "b"}
+	got, err := f.store.CandidatesFTS(ctx, "shared", anyOf, 10)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []uuid.UUID{a.ID, b.ID}, ids(got))
+
+	both := anyOf
+	both.Tags = []string{"a"}
+	got, err = f.store.CandidatesFTS(ctx, "shared", both, 10)
+	require.NoError(t, err)
+	assert.Equal(t, []uuid.UUID{a.ID}, ids(got), "all-of and any-of filters combine")
+}

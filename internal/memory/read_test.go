@@ -383,3 +383,93 @@ func TestSummaries_CarryUpdatedAt(t *testing.T) {
 	require.Len(t, res.Results, 1)
 	assert.True(t, m.UpdatedAt.Equal(res.Results[0].UpdatedAt), "search summary carries updated_at")
 }
+
+func TestSearch_NormalizesTagFilter(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, nil)
+	n := note("Postgres port", "postgres runs on port 5434")
+	n.Tags = []string{"go"}
+	m := created(t, e, n)
+
+	res, err := e.svc.Search(context.Background(), memory.SearchRequest{Query: "postgres port", Tags: []string{"Go"}})
+	require.NoError(t, err)
+	assert.Equal(t, []uuid.UUID{m.ID}, resultIDs(res.Results))
+}
+
+func TestList_NormalizesTagFilter(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, nil)
+	n := note("Postgres port", "postgres runs on port 5434")
+	n.Tags = []string{"ci"}
+	m := created(t, e, n)
+
+	res, err := e.svc.List(context.Background(), memory.ListRequest{Tags: []string{"CI"}})
+	require.NoError(t, err)
+	require.Len(t, res.Items, 1)
+	assert.Equal(t, m.ID, res.Items[0].ID)
+}
+
+func TestList_TagsAny(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, nil)
+	var want []uuid.UUID
+	for i, tag := range []string{"a", "b", "c"} {
+		n := note("Memory "+tag, "content "+tag)
+		n.Tags = []string{tag}
+		m := created(t, e, n)
+		if i < 2 {
+			want = append(want, m.ID)
+		}
+	}
+
+	res, err := e.svc.List(context.Background(), memory.ListRequest{TagsAny: []string{"A", "b"}})
+	require.NoError(t, err)
+	got := make([]uuid.UUID, 0, len(res.Items))
+	for _, it := range res.Items {
+		got = append(got, it.ID)
+	}
+	assert.ElementsMatch(t, want, got)
+}
+
+func TestSearch_TagsAny(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, nil)
+	a := note("Postgres port a", "postgres runs on port 5434")
+	a.Tags = []string{"a"}
+	ma := created(t, e, a)
+	c := note("Postgres port c", "postgres runs on port 5434 too")
+	c.Tags = []string{"c"}
+	created(t, e, c)
+
+	res, err := e.svc.Search(context.Background(), memory.SearchRequest{Query: "postgres port", TagsAny: []string{"a", "b"}})
+	require.NoError(t, err)
+	assert.Equal(t, []uuid.UUID{ma.ID}, resultIDs(res.Results))
+}
+
+func TestTagCounts(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, nil)
+	for i, tags := range [][]string{{"go", "ci"}, {"go"}, {"ci", "go"}, {"docs"}} {
+		n := note("Memory "+string(rune('a'+i)), "content "+string(rune('a'+i)))
+		n.Tags, n.OnSimilar = tags, memory.OnSimilarKeepBoth
+		created(t, e, n)
+	}
+
+	got, err := e.svc.TagCounts(context.Background(), false, 0)
+
+	require.NoError(t, err)
+	assert.Equal(t, []memory.TagCount{{Tag: "go", Count: 3}, {Tag: "ci", Count: 2}, {Tag: "docs", Count: 1}}, got)
+
+	got, err = e.svc.TagCounts(context.Background(), false, 2)
+	require.NoError(t, err)
+	assert.Len(t, got, 2)
+}
+
+func TestTagCounts_Validation(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, nil)
+	for _, limit := range []int{-1, 101} {
+		_, err := e.svc.TagCounts(context.Background(), false, limit)
+		require.ErrorIs(t, err, memory.ErrValidation, limit)
+	}
+}

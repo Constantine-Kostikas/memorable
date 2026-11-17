@@ -74,6 +74,9 @@ func tagTypeParts(f memory.Filter, a *sqlArgs) []string {
 	if len(f.Tags) > 0 {
 		parts = append(parts, "tags @> "+a.add(f.Tags))
 	}
+	if len(f.TagsAny) > 0 {
+		parts = append(parts, "tags && "+a.add(f.TagsAny))
+	}
 	if len(f.Types) > 0 {
 		parts = append(parts, "type = ANY("+a.add(typeNames(f.Types))+")")
 	}

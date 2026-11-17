@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode/utf8"
 )
@@ -97,6 +98,25 @@ func validateText(field, s string, limit int) error {
 		return invalid("%s has %d characters, limit is %d", field, n, limit)
 	}
 	return nil
+}
+
+var tagSeparators = regexp.MustCompile(`[ _]+`)
+
+// NormalizeTags lowercases and trims tags, joins words with hyphens, drops empty tags, and removes
+// duplicates while keeping the first-seen order. It does not validate: invalid characters survive so
+// validation can report them. A nil input returns nil.
+func NormalizeTags(tags []string) []string {
+	if tags == nil {
+		return nil
+	}
+	out := make([]string, 0, len(tags))
+	for _, t := range tags {
+		t = tagSeparators.ReplaceAllString(strings.ToLower(strings.TrimSpace(t)), "-")
+		if t != "" && !slices.Contains(out, t) {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 func validateTags(tags []string) error {

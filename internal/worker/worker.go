@@ -80,7 +80,7 @@ func (w *Worker) RunOnce(ctx context.Context) (int, error) {
 	}
 	texts := make([]string, 0, len(jobs))
 	for _, j := range jobs {
-		texts = append(texts, memory.DocumentText(j.Title, j.Content))
+		texts = append(texts, memory.DocumentText(j.Title, j.Tags, j.Content))
 	}
 	vecs, embedErr := w.emb.Embed(ctx, memory.EmbedDocument, texts)
 	var errs []error

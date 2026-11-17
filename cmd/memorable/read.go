@@ -40,7 +40,7 @@ func parseTypeFlags(vals []string) ([]memory.Type, error) {
 
 func newSearchCmd(d deps, flags *rootFlags) *cobra.Command {
 	var k int
-	var tags, types []string
+	var tags, tagsAny, types []string
 	var all bool
 	cmd := &cobra.Command{
 		Use:     "search <query>",
@@ -58,7 +58,7 @@ func newSearchCmd(d deps, flags *rootFlags) *cobra.Command {
 				return err
 			}
 			return withApp(cmd, d, flags, func(ctx context.Context, a *app) error {
-				res, err := a.svc.Search(ctx, memory.SearchRequest{Query: strings.Join(args, " "), K: k, Tags: tags, Types: typ, AllProjects: all})
+				res, err := a.svc.Search(ctx, memory.SearchRequest{Query: strings.Join(args, " "), K: k, Tags: tags, TagsAny: tagsAny, Types: typ, AllProjects: all})
 				if err != nil {
 					return err //nolint:wrapcheck // shown to the user as is
 				}
@@ -78,6 +78,7 @@ func newSearchCmd(d deps, flags *rootFlags) *cobra.Command {
 	}
 	cmd.Flags().IntVarP(&k, "k", "k", memory.DefaultK, "number of results")
 	cmd.Flags().StringSliceVar(&tags, "tag", nil, "require tag (repeatable)")
+	cmd.Flags().StringSliceVar(&tagsAny, "any-tag", nil, "match any of these tags (repeatable)")
 	cmd.Flags().StringSliceVar(&types, "type", nil, "user, feedback, project, or reference")
 	cmd.Flags().BoolVar(&all, "all-projects", false, "include other projects")
 	return cmd
@@ -128,7 +129,7 @@ func newGetCmd(d deps, flags *rootFlags) *cobra.Command {
 }
 
 func newListCmd(d deps, flags *rootFlags) *cobra.Command {
-	var tags, types, statuses []string
+	var tags, tagsAny, types, statuses []string
 	var all bool
 	var limit int
 	var cursor string
@@ -147,7 +148,7 @@ func newListCmd(d deps, flags *rootFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			req := memory.ListRequest{Tags: tags, Types: typ, AllProjects: all, Limit: limit}
+			req := memory.ListRequest{Tags: tags, TagsAny: tagsAny, Types: typ, AllProjects: all, Limit: limit}
 			for _, s := range statuses {
 				st, err := memory.ParseStatus(s)
 				if err != nil {
@@ -185,6 +186,7 @@ func newListCmd(d deps, flags *rootFlags) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringSliceVar(&tags, "tag", nil, "require tag (repeatable)")
+	cmd.Flags().StringSliceVar(&tagsAny, "any-tag", nil, "match any of these tags (repeatable)")
 	cmd.Flags().StringSliceVar(&types, "type", nil, "user, feedback, project, or reference")
 	cmd.Flags().StringSliceVar(&statuses, "status", nil, "active, unverified, flagged, superseded, or deleted")
 	cmd.Flags().BoolVar(&all, "all-projects", false, "include other projects")
@@ -221,6 +223,49 @@ func newTopCmd(d deps, flags *rootFlags) *cobra.Command {
 		},
 	}
 	cmd.Flags().IntVar(&limit, "limit", 10, "number of memories (max 20)")
+	return cmd
+}
+
+type tagCountView struct {
+	Tag   string `json:"tag"`
+	Count int    `json:"count"`
+}
+
+func newTagsCmd(d deps, flags *rootFlags) *cobra.Command {
+	var all bool
+	var limit int
+	cmd := &cobra.Command{
+		Use:     "tags",
+		Short:   "List the tags in use with counts",
+		Example: "  memorable tags\n  memorable tags --all-projects -o json",
+		GroupID: groupMemory,
+		Args:    argsUsage(cobra.NoArgs),
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			p, err := newPrinter(cmd, flags, d.getenv)
+			if err != nil {
+				return err
+			}
+			return withApp(cmd, d, flags, func(ctx context.Context, a *app) error {
+				counts, err := a.svc.TagCounts(ctx, all, limit)
+				if err != nil {
+					return err //nolint:wrapcheck // shown to the user as is
+				}
+				views := make([]tagCountView, 0, len(counts))
+				for _, c := range counts {
+					views = append(views, tagCountView{Tag: c.Tag, Count: c.Count})
+				}
+				if p.IsJSON() {
+					return p.JSON(views)
+				}
+				for _, v := range views {
+					p.Line(fmt.Sprintf("%s\t%d", v.Tag, v.Count))
+				}
+				return nil
+			})
+		},
+	}
+	cmd.Flags().BoolVar(&all, "all-projects", false, "include other projects")
+	cmd.Flags().IntVar(&limit, "limit", memory.DefaultTagLimit, "number of tags (max 100)")
 	return cmd
 }
 

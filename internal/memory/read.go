@@ -147,6 +147,7 @@ func (s *Service) scored(mems []Memory) []Summary {
 // ListRequest browses memories.
 type ListRequest struct {
 	Tags        []string
+	TagsAny     []string
 	Types       []Type
 	Statuses    []Status
 	AllProjects bool
@@ -180,7 +181,7 @@ func (s *Service) List(ctx context.Context, r ListRequest) (ListResponse, error)
 		statuses = nil
 	}
 	f := s.filter()
-	f.Tags, f.Types, f.AllProjects = r.Tags, r.Types, r.AllProjects
+	f.Tags, f.TagsAny, f.Types, f.AllProjects = NormalizeTags(r.Tags), NormalizeTags(r.TagsAny), r.Types, r.AllProjects
 	if r.Project != nil {
 		f.Project, f.AllProjects = r.Project, false
 	}
@@ -189,6 +190,22 @@ func (s *Service) List(ctx context.Context, r ListRequest) (ListResponse, error)
 		return ListResponse{}, err //nolint:wrapcheck // repository errors are already contextual
 	}
 	return ListResponse{Items: s.scored(mems), Next: next}, nil
+}
+
+// DefaultTagLimit is the number of tags TagCounts returns when no limit is given.
+const DefaultTagLimit = 100
+
+// TagCounts lists the tags in use, most used first, across the session's visible memories and the profile.
+func (s *Service) TagCounts(ctx context.Context, allProjects bool, limit int) ([]TagCount, error) {
+	if limit == 0 {
+		limit = DefaultTagLimit
+	}
+	if limit < 1 || limit > DefaultTagLimit {
+		return nil, fmt.Errorf("%w: limit must be between 1 and %d", ErrValidation, DefaultTagLimit)
+	}
+	f := s.filter()
+	f.AllProjects = allProjects
+	return s.repo.TagCounts(ctx, f, limit) //nolint:wrapcheck // repository errors are already contextual
 }
 
 // Review returns the review queue.

@@ -27,8 +27,10 @@ const (
 
 const embeddingMigrationVersion = 2
 
+const latestMigrationVersion = 3
+
 // LatestVersion returns the newest migration version for a schema kind.
-func LatestVersion(SchemaKind) int64 { return embeddingMigrationVersion }
+func LatestVersion(SchemaKind) int64 { return latestMigrationVersion }
 
 // Migrate applies pending migrations to schema and (re)applies the app role's grants.
 // It returns the versions applied by this call.

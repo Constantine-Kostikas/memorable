@@ -3,6 +3,7 @@ package memory
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/google/uuid"
 )
@@ -28,6 +29,10 @@ func (s *Service) loadOwn(ctx context.Context, id uuid.UUID) (Memory, error) {
 func (s *Service) Update(ctx context.Context, id uuid.UUID, expected *int, p Patch) (Memory, error) {
 	if err := s.writable(); err != nil {
 		return Memory{}, err
+	}
+	if p.Tags != nil {
+		tags := NormalizeTags(*p.Tags)
+		p.Tags = &tags
 	}
 	if err := p.Validate(); err != nil {
 		return Memory{}, err
@@ -64,14 +69,14 @@ func (s *Service) Update(ctx context.Context, id uuid.UUID, expected *int, p Pat
 	if err != nil {
 		return Memory{}, err //nolint:wrapcheck // repository errors are already contextual
 	}
-	if next.Title != cur.Title || next.Content != cur.Content {
+	if next.Title != cur.Title || next.Content != cur.Content || !slices.Equal(next.Tags, cur.Tags) {
 		s.reembed(ctx, out)
 	}
 	return out, nil
 }
 
 func (s *Service) reembed(ctx context.Context, m Memory) {
-	vec, err := s.embedOne(ctx, EmbedDocument, DocumentText(m.Title, m.Content))
+	vec, err := s.embedOne(ctx, EmbedDocument, DocumentText(m.Title, m.Tags, m.Content))
 	if err != nil {
 		vec = nil
 	}

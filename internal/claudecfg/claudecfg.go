@@ -206,7 +206,7 @@ func withContext(lines []string, n int) []string {
 
 // Rules returns the recommended Claude Code permission rules; credentialsPath is denied to Read.
 func Rules(credentialsPath string) (allow, ask, deny []string) {
-	for _, t := range []string{"search", "get", "list", "top", "history", "review", "write", "update", "feedback", "link"} {
+	for _, t := range []string{"search", "get", "list", "tags", "top", "history", "review", "write", "update", "feedback", "link"} {
 		allow = append(allow, "mcp__memorable__memory_"+t)
 	}
 	ask = []string{"mcp__memorable__memory_delete", "mcp__memorable__memory_restore"}

@@ -19,6 +19,7 @@ type SearchRequest struct {
 	Query             string
 	K                 int
 	Tags              []string
+	TagsAny           []string
 	Types             []Type
 	AllProjects       bool
 	IncludeFlagged    bool
@@ -75,7 +76,7 @@ func (s *Service) Search(ctx context.Context, r SearchRequest) (SearchResponse, 
 		return SearchResponse{}, err
 	}
 	f := s.filter()
-	f.Tags, f.Types, f.AllProjects = r.Tags, r.Types, r.AllProjects
+	f.Tags, f.TagsAny, f.Types, f.AllProjects = NormalizeTags(r.Tags), NormalizeTags(r.TagsAny), r.Types, r.AllProjects
 	if r.Project != nil {
 		f.Project, f.AllProjects = r.Project, false
 	}

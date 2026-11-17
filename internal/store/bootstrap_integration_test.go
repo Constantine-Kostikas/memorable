@@ -35,7 +35,7 @@ func TestBootstrapAndMigrate_Idempotent(t *testing.T) {
 	applied, err := store.Migrate(ctx, db.AdminDSN, "mem_personal", store.SchemaContext, 768, cfg.Database.AppUser)
 	require.NoError(t, err)
 	assert.Empty(t, applied, "second migrate must apply nothing")
-	assert.Equal(t, int64(2), store.LatestVersion(store.SchemaContext))
+	assert.Equal(t, int64(3), store.LatestVersion(store.SchemaContext))
 }
 
 func pgCode(err error) string {

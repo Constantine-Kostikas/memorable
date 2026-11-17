@@ -256,3 +256,23 @@ func TestWrite_WithoutRateLimit(t *testing.T) {
 		require.NoError(t, err)
 	}
 }
+
+func TestWrite_NormalizesTags(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, nil)
+	n := note("Database choice", "We use Postgres.")
+	n.Tags = []string{"Go", "go", "Web UI"}
+	r := writeOne(t, e, n)
+	require.Equal(t, memory.OutcomeCreated, r.Outcome, r.Reason)
+	assert.Equal(t, []string{"go", "web-ui"}, r.Memory.Tags)
+}
+
+func TestWrite_InvalidTagStillRejectedAfterNormalizing(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, nil)
+	n := note("Language", "Notes on C++.")
+	n.Tags = []string{"C++"}
+	r := writeOne(t, e, n)
+	assert.Equal(t, memory.OutcomeRejected, r.Outcome)
+	assert.Contains(t, r.Reason, "tag")
+}

@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -96,6 +97,7 @@ type Repository interface {
 	Top(ctx context.Context, f Filter, limit int) ([]Memory, error)
 	List(ctx context.Context, f Filter, statuses []Status, cursor *uuid.UUID, limit int) ([]Memory, *uuid.UUID, error)
 	Review(ctx context.Context, now time.Time, staleAfter, halfLife time.Duration) (ReviewQueue, error)
+	TagCounts(ctx context.Context, f Filter, limit int) ([]TagCount, error)
 }
 
 // Filter scopes candidate and listing queries.
@@ -104,10 +106,17 @@ type Filter struct {
 	Project           *string
 	AllProjects       bool
 	Tags              []string
+	TagsAny           []string
 	Types             []Type
 	IncludeFlagged    bool
 	IncludeSuperseded bool
 	Now               time.Time
+}
+
+// TagCount is a tag and the number of visible memories that carry it.
+type TagCount struct {
+	Tag   string
+	Count int
 }
 
 // Candidate is a search hit before fusion.
@@ -132,6 +141,7 @@ type Job struct {
 	Version  int
 	Attempts int
 	Title    string
+	Tags     []string
 	Content  string
 }
 
@@ -160,7 +170,11 @@ type Embedder interface {
 	Dimensions() int
 }
 
-// DocumentText formats a memory for document embedding.
-func DocumentText(title, content string) string {
-	return "title: " + title + " | text: " + content
+// DocumentText formats a memory for document embedding. The tags segment is omitted when there are
+// no tags, so untagged memories keep their original text.
+func DocumentText(title string, tags []string, content string) string {
+	if len(tags) == 0 {
+		return "title: " + title + " | text: " + content
+	}
+	return "title: " + title + " | tags: " + strings.Join(tags, ", ") + " | text: " + content
 }

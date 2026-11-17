@@ -46,6 +46,15 @@ func renderMemory(m memory.Memory) string {
 	return b.String()
 }
 
+// RenderTags formats tag counts as "a (12), b (7)".
+func RenderTags(counts []memory.TagCount) string {
+	parts := make([]string, 0, len(counts))
+	for _, c := range counts {
+		parts = append(parts, c.Tag+" ("+strconv.Itoa(c.Count)+")")
+	}
+	return strings.Join(parts, ", ")
+}
+
 func summaryLine(s memory.Summary) string {
 	slug := ""
 	if s.Slug != nil {

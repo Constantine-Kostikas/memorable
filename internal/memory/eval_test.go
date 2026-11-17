@@ -38,23 +38,26 @@ const defaultModel = "embeddinggemma"
 var projects = map[string]string{"memorable": "github.com/constantine-kostikas/memorable", "shop": "github.com/acme/shop"}
 
 type evalMemory struct {
-	Slug    string `json:"slug"`
-	Project string `json:"project"`
-	Type    string `json:"type"`
-	Title   string `json:"title"`
-	Content string `json:"content"`
+	Slug    string   `json:"slug"`
+	Project string   `json:"project"`
+	Type    string   `json:"type"`
+	Title   string   `json:"title"`
+	Content string   `json:"content"`
+	Tags    []string `json:"tags"`
 }
 
 type evalQuery struct {
 	Query    string   `json:"query"`
 	Project  string   `json:"project"`
 	Relevant []string `json:"relevant"`
+	TagOnly  bool     `json:"tag_only"`
 }
 
 type evalResult struct {
 	Model             string   `json:"model"`
 	RecallAt5         float64  `json:"recall_at_5"`
 	MRR               float64  `json:"mrr"`
+	TagOnlyRecallAt5  float64  `json:"tag_only_recall_at_5"`
 	NoAnswerFalsePos  float64  `json:"no_answer_false_positive_rate"`
 	Misses            []string `json:"misses"`
 	NoAnswerResponses []string `json:"no_answer_responses"`
@@ -109,7 +112,7 @@ func TestEval(t *testing.T) { //nolint:paralleltest // one heavy, sequential eva
 		}
 		r := evaluate(t, model, dims, mems, queries)
 		results = append(results, r)
-		t.Logf("%-24s recall@5=%.3f  MRR=%.3f  no-answer false positives=%.2f", r.Model, r.RecallAt5, r.MRR, r.NoAnswerFalsePos)
+		t.Logf("%-24s recall@5=%.3f  MRR=%.3f  tag-only recall@5=%.3f  no-answer false positives=%.2f", r.Model, r.RecallAt5, r.MRR, r.TagOnlyRecallAt5, r.NoAnswerFalsePos)
 		if *evalVerbose {
 			for _, m := range r.Misses {
 				t.Logf("  miss: %s", m)
@@ -160,7 +163,7 @@ func evaluate(t *testing.T, model string, dims int, mems []evalMemory, queries [
 		typ, err := memory.ParseType(m.Type)
 		require.NoError(t, err)
 		slug := m.Slug
-		res, err := service(m.Project).Write(ctx, []memory.NewMemory{{Title: m.Title, Content: m.Content, Type: typ,
+		res, err := service(m.Project).Write(ctx, []memory.NewMemory{{Title: m.Title, Content: m.Content, Type: typ, Tags: m.Tags,
 			Source: memory.SourceUserStated, Slug: &slug, Global: m.Project == "", OnSimilar: memory.OnSimilarKeepBoth}})
 		require.NoError(t, err)
 		require.Equal(t, memory.OutcomeCreated, res[0].Outcome, "%s: %s", m.Slug, res[0].Reason)
@@ -168,7 +171,8 @@ func evaluate(t *testing.T, model string, dims int, mems []evalMemory, queries [
 
 	r := evalResult{Model: model}
 	var recallSum, rrSum float64
-	answerable, noAnswer, noAnswerHits := 0, 0, 0
+	var tagOnlySum float64
+	answerable, noAnswer, noAnswerHits, tagOnly := 0, 0, 0, 0
 	for _, q := range queries {
 		res, err := service(q.Project).Search(ctx, memory.SearchRequest{Query: q.Query, K: 10})
 		require.NoError(t, err, q.Query)
@@ -194,7 +198,12 @@ func evaluate(t *testing.T, model string, dims int, mems []evalMemory, queries [
 				found++
 			}
 		}
-		recallSum += float64(found) / float64(len(q.Relevant))
+		recall := float64(found) / float64(len(q.Relevant))
+		recallSum += recall
+		if q.TagOnly {
+			tagOnly++
+			tagOnlySum += recall
+		}
 		for i, g := range got {
 			if slices.Contains(q.Relevant, g) {
 				rrSum += 1 / float64(i+1)
@@ -207,6 +216,9 @@ func evaluate(t *testing.T, model string, dims int, mems []evalMemory, queries [
 	}
 	r.RecallAt5 = recallSum / float64(answerable)
 	r.MRR = rrSum / float64(answerable)
+	if tagOnly > 0 {
+		r.TagOnlyRecallAt5 = tagOnlySum / float64(tagOnly)
+	}
 	r.NoAnswerFalsePos = float64(noAnswerHits) / float64(noAnswer)
 	return r
 }

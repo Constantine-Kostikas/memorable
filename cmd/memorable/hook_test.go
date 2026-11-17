@@ -130,3 +130,32 @@ func TestContextShow(t *testing.T) {
 	assert.Equal(t, "mem_personal", v.Schema)
 	assert.False(t, v.ReadOnly)
 }
+
+func hookOutput(t *testing.T, a *app) string {
+	t.Helper()
+	d := defaultDeps()
+	d.build = func(context.Context, string, []string, *slog.Logger) (*app, error) { return a, nil }
+	out, err := runRoot(t, d, `{"session_id":"s1","cwd":"/home/x/projects/demo","hook_event_name":"SessionStart"}`, "hook", "session-start")
+	require.NoError(t, err)
+	return out
+}
+
+func TestHook_PrintsTagLine(t *testing.T) {
+	t.Parallel()
+	a := fakeApp(t)
+	for _, title := range []string{"Alpha note", "Beta note"} {
+		_, err := a.svc.Write(context.Background(), []memory.NewMemory{
+			{Title: title, Content: "content " + title, Type: memory.TypeProject, Source: memory.SourceUserStated, Tags: []string{"ci"}, OnSimilar: memory.OnSimilarKeepBoth},
+		})
+		require.NoError(t, err)
+	}
+
+	assert.Contains(t, hookOutput(t, a), "Tags in use: ci (2)")
+}
+
+func TestHook_NoTagLineWithoutTags(t *testing.T) {
+	t.Parallel()
+	out := hookOutput(t, fakeApp(t))
+	assert.Contains(t, out, "<memory-preload")
+	assert.NotContains(t, out, "Tags in use")
+}
