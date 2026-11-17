@@ -286,3 +286,23 @@ Recall follows spec section 2 steps 1 to 9 exactly. Empty `Items` with zero `Sea
 - [ ] **Step 4: Update docs.** `docs/design.md`: section 6 (no tool change; note `search_id` from recall), section 7 (new "Prompt recall" and "Calibration" subsections, `access_events` kinds), section 9 (commands `hook prompt-submit`, `calibrate`), section 10 (`[recall]`), section 12 (eval prompt-shaped set), section 15 (resolve threshold item). `README.md`: recall hook in setup and a "Prompt recall" section with `memorable calibrate`. `docs/claude-md-snippet.md`: one line, "When a `<memory-recall>` block lists a relevant memory, fetch it with `memory_get`, passing its `search_id`."
 - [ ] **Step 5: Run** `make test`, `make test-integration`, `make lint`. Expected: all PASS.
 - [ ] **Step 6: Commit** `feat(doctor): report recall hook and calibration; docs for prompt recall`.
+
+---
+
+## Amendments from plan review (binding; they override the task text above)
+
+1. Task 5 also modifies `cmd/memorable/app.go`: `memory.Settings` gets `Recall: cfg.Recall`.
+2. Task 6: the prior is `rank.DefaultCalibration(model, dims)` only, never a stored usage fit; no default means `ErrValidation`.
+3. Inject events always carry `Origin: "hook"`. `LabeledResults` selects `kind = 'inject' OR (kind = 'search' AND details->>'origin' = 'mcp')`.
+4. Signals (search and inject) cover only ids in `Returned` and exclude `ScopeProfile` results. The purge-leak test near `internal/store/search_integration_test.go:300` also asserts no `details` still names the purged id; purge removes signal entries for the purged id.
+5. Task 3 updates `LatestVersion == 4` in `bootstrap_integration_test.go`. Task 4 keeps `Store.LogSearch` as a thin wrapper over `LogEvent` (not in the interface) so existing tests keep compiling, or updates the four call sites.
+6. `hook prompt-submit` loads config first, builds the deadline ctx from `cfg.Recall.DeadlineMS` (falling back to the default when config fails to load), then calls `d.build(ctx, ...)`. Test: a blocking `build` that honors ctx returns empty within the deadline.
+7. Doctor `calibration`: ok when a usage fit or default exists; skipped ("no calibration for <model>; prompt recall disabled") when neither exists and the hook is not installed; fail only when the hook is installed and nothing matches. Skip when the probed schema is the profile schema.
+8. Task 8 edits `internal/claudecfg/snippet.md` and mirrors the text into `docs/claude-md-snippet.md`.
+9. Unit tests: truncation uses `strings.Repeat("é ", 300)`; slash test uses `/review the whole branch please`; the fakes gain input capture (`Embedder.Inputs()`) and full event capture (`Repo.LoggedEvents() []memory.Event`); setup is tested through dry-run output ("would ask: Also show relevant memories...") plus `AddHook`/`HasHook` unit tests.
+10. `RenderRecall` always prints `id=`, escapes titles and snippets with the existing `attr` and `escapeBody` helpers, and prints `slug=` only when set.
+11. Task 3 adds `TestMigrateUpFromV3`: migrate to v3, seed an old-shape `search` row, migrate to v4, the row survives with `details = '{}'`.
+12. `EventDetails` gains `Model string` and `Dimensions int`; `LabeledResults(ctx, before, model, dims)` filters on them.
+13. Non-passive `Search` computes signals regardless of `r.Explain`.
+14. Integration tests add: inject event then `LogGet` with its id yields a positive label; preload and inject events leave `access_score` unchanged.
+15. `RecallStats` lives only on `store.Stats` (not in `memory.Repository`), with json tags; the stats line reports 30-day totals and the average per day.

@@ -27,7 +27,7 @@ const (
 
 const embeddingMigrationVersion = 2
 
-const latestMigrationVersion = 3
+const latestMigrationVersion = 4
 
 // LatestVersion returns the newest migration version for a schema kind.
 func LatestVersion(SchemaKind) int64 { return latestMigrationVersion }
@@ -41,6 +41,25 @@ func Migrate(ctx context.Context, adminDSN, schema string, kind SchemaKind, dims
 	}
 	defer func() { _ = db.Close() }()
 
+	p, err := newProvider(db, schema, kind, dims)
+	if err != nil {
+		return nil, err
+	}
+	results, err := p.Up(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("migrating %s: %w", schema, err)
+	}
+	applied := make([]int64, 0, len(results))
+	for _, r := range results {
+		applied = append(applied, r.Source.Version)
+	}
+	if err := grant(ctx, db, schema, kind, appUser); err != nil {
+		return applied, err
+	}
+	return applied, nil
+}
+
+func newProvider(db *sql.DB, schema string, kind SchemaKind, dims int) (*goose.Provider, error) {
 	sub := "migrations/context"
 	if kind == SchemaProfile {
 		sub = "migrations/profile"
@@ -60,18 +79,7 @@ func Migrate(ctx context.Context, adminDSN, schema string, kind SchemaKind, dims
 	if err != nil {
 		return nil, fmt.Errorf("creating migration provider: %w", err)
 	}
-	results, err := p.Up(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("migrating %s: %w", schema, err)
-	}
-	applied := make([]int64, 0, len(results))
-	for _, r := range results {
-		applied = append(applied, r.Source.Version)
-	}
-	if err := grant(ctx, db, schema, kind, appUser); err != nil {
-		return applied, err
-	}
-	return applied, nil
+	return p, nil
 }
 
 func openSchemaDB(dsn, schema string) (*sql.DB, error) {
@@ -122,7 +130,7 @@ func grant(ctx context.Context, db *sql.DB, schema string, kind SchemaKind, appU
 	} else {
 		stmts = []string{
 			"GRANT SELECT, INSERT, UPDATE ON " + qualify(s, "memories", "memory_links", "memory_project_access", "embedding_jobs") + " TO " + app,
-			"GRANT SELECT, INSERT ON " + qualify(s, "memory_versions", "memory_feedback", "access_events", "audit_log") + " TO " + app,
+			"GRANT SELECT, INSERT ON " + qualify(s, "memory_versions", "memory_feedback", "access_events", "audit_log", "calibrations") + " TO " + app,
 			"GRANT USAGE ON ALL SEQUENCES IN SCHEMA " + s + " TO " + app,
 		}
 	}
