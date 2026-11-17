@@ -519,13 +519,13 @@ func TestCandidates_TagsAny(t *testing.T) {
 	insertWith(t, f, "Tagged c", "shared words here", func(m *memory.Memory) { m.Tags = []string{"c"} }, -1)
 	filter := memory.Filter{Owner: "dev", Now: time.Now()}
 
-	any := filter
-	any.TagsAny = []string{"a", "b"}
-	got, err := f.store.CandidatesFTS(ctx, "shared", any, 10)
+	anyOf := filter
+	anyOf.TagsAny = []string{"a", "b"}
+	got, err := f.store.CandidatesFTS(ctx, "shared", anyOf, 10)
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []uuid.UUID{a.ID, b.ID}, ids(got))
 
-	both := any
+	both := anyOf
 	both.Tags = []string{"a"}
 	got, err = f.store.CandidatesFTS(ctx, "shared", both, 10)
 	require.NoError(t, err)

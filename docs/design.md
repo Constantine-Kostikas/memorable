@@ -160,14 +160,14 @@ Tables in each `mem_<context>` schema (and the same `memories`/`memory_versions`
 | type | text | `user`, `feedback`, `project`, `reference` |
 | title | text | max 120 chars |
 | content | text | max 2,000 chars; one memory, one vector, no chunking |
-| tags | text[] | max 10, each `[a-z0-9-]{1,40}`; GIN index |
+| tags | text[] | max 10, each `[a-z0-9-]{1,40}`; GIN index; normalized on write (lowercase, spaces and underscores to hyphens, deduped) |
 | source | text | `user_stated`, `claude_inferred`, `tool_output`, `imported` |
 | status | text | lifecycle below |
 | pinned | bool | always in preload |
 | expires_at | timestamptz NULL | expired memories drop out of search |
 | version | int | increments on every change |
 | content_hash | bytea | sha256 of normalized title + content |
-| fts | tsvector | generated from title (weight A) and content (weight B); GIN index |
+| fts | tsvector | generated from title (weight A), tags (weight A), and content (weight B); GIN index |
 | embedding | vector(768) NULL | HNSW, cosine ops |
 | embedding_model | text NULL | |
 | embedded_at | timestamptz NULL | |
@@ -231,8 +231,9 @@ Results also carry structured JSON. Total tool description budget: under 1,500 t
 | `memory_delete` | Soft delete. |
 | `memory_restore` | Undelete, or restore a prior version. |
 | `memory_history` | List versions. |
-| `memory_search` | Hybrid search: query, k (default 5, max 20), tags, types, all_projects, include_flagged, include_superseded. Returns `search_id` and compact results (id, slug, title, 200-char snippet, type, tags, scope, status, score). |
-| `memory_list` | Browse by tags, type, project, or status; paginated; compact. |
+| `memory_search` | Hybrid search: query, k (default 5, max 20), tags (all of), tags_any (at least one), types, all_projects, include_flagged, include_superseded. Returns `search_id` and compact results (id, slug, title, 200-char snippet, type, tags, scope, status, score). |
+| `memory_list` | Browse by tags (all of), tags_any (at least one), type, project, or status; paginated; compact. |
+| `memory_tags` | Tags in use with counts, for the current project, context-global, and profile memories; `all_projects` widens it. |
 | `memory_top` | Top by decayed score for current project + context-global + profile; compact. |
 | `memory_feedback` | `useful`, `wrong`, or `outdated`, optional note. |
 | `memory_link` | Add or remove a link. |
@@ -249,7 +250,7 @@ Sentinel errors in `memory`: `ErrNotFound`, `ErrConflict`, `ErrValidation`, `Err
 
 ### Recommended Claude Code permissions
 
-- Allow: `memory_search`, `memory_get`, `memory_list`, `memory_top`, `memory_history`, `memory_review`, `memory_write`, `memory_update`, `memory_feedback`, `memory_link`.
+- Allow: `memory_search`, `memory_get`, `memory_list`, `memory_tags`, `memory_top`, `memory_history`, `memory_review`, `memory_write`, `memory_update`, `memory_feedback`, `memory_link`.
 - Ask: `memory_delete`, `memory_restore`.
 - Deny (Bash): `memorable purge*`, `memorable approve*`, `memorable profile*`, `memorable ui*`, `docker exec memorable-postgres*`, `docker inspect memorable-postgres*`, `psql*`.
 - Deny (Read): the credential fallback file.
@@ -289,7 +290,7 @@ Sentinel errors in `memory`: `ErrNotFound`, `ErrConflict`, `ErrValidation`, `Err
 
 ### Preload (hook and `memorable://top`)
 
-Pinned first, then highest `rank_key` among `active` memories whose source is not `tool_output`, across current project, context-global, and profile. Budget: 10 items, 4,000 characters. Titles, slugs, and snippets only.
+Pinned first, then highest `rank_key` among `active` memories whose source is not `tool_output`, across current project, context-global, and profile. Budget: 10 items, 4,000 characters. Titles, slugs, and snippets only. One extra line, `Tags in use: a (12), b (7)`, lists the top 20 tags by count; it sits outside the character budget and is omitted when no tags exist.
 
 ### Embedding worker
 
@@ -356,7 +357,8 @@ Imperatives aimed at the agent ("ignore previous", "you must always", "system pr
 | `memorable doctor` | Checks config, keyring, container, port, roles, extensions, schema versions, Ollama, model, dimension match |
 | `memorable context` / `context add <path> <name>` | Show resolution for the current directory; map a path |
 | `memorable migrate` | Apply migrations (admin) |
-| `memorable search / get / list / top` | Human versions of the MCP tools |
+| `memorable search / get / list / top` | Human versions of the MCP tools; `search` and `list` take `--tag` (all of) and `--any-tag` (at least one) |
+| `memorable tags [--all-projects] [--limit N]` | Tags in use with counts |
 | `memorable edit <id or slug>` | Edit in `$EDITOR`; rescans and re-embeds |
 | `memorable review` | Interactive review queue |
 | `memorable approve <id>` | Release from quarantine (admin) |
