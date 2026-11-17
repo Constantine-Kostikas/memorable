@@ -1,0 +1,18 @@
+# Weekly update PRs for Go modules and GitHub Actions. Actions are pinned by commit SHA,
+# and Dependabot bumps the SHA together with its version comment.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      go-modules:
+        update-types: [minor, patch]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns: ["*"]
