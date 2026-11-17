@@ -25,9 +25,10 @@ type RecallStats struct {
 	Days int `json:"days"`
 	// Injections is how many prompts got a recall block; Shown counts the memories in those blocks, and
 	// Fetched how many of them Claude then fetched with the block's search_id.
-	Injections int `json:"injections"`
-	Shown      int `json:"shown"`
-	Fetched    int `json:"fetched"`
+	Injections int     `json:"injections"`
+	PerDay     float64 `json:"injections_per_day"`
+	Shown      int     `json:"shown"`
+	Fetched    int     `json:"fetched"`
 }
 
 // Stats counts memories by status, type, and project.
@@ -65,6 +66,7 @@ func (s *Store) Stats(ctx context.Context) (Stats, error) {
 		FROM access_events e
 		WHERE e.owner = $1 AND e.kind = 'inject' AND e.created_at > now() - make_interval(days => $2)`, s.owner, recallStatsDays).
 		Scan(&st.Recall.Injections, &st.Recall.Shown, &st.Recall.Fetched)
+	st.Recall.PerDay = float64(st.Recall.Injections) / recallStatsDays
 	return st, mapErr("stats recall", err)
 }
 

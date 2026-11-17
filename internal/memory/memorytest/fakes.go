@@ -56,6 +56,8 @@ type Repo struct {
 	Audits []string
 	// OnGet, when set, runs after GetByIDs returns (outside the lock), to simulate a concurrent writer.
 	OnGet func()
+	// LogEventErr, when set, fails LogEvent only.
+	LogEventErr error
 	// VectorErr, when set, fails vector queries only.
 	VectorErr error
 }
@@ -583,6 +585,9 @@ func (r *Repo) LinksFor(_ context.Context, ids []uuid.UUID) ([]memory.Link, erro
 func (r *Repo) LogEvent(_ context.Context, e memory.Event) (uuid.UUID, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.LogEventErr != nil {
+		return uuid.Nil, r.LogEventErr
+	}
 	id := uuid.Must(uuid.NewV7())
 	r.events = append(r.events, string(e.Kind))
 	r.logged = append(r.logged, loggedEvent{id: id, e: e, at: time.Now()})

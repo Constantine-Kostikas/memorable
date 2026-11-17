@@ -1,6 +1,6 @@
 # memorable
 
-Persistent, searchable memory for Claude Code. Claude stores and retrieves memories through MCP tools instead of reading files, with hybrid semantic and keyword search, readable keys, and per-project scoping. Everything runs on your machine: Postgres with pgvector in Docker, embeddings from a local Ollama.
+Persistent, searchable memory for Claude Code. Claude stores and retrieves memories through MCP tools instead of reading files, with hybrid semantic and keyword search, readable keys, and per-project scoping. An optional prompt hook points Claude to relevant memories before it answers, each with a calibrated relevance percentage. Everything runs on your machine: Postgres with pgvector in Docker, embeddings from a local Ollama.
 
 ## Requirements
 
@@ -142,7 +142,7 @@ With the UserPromptSubmit hook installed, every prompt is searched against your 
 
 Claude fetches the ones it needs with `memory_get`. Most prompts get nothing: recall only shows memories at 70% relevance or more, skips prompts shorter than three words and slash commands, never repeats a memory already shown in the session, and gives up silently after 1.5 seconds. Tune it under `[recall]` in the config (`min_relevance`, `max_items`, `min_words`, `deadline_ms`).
 
-The percentage is calibrated: on the evaluation set, results scored 70 to 80% were relevant 76% of the time, and results scored 80 to 90% were relevant 96% of the time. It starts from a built-in fit for `embeddinggemma` and learns from your own use, since a pointer Claude fetches counts as relevant and one it ignores for a day counts as irrelevant. Run `memorable calibrate --dry-run` to see what it has learned, and `memorable calibrate` to save a fit once there are at least 20 of each. `memorable stats` shows how many prompts got pointers and how many were fetched; `memorable doctor` shows which calibration is active.
+The percentage is calibrated, though not perfectly yet. On the evaluation set's prompt-shaped queries, results scored 70 to 80% were relevant 59% of the time (17 results), and results scored 80 to 90% were relevant every time (18 results). If the 70% cutoff feels noisy, raise `min_relevance` to 0.8. It starts from a built-in fit for `embeddinggemma` and learns from your own use, since a pointer Claude fetches counts as relevant and one it ignores for a day counts as irrelevant. Run `memorable calibrate --dry-run` to see what it has learned, and `memorable calibrate` to save a fit once there are at least 20 of each. `memorable stats` shows how many prompts got pointers and how many were fetched; `memorable doctor` shows which calibration is active.
 
 To add the hook by hand, put this under `hooks` in `~/.claude/settings.json`:
 

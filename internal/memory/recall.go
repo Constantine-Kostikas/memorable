@@ -90,7 +90,8 @@ func (s *Service) Recall(ctx context.Context, r RecallRequest) (RecallResponse, 
 		shown = append(shown, it.Summary)
 	}
 	var stored *string
-	if len(s.secrets.Scan(query)) == 0 {
+	// Scan the whole prompt: a secret cut by the truncation would no longer match its rule.
+	if len(s.secrets.Scan(prompt)) == 0 {
 		stored = &query
 	}
 	id, err := s.repo.LogEvent(ctx, Event{Kind: EventInject, Query: stored, Project: s.settings.Scope.Project,

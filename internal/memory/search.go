@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -137,6 +138,11 @@ func (s *Service) Search(ctx context.Context, r SearchRequest) (SearchResponse, 
 		Returned: summaryIDs(results), Details: s.eventDetails(r.Origin, results, resp.Explain)})
 	if !r.Explain {
 		resp.Explain = nil
+	}
+	if errors.Is(err, ErrSchemaBehind) {
+		// Between `memorable update` and `memorable migrate` the event cannot be logged; the results are
+		// still right, they just carry no search_id.
+		return resp, nil
 	}
 	if err != nil {
 		return SearchResponse{}, err //nolint:wrapcheck // repository errors are already contextual

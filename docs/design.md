@@ -248,7 +248,7 @@ Results also carry structured JSON. Total tool description budget: under 1,500 t
 
 ### Errors
 
-Sentinel errors in `memory`: `ErrNotFound`, `ErrConflict`, `ErrValidation`, `ErrSecretDetected`, `ErrQuarantined`, `ErrReadOnly`, `ErrNoContext`. Inner layers wrap with `%w`. The MCP boundary maps them to tool errors with short safe messages (database internals never reach Claude) and logs each error once, there.
+Sentinel errors in `memory`: `ErrNotFound`, `ErrConflict`, `ErrValidation`, `ErrSecretDetected`, `ErrQuarantined`, `ErrReadOnly`, `ErrNoContext`, `ErrSchemaBehind` (a missing column or table: the binary is newer than the schema; search still returns results without a `search_id` until `memorable migrate` runs). Inner layers wrap with `%w`. The MCP boundary maps them to tool errors with short safe messages (database internals never reach Claude) and logs each error once, there.
 
 ### Recommended Claude Code permissions
 

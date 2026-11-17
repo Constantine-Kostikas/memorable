@@ -186,7 +186,7 @@ func TestStatsRecall(t *testing.T) {
 
 	st, err := f.store.Stats(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, store.RecallStats{Days: 30, Injections: 2, Shown: 3, Fetched: 1}, st.Recall)
+	assert.Equal(t, store.RecallStats{Days: 30, Injections: 2, PerDay: 2.0 / 30, Shown: 3, Fetched: 1}, st.Recall)
 }
 
 func TestRecallEventsLeaveScoresUnchanged(t *testing.T) {

@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/constantine-kostikas/memorable/internal/config"
+	"github.com/constantine-kostikas/memorable/internal/memory"
 	"github.com/constantine-kostikas/memorable/internal/store"
 	"github.com/constantine-kostikas/memorable/internal/store/storetest"
 )
@@ -58,6 +59,23 @@ func TestMigrateUpFromV3(t *testing.T) {
 	var details string
 	require.NoError(t, conn.QueryRow(ctx, `SELECT details::text FROM mem_personal.access_events WHERE query = 'old'`).Scan(&details))
 	assert.Equal(t, "{}", details)
+}
+
+func TestLogEventOnV3SchemaIsSchemaBehind(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	db := storetest.NewDatabase(t)
+	require.NoError(t, storetest.Bootstrap(ctx, t, db, testConfig()))
+	require.NoError(t, store.MigrateDownTo(ctx, db.AdminDSN, "mem_personal", 768, 3))
+	st, err := store.Open(ctx, storetest.DatabaseConfig(db), storetest.AppPassword, "mem_personal", "dev")
+	require.NoError(t, err)
+	t.Cleanup(st.Close)
+
+	q := "port"
+	_, err = st.LogEvent(ctx, memory.Event{Kind: memory.EventSearch, Query: &q})
+	require.ErrorIs(t, err, memory.ErrSchemaBehind)
+	_, err = st.LatestCalibration(ctx, "embeddinggemma", 768)
+	require.ErrorIs(t, err, memory.ErrSchemaBehind)
 }
 
 func TestMigrationRecallEvents(t *testing.T) {
