@@ -13,6 +13,7 @@ import (
 
 	"github.com/constantine-kostikas/memorable/internal/config"
 	"github.com/constantine-kostikas/memorable/internal/memory"
+	"github.com/constantine-kostikas/memorable/internal/store"
 )
 
 type fakeProbe struct {
@@ -68,7 +69,7 @@ func healthy(t *testing.T) Deps {
 			return a, nil
 		},
 		Open: func(context.Context, string) (Probe, error) {
-			return &fakeProbe{ext: map[string]string{"vector": "0.8.7", "pg_trgm": "1.6"}, ver: 2, dims: 768}, nil
+			return &fakeProbe{ext: map[string]string{"vector": "0.8.7", "pg_trgm": "1.6"}, ver: store.LatestVersion(store.SchemaContext), dims: 768}, nil
 		},
 		HTTP: http.DefaultClient,
 	}
@@ -135,7 +136,7 @@ func TestRun_OldPgvector(t *testing.T) {
 	t.Parallel()
 	d := healthy(t)
 	d.Open = func(context.Context, string) (Probe, error) {
-		return &fakeProbe{ext: map[string]string{"vector": "0.7.4", "pg_trgm": "1.6"}, ver: 2, dims: 768}, nil
+		return &fakeProbe{ext: map[string]string{"vector": "0.7.4", "pg_trgm": "1.6"}, ver: store.LatestVersion(store.SchemaContext), dims: 768}, nil
 	}
 	checks := byName(Run(context.Background(), d))
 	assert.Equal(t, StatusFail, checks["extensions"].Status)

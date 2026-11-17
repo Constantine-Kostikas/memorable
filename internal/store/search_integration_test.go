@@ -472,3 +472,23 @@ func TestList_ReturnsRowUpdatedAt(t *testing.T) {
 	require.Len(t, got, 1)
 	assert.True(t, want.Equal(got[0].UpdatedAt), "got %s", got[0].UpdatedAt)
 }
+
+func TestCandidatesFTS_MatchesTags(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f := newFixture(t)
+	tagged := insertWith(t, f, "Workflow notes", "GitHub Actions runs lint first", func(m *memory.Memory) { m.Tags = []string{"ci"} }, -1)
+	profileID := uuid.Must(uuid.NewV7())
+	_, err := f.admin.Exec(ctx, `INSERT INTO mem_profile.memories (id, owner, type, title, content, tags, source, status, content_hash)
+		VALUES ($1, 'dev', 'user', 'Writing habits', 'prefers short sentences', '{spelling}', 'user_stated', 'active', '\x00')`, profileID)
+	require.NoError(t, err)
+	filter := memory.Filter{Owner: "dev", Now: time.Now()}
+
+	ci, err := f.store.CandidatesFTS(ctx, "ci", filter, 10)
+	require.NoError(t, err)
+	assert.Equal(t, []uuid.UUID{tagged.ID}, ids(ci))
+
+	spelling, err := f.store.CandidatesFTS(ctx, "spelling", filter, 10)
+	require.NoError(t, err)
+	assert.Equal(t, []uuid.UUID{profileID}, ids(spelling))
+}
