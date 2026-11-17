@@ -5,7 +5,9 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -45,6 +47,14 @@ func doctorDeps(d deps, flags *rootFlags) doctor.Deps {
 				deps.ContextName += " (read-only fallback)"
 			}
 		}
+	}
+	deps.ProfileOnly = schema == store.ProfileSchema
+	deps.ClaudeSettings = func() ([]byte, error) {
+		home := d.getenv("HOME")
+		if home == "" {
+			return nil, errors.New("HOME is not set") //nolint:err113 // reported as "not installed"
+		}
+		return os.ReadFile(filepath.Join(home, ".claude", "settings.json")) //nolint:wrapcheck,gosec // fixed path under HOME
 	}
 	deps.Password = func() (string, error) {
 		s, err := secretStore(d.getenv)

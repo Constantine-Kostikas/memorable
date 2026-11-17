@@ -14,6 +14,20 @@ type Stats struct {
 	ByStatus    map[string]int `json:"by_status"`
 	ByType      map[string]int `json:"by_type"`
 	ByProject   map[string]int `json:"by_project"`
+	Recall      RecallStats    `json:"recall"`
+}
+
+// recallStatsDays is the window prompt-recall statistics cover.
+const recallStatsDays = 30
+
+// RecallStats counts prompt-recall activity over the last Days days.
+type RecallStats struct {
+	Days int `json:"days"`
+	// Injections is how many prompts got a recall block; Shown counts the memories in those blocks, and
+	// Fetched how many of them Claude then fetched with the block's search_id.
+	Injections int `json:"injections"`
+	Shown      int `json:"shown"`
+	Fetched    int `json:"fetched"`
 }
 
 // Stats counts memories by status, type, and project.
@@ -44,7 +58,14 @@ func (s *Store) Stats(ctx context.Context) (Stats, error) {
 			return st, mapErr("stats", err)
 		}
 	}
-	return st, nil
+	st.Recall.Days = recallStatsDays
+	err = s.pool.QueryRow(ctx, `SELECT count(*), coalesce(sum(cardinality(e.returned_ids)), 0),
+			coalesce(sum((SELECT count(DISTINCT g.memory_id) FROM access_events g
+				WHERE g.kind = 'get' AND g.search_id = e.id AND g.memory_id = ANY(e.returned_ids))), 0)
+		FROM access_events e
+		WHERE e.owner = $1 AND e.kind = 'inject' AND e.created_at > now() - make_interval(days => $2)`, s.owner, recallStatsDays).
+		Scan(&st.Recall.Injections, &st.Recall.Shown, &st.Recall.Fetched)
+	return st, mapErr("stats recall", err)
 }
 
 // Extensions returns installed extension versions by name.

@@ -288,8 +288,8 @@ func newStatsCmd(d deps, flags *rootFlags) *cobra.Command {
 				if p.IsJSON() {
 					return p.JSON(st)
 				}
-				p.Panel("memorable · "+a.res.Context, fmt.Sprintf("memories   %d\nembedded   %d\npending    %d embedding jobs",
-					st.Total, st.Embedded, st.PendingJobs))
+				p.Panel("memorable · "+a.res.Context, fmt.Sprintf("memories   %d\nembedded   %d\npending    %d embedding jobs\nrecall     %d prompts, %d memories shown, %d fetched (last %d days)",
+					st.Total, st.Embedded, st.PendingJobs, st.Recall.Injections, st.Recall.Shown, st.Recall.Fetched, st.Recall.Days))
 				for _, group := range []struct {
 					name string
 					m    map[string]int

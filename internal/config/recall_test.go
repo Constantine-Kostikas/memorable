@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestRecallDefaults(t *testing.T) {
@@ -27,7 +28,7 @@ func TestRecallValidation(t *testing.T) {
 	} {
 		c := Default()
 		mutate(&c.Recall)
-		assert.ErrorContains(t, c.Validate(), "recall", name)
+		require.ErrorContains(t, c.Validate(), "recall", name)
 	}
 	c := Default()
 	assert.NoError(t, c.Validate())

@@ -56,7 +56,7 @@ Setup walks through each step, shows what it will change (as a diff for files), 
 5. Pulls the embedding model.
 6. Registers the MCP server with Claude Code (`claude mcp add --scope user`).
 7. Adds a short instructions block to `~/.claude/CLAUDE.md`.
-8. Adds permission rules to `~/.claude/settings.json`, and optionally a SessionStart hook.
+8. Adds permission rules to `~/.claude/settings.json`, and optionally two hooks: SessionStart (your top memories at session start) and UserPromptSubmit (prompt recall, below).
 9. Optionally installs a daily backup job (systemd user timer or launchd agent).
 10. Optionally installs tab completion for your login shell (bash, zsh, or fish).
 11. Runs `memorable doctor`.
@@ -122,12 +122,33 @@ Claude uses the MCP tools on its own once the CLAUDE.md block is in place. You c
 | `memorable top` | Pinned and most used memories |
 | `memorable edit infra/ports` | Edit in `$EDITOR`; rescanned and re-embedded |
 | `memorable review` | Work through flagged, expired, stale, and unverified memories |
-| `memorable stats` | Counts and embedding coverage |
+| `memorable stats` | Counts, embedding coverage, and prompt recall activity |
+| `memorable calibrate --dry-run` | How well recall percentages match what you actually fetch |
 | `memorable context` | Which context and project this directory uses |
 | `memorable profile add --title "Spelling" --content "Use US spelling."` | Memories that apply everywhere (admin) |
 | `memorable approve --list` | Review memories quarantined by the injection scanner (admin) |
 
 Every read command supports `-o json`. Output is plain text when piped.
+
+## Prompt recall
+
+With the UserPromptSubmit hook installed, every prompt is searched against your memories before Claude sees it. When something matches well, Claude gets up to three short pointers, each with a relevance percentage:
+
+```
+<memory-recall search_id="..." count="1">
+- 86% id=... slug=memorable/db-port | Memorable database port: The memorable Postgres container listens on 127.0.0.1:5434...
+</memory-recall>
+```
+
+Claude fetches the ones it needs with `memory_get`. Most prompts get nothing: recall only shows memories at 70% relevance or more, skips prompts shorter than three words and slash commands, never repeats a memory already shown in the session, and gives up silently after 1.5 seconds. Tune it under `[recall]` in the config (`min_relevance`, `max_items`, `min_words`, `deadline_ms`).
+
+The percentage is calibrated: on the evaluation set, results scored 70 to 80% were relevant 76% of the time, and results scored 80 to 90% were relevant 96% of the time. It starts from a built-in fit for `embeddinggemma` and learns from your own use, since a pointer Claude fetches counts as relevant and one it ignores for a day counts as irrelevant. Run `memorable calibrate --dry-run` to see what it has learned, and `memorable calibrate` to save a fit once there are at least 20 of each. `memorable stats` shows how many prompts got pointers and how many were fetched; `memorable doctor` shows which calibration is active.
+
+To add the hook by hand, put this under `hooks` in `~/.claude/settings.json`:
+
+```json
+"UserPromptSubmit": [{"hooks": [{"type": "command", "command": "memorable hook prompt-submit"}]}]
+```
 
 ## Web UI
 

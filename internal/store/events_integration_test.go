@@ -13,6 +13,7 @@ import (
 
 	"github.com/constantine-kostikas/memorable/internal/memory"
 	"github.com/constantine-kostikas/memorable/internal/rank"
+	"github.com/constantine-kostikas/memorable/internal/store"
 )
 
 const testModel = "embeddinggemma"
@@ -169,6 +170,23 @@ func TestCalibrationLatestByModel(t *testing.T) {
 	got, err = f.store.LatestCalibration(ctx, "a", 1024)
 	require.NoError(t, err)
 	assert.Nil(t, got)
+}
+
+func TestStatsRecall(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f := newFixture(t)
+	x := insertWith(t, f, "x", "x", nil, 1)
+	y := insertWith(t, f, "y", "y", nil, 2)
+	id, err := f.store.LogEvent(ctx, memory.Event{Kind: memory.EventInject, Returned: []uuid.UUID{x.ID, y.ID}})
+	require.NoError(t, err)
+	require.NoError(t, f.store.LogGet(ctx, x.ID, &id, nil))
+	_, err = f.store.LogEvent(ctx, memory.Event{Kind: memory.EventInject, Returned: []uuid.UUID{y.ID}})
+	require.NoError(t, err)
+
+	st, err := f.store.Stats(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, store.RecallStats{Days: 30, Injections: 2, Shown: 3, Fetched: 1}, st.Recall)
 }
 
 func TestRecallEventsLeaveScoresUnchanged(t *testing.T) {

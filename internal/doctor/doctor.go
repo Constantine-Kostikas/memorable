@@ -11,7 +11,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/constantine-kostikas/memorable/internal/claudecfg"
 	"github.com/constantine-kostikas/memorable/internal/config"
+	"github.com/constantine-kostikas/memorable/internal/memory"
+	"github.com/constantine-kostikas/memorable/internal/rank"
 	"github.com/constantine-kostikas/memorable/internal/store"
 )
 
@@ -39,6 +42,7 @@ type Probe interface {
 	Extensions(ctx context.Context) (map[string]string, error)
 	SchemaVersion(ctx context.Context, schema string) (int64, error)
 	EmbeddingDimensions(ctx context.Context) (int, error)
+	LatestCalibration(ctx context.Context, model string, dims int) (*memory.StoredCalibration, error)
 	Close()
 }
 
@@ -53,6 +57,10 @@ type Deps struct {
 	Dial        func(ctx context.Context, network, addr string) (net.Conn, error)
 	Open        func(ctx context.Context, password string) (Probe, error)
 	HTTP        *http.Client
+	// ClaudeSettings reads ~/.claude/settings.json; nil means it is unknown.
+	ClaudeSettings func() ([]byte, error)
+	// ProfileOnly is set when the probed schema is the profile schema, which has no calibrations.
+	ProfileOnly bool
 }
 
 // Failed reports whether any check failed.
@@ -92,7 +100,13 @@ func Run(ctx context.Context, d Deps) []Check {
 	}
 	cfg := d.Config
 	r.add("context", d.ContextErr == nil, contextDetail(d), "map this directory with `memorable context add <path> <name>`")
-	dbOK := r.database(ctx, d, cfg)
+	hook := recallHookInstalled(d)
+	hookDetail := "not installed (optional: `memorable setup` adds it)"
+	if hook {
+		hookDetail = "installed"
+	}
+	r.add("recall hook", true, hookDetail, "")
+	dbOK := r.database(ctx, d, cfg, hook)
 	r.ollama(ctx, d, cfg)
 	if !dbOK {
 		r.skip("dimensions")
@@ -114,9 +128,17 @@ func contextDetail(d Deps) string {
 	return d.ContextName
 }
 
-var dbChecks = []string{"port", "app login", "extensions", "schemas"}
+var dbChecks = []string{"port", "app login", "extensions", "schemas", "calibration"}
 
-func (r *runner) database(ctx context.Context, d Deps, cfg *config.Config) bool {
+func recallHookInstalled(d Deps) bool {
+	if d.ClaudeSettings == nil {
+		return false
+	}
+	b, err := d.ClaudeSettings()
+	return err == nil && claudecfg.HasHook(b, "UserPromptSubmit", claudecfg.PromptHookCommand)
+}
+
+func (r *runner) database(ctx context.Context, d Deps, cfg *config.Config, hook bool) bool {
 	password, err := d.Password()
 	r.add("app password", err == nil, errDetail(err, "stored"), "run `memorable setup` (or `memorable migrate`) to create it")
 
@@ -159,7 +181,38 @@ func (r *runner) database(ctx context.Context, d Deps, cfg *config.Config) bool 
 	dims, err := probe.EmbeddingDimensions(ctx)
 	ok := err == nil && dims == cfg.Embedding.Dimensions
 	r.add("dimensions", ok, fmt.Sprintf("column vector(%d), config %d", dims, cfg.Embedding.Dimensions), "run `memorable reembed --all`")
+	r.calibration(ctx, d, probe, cfg, hook)
 	return true
+}
+
+// calibration reports which relevance calibration prompt recall uses. A missing one only fails when the
+// recall hook is installed, because then every prompt silently gets nothing.
+func (r *runner) calibration(ctx context.Context, d Deps, probe Probe, cfg *config.Config, hook bool) {
+	model, dims := cfg.Embedding.Model, cfg.Embedding.Dimensions
+	if d.ProfileOnly {
+		r.checks = append(r.checks, Check{Name: "calibration", Status: StatusSkipped, Detail: "no context schema to read"})
+		return
+	}
+	stored, err := probe.LatestCalibration(ctx, model, dims)
+	switch {
+	case err != nil:
+		r.add("calibration", false, err.Error(), "run `memorable migrate`")
+	case stored != nil:
+		r.add("calibration", true, fmt.Sprintf("usage fit from %d relevant and %d irrelevant labels, %s",
+			stored.Positives, stored.Negatives, stored.FittedAt.Format(time.DateOnly)), "")
+	default:
+		if _, ok := rank.DefaultCalibration(model, dims); ok {
+			r.add("calibration", true, "built-in default for "+model, "")
+			return
+		}
+		detail := fmt.Sprintf("no calibration for %s with %d dimensions", model, dims)
+		if hook {
+			r.add("calibration", false, detail+"; prompt recall shows nothing",
+				"switch to embeddinggemma, or fit a default for this model with `make test-eval`")
+			return
+		}
+		r.checks = append(r.checks, Check{Name: "calibration", Status: StatusSkipped, Detail: detail + "; prompt recall disabled"})
+	}
 }
 
 func (r *runner) extensions(ctx context.Context, probe Probe) {
