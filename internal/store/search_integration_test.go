@@ -287,8 +287,15 @@ func TestAdmin_PurgeApproveProfile(t *testing.T) {
 	victim := insertWith(t, f, "secret", "leaked", nil, 1)
 	_, err = f.store.LogSearch(ctx, "leaked", nil, []uuid.UUID{victim.ID})
 	require.NoError(t, err)
+	_, err = f.store.LogEvent(ctx, memory.Event{Kind: memory.EventInject, Returned: []uuid.UUID{victim.ID},
+		Details: memory.EventDetails{Origin: memory.OriginHook, Signals: []memory.ResultSignals{{ID: victim.ID}}}})
+	require.NoError(t, err)
 	require.NoError(t, f.store.AddFeedback(ctx, victim.ID, memory.FeedbackWrong, "", nil))
 	require.NoError(t, admin.Purge(ctx, victim.ID))
+	var inDetails int
+	require.NoError(t, f.admin.QueryRow(ctx, `SELECT count(*) FROM mem_personal.access_events WHERE details::text LIKE '%' || $1 || '%'`,
+		victim.ID.String()).Scan(&inDetails))
+	assert.Zero(t, inDetails, "purge leaves no signals naming the memory")
 	for _, table := range []string{"memories", "memory_versions", "memory_feedback", "access_events"} {
 		var n int
 		col := "memory_id"

@@ -130,7 +130,8 @@ func (s *Service) Search(ctx context.Context, r SearchRequest) (SearchResponse, 
 	if r.Passive {
 		return resp, nil
 	}
-	searchID, err := s.repo.LogSearch(ctx, r.Query, s.settings.Scope.Project, summaryIDs(results))
+	query := r.Query
+	searchID, err := s.repo.LogEvent(ctx, Event{Kind: EventSearch, Query: &query, Project: s.settings.Scope.Project, Returned: summaryIDs(results)})
 	if err != nil {
 		return SearchResponse{}, err //nolint:wrapcheck // repository errors are already contextual
 	}
