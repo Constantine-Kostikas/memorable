@@ -59,13 +59,16 @@ Pointers versus full content: the user chose pointers. They cost few tokens, and
 A logistic model maps a result's retrieval signals to the probability that it is relevant:
 
 ```
-p = sigmoid(b0 + b1*similarity + b2*fts_hit + b3*trigram_hit)
+p = sigmoid(b0 + b1*similarity + b2*fts_hit + b3*trigram_hit + b4/vector_rank)
 ```
 
 - `similarity`: vector cosine similarity, 0 when the result came from text retrieval only.
 - `fts_hit`, `trigram_hit`: 1 when the result appeared in that candidate list, else 0.
+- `vector_rank`: 1-based position in the vector candidate list; the term is 0 when the result is absent from it.
 
-These signals already exist in `memory.Explanation` (`Similarity`, `FTSRank`, `TrigramRank`). Logistic regression is chosen over isotonic regression because it fits well with few labels (four parameters) and extrapolates sensibly.
+These signals already exist in `memory.Explanation` (`Similarity`, `FTSRank`, `TrigramRank`, `VectorRank`). Logistic regression is chosen over isotonic regression because it fits well with few labels (five parameters) and extrapolates sensibly.
+
+The vector rank term was added during implementation. With only the first three signals, the default fit was badly calibrated (results predicted at 55 to 65% were relevant 80 to 100% of the time), and no prompt-shaped query ever reached 70%. Five-fold cross-validated log loss on the evaluation set fell from 0.50 to 0.26 with the rank term; at the 70% cutoff, prompt-shaped precision is 0.80 and recall 0.90.
 
 **Labels.** Usage labels come from two event kinds, scoped by `search_id` (the `serve` process never sees the Claude Code session id, so no label depends on it):
 
@@ -87,7 +90,7 @@ Known weakness: an unfetched result is not proof of irrelevance, so usage labels
 - Prints the coefficients, label counts, and a reliability table (predicted bucket versus observed rate) so the user can see whether "70%" means 70%.
 - `--dry-run` prints without saving.
 
-**Storage.** A `calibrations` table in each context schema: embedding model, dimensions, the four coefficients, positive and negative counts, source (`default` or `usage`), fitted_at. The active fit is the newest row matching the configured model and dimensions. If none matches (for example after a model change), the built-in default for that model applies; if no default exists for that model, recall injects nothing and `doctor` warns.
+**Storage.** A `calibrations` table in each context schema: embedding model, dimensions, the five coefficients, positive and negative counts, source (`default` or `usage`), fitted_at. The active fit is the newest row matching the configured model and dimensions. If none matches (for example after a model change), the built-in default for that model applies; if no default exists for that model, recall injects nothing and `doctor` warns.
 
 **Default fit.** The eval harness (`make test-eval`) gains a step that fits coefficients from the eval set against real Ollama and prints them as Go source. The output is committed as the built-in default for `embeddinggemma`, 768 dimensions.
 
@@ -137,7 +140,7 @@ One migration per context schema and the profile schema:
 - `access_events.kind` CHECK widens to `search`, `get`, `inject`, `preload`.
 - New nullable `access_events.session_id text`, indexed with `kind`.
 - New `access_events.details jsonb NOT NULL DEFAULT '{}'` for per-result signals.
-- New `calibrations` table (above).
+- New `calibrations` table (above), with coefficients `b0` to `b4`.
 
 Existing retention (`access_events_days`, default 90) applies to the new kinds. Calibration fits need events inside that window.
 
@@ -178,7 +181,8 @@ Validated like `[search]`: `min_relevance` in (0, 1), `max_items` 1 to 10, `dead
 
 - One spec for KOS-142 and KOS-143, since calibration exists to serve the hook.
 - Defaults: 70% threshold, 3 items, 3-word minimum, 1.5 s deadline.
-- Logistic regression on three signals, regularized toward the default fit; a fit is saved only with at least 20 positive and 20 negative labels.
+- A fourth signal, vector rank as 1/rank, added after the three-signal default proved miscalibrated on the evaluation set.
+- Logistic regression on four signals, regularized toward the default fit; a fit is saved only with at least 20 positive and 20 negative labels.
 - Usage labels from MCP searches and injections, keyed by `search_id`; CLI and UI searches and profile memories excluded; negatives counted after 24 hours.
 - About 40 prompt-shaped eval queries added before the default fit.
 - Compaction resets session dedup; resume does not.

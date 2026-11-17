@@ -11,11 +11,14 @@ type Signals struct {
 	Similarity float64
 	FTS        bool
 	Trigram    bool
+	// VectorRank is the 1-based position in the vector candidate list, 0 when absent. It enters the model
+	// as 1/VectorRank: the evaluation set showed rank carries most of the relevance signal similarity misses.
+	VectorRank int
 }
 
 // Calibration is a logistic model mapping Signals to the probability that a result is relevant.
 type Calibration struct {
-	B0, B1, B2, B3 float64
+	B0, B1, B2, B3, B4 float64
 }
 
 // Sample is one labeled result used to fit a Calibration.
@@ -37,11 +40,14 @@ const (
 	// ridgeFloor keeps the Hessian invertible when a signal never varies in the samples.
 	ridgeFloor      = 1e-9
 	reliabilityBins = 10
-	featureCount    = 4
+	featureCount    = 5
 )
 
-// defaults holds the built-in calibrations, keyed by "model/dimensions" and fitted from the evaluation set.
-var defaults = map[string]Calibration{}
+// defaults holds the built-in calibrations, keyed by "model/dimensions". Each is fitted by `make test-eval`,
+// which prints the literal to paste here.
+var defaults = map[string]Calibration{
+	"embeddinggemma/768": {B0: -4.5528, B1: 1.4749, B2: 3.4224, B3: 0.2246, B4: 5.2589},
+}
 
 // DefaultCalibration returns the built-in calibration for an embedding model and dimension.
 func DefaultCalibration(model string, dims int) (Calibration, bool) {
@@ -52,7 +58,7 @@ func DefaultCalibration(model string, dims int) (Calibration, bool) {
 // Relevance returns the calibrated probability, between 0 and 1, that a result with these signals is relevant.
 func (c Calibration) Relevance(s Signals) float64 {
 	x := features(s)
-	return sigmoid(c.B0*x[0] + c.B1*x[1] + c.B2*x[2] + c.B3*x[3])
+	return sigmoid(dot(c.vector(), x))
 }
 
 // Fit fits a Calibration to samples by Newton's method on the mean log loss plus lambda·‖b − prior‖².
@@ -94,7 +100,7 @@ func Fit(samples []Sample, prior Calibration, lambda float64) Calibration {
 			b[i] -= step[i]
 		}
 	}
-	return Calibration{B0: b[0], B1: b[1], B2: b[2], B3: b[3]}
+	return Calibration{B0: b[0], B1: b[1], B2: b[2], B3: b[3], B4: b[4]}
 }
 
 // Reliability groups samples into ten equal-width prediction buckets and reports, for each non-empty one,
@@ -128,11 +134,15 @@ func Reliability(samples []Sample, c Calibration) []Bucket {
 }
 
 func (c Calibration) vector() [featureCount]float64 {
-	return [featureCount]float64{c.B0, c.B1, c.B2, c.B3}
+	return [featureCount]float64{c.B0, c.B1, c.B2, c.B3, c.B4}
 }
 
 func features(s Signals) [featureCount]float64 {
-	return [featureCount]float64{1, s.Similarity, boolFloat(s.FTS), boolFloat(s.Trigram)}
+	inverseRank := 0.0
+	if s.VectorRank > 0 {
+		inverseRank = 1 / float64(s.VectorRank)
+	}
+	return [featureCount]float64{1, s.Similarity, boolFloat(s.FTS), boolFloat(s.Trigram), inverseRank}
 }
 
 func boolFloat(b bool) float64 {
