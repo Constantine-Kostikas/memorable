@@ -192,6 +192,22 @@ func (s *Service) List(ctx context.Context, r ListRequest) (ListResponse, error)
 	return ListResponse{Items: s.scored(mems), Next: next}, nil
 }
 
+// DefaultTagLimit is the number of tags TagCounts returns when no limit is given.
+const DefaultTagLimit = 100
+
+// TagCounts lists the tags in use, most used first, across the session's visible memories and the profile.
+func (s *Service) TagCounts(ctx context.Context, allProjects bool, limit int) ([]TagCount, error) {
+	if limit == 0 {
+		limit = DefaultTagLimit
+	}
+	if limit < 1 || limit > DefaultTagLimit {
+		return nil, fmt.Errorf("%w: limit must be between 1 and %d", ErrValidation, DefaultTagLimit)
+	}
+	f := s.filter()
+	f.AllProjects = allProjects
+	return s.repo.TagCounts(ctx, f, limit) //nolint:wrapcheck // repository errors are already contextual
+}
+
 // Review returns the review queue.
 func (s *Service) Review(ctx context.Context) (ReviewQueue, error) {
 	return s.repo.Review(ctx, s.now(), staleAfter, s.halfLife()) //nolint:wrapcheck // repository errors are already contextual

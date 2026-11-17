@@ -365,6 +365,32 @@ func (r *Repo) SetStatus(_ context.Context, id uuid.UUID, s memory.Status, kind 
 	return nil
 }
 
+// TagCounts implements memory.Repository.
+func (r *Repo) TagCounts(_ context.Context, f memory.Filter, limit int) ([]memory.TagCount, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.Err != nil {
+		return nil, r.Err
+	}
+	counts := map[string]int{}
+	r.each(f, func(m *memory.Memory) {
+		for _, t := range m.Tags {
+			counts[t]++
+		}
+	})
+	out := make([]memory.TagCount, 0, len(counts))
+	for tag, n := range counts {
+		out = append(out, memory.TagCount{Tag: tag, Count: n})
+	}
+	slices.SortFunc(out, func(a, b memory.TagCount) int {
+		if a.Count != b.Count {
+			return b.Count - a.Count
+		}
+		return strings.Compare(a.Tag, b.Tag)
+	})
+	return out[:min(limit, len(out))], nil
+}
+
 // Restore implements memory.Repository.
 func (r *Repo) Restore(_ context.Context, id uuid.UUID, version *int, a memory.AuditEntry) (memory.Memory, error) {
 	r.mu.Lock()

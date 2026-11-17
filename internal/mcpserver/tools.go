@@ -313,6 +313,19 @@ func searchTool(ctx context.Context, svc *memory.Service, in searchInput) (strin
 	return renderSummaries("memory-results", map[string]string{"search_id": res.SearchID.String()}, res.Results), nil
 }
 
+type tagsInput struct {
+	AllProjects bool `json:"all_projects,omitempty"`
+	Limit       int  `json:"limit,omitempty" jsonschema:"default and max 100"`
+}
+
+func tagsTool(ctx context.Context, svc *memory.Service, in tagsInput) (string, error) {
+	counts, err := svc.TagCounts(ctx, in.AllProjects, in.Limit)
+	if err != nil {
+		return "", err //nolint:wrapcheck // mapped at the boundary
+	}
+	return fmt.Sprintf("<memory-tags count=\"%d\">%s</memory-tags>", len(counts), RenderTags(counts)), nil
+}
+
 type listInput struct {
 	Tags        []string `json:"tags,omitempty"`
 	TagsAny     []string `json:"tags_any,omitempty" jsonschema:"memories with at least one of these tags"`
@@ -453,6 +466,7 @@ func (s *Server) addTools() {
 	addTool(s, "memory_history", "List all versions of a memory.", historyTool)
 	addTool(s, "memory_search", "Hybrid semantic and keyword search. Returns compact results; an empty result means nothing relevant.", searchTool)
 	addTool(s, "memory_list", "Browse memories by tag, type, or status, paginated.", listTool)
+	addTool(s, "memory_tags", "Tags in use with counts. Reuse these when tagging a new memory.", tagsTool)
 	addTool(s, "memory_top", "Most used and pinned memories for this project.", topTool)
 	addTool(s, "memory_feedback", "Report a memory as useful, wrong, or outdated. Wrong or outdated hides it until reviewed.", feedbackTool)
 	addTool(s, "memory_link", "Link two memories as related, supersedes, or contradicts.", linkTool)

@@ -97,6 +97,7 @@ type Repository interface {
 	Top(ctx context.Context, f Filter, limit int) ([]Memory, error)
 	List(ctx context.Context, f Filter, statuses []Status, cursor *uuid.UUID, limit int) ([]Memory, *uuid.UUID, error)
 	Review(ctx context.Context, now time.Time, staleAfter, halfLife time.Duration) (ReviewQueue, error)
+	TagCounts(ctx context.Context, f Filter, limit int) ([]TagCount, error)
 }
 
 // Filter scopes candidate and listing queries.
@@ -110,6 +111,12 @@ type Filter struct {
 	IncludeFlagged    bool
 	IncludeSuperseded bool
 	Now               time.Time
+}
+
+// TagCount is a tag and the number of visible memories that carry it.
+type TagCount struct {
+	Tag   string
+	Count int
 }
 
 // Candidate is a search hit before fusion.

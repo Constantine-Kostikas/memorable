@@ -226,6 +226,49 @@ func newTopCmd(d deps, flags *rootFlags) *cobra.Command {
 	return cmd
 }
 
+type tagCountView struct {
+	Tag   string `json:"tag"`
+	Count int    `json:"count"`
+}
+
+func newTagsCmd(d deps, flags *rootFlags) *cobra.Command {
+	var all bool
+	var limit int
+	cmd := &cobra.Command{
+		Use:     "tags",
+		Short:   "List the tags in use with counts",
+		Example: "  memorable tags\n  memorable tags --all-projects -o json",
+		GroupID: groupMemory,
+		Args:    argsUsage(cobra.NoArgs),
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			p, err := newPrinter(cmd, flags, d.getenv)
+			if err != nil {
+				return err
+			}
+			return withApp(cmd, d, flags, func(ctx context.Context, a *app) error {
+				counts, err := a.svc.TagCounts(ctx, all, limit)
+				if err != nil {
+					return err //nolint:wrapcheck // shown to the user as is
+				}
+				views := make([]tagCountView, 0, len(counts))
+				for _, c := range counts {
+					views = append(views, tagCountView{Tag: c.Tag, Count: c.Count})
+				}
+				if p.IsJSON() {
+					return p.JSON(views)
+				}
+				for _, v := range views {
+					p.Line(fmt.Sprintf("%s\t%d", v.Tag, v.Count))
+				}
+				return nil
+			})
+		},
+	}
+	cmd.Flags().BoolVar(&all, "all-projects", false, "include other projects")
+	cmd.Flags().IntVar(&limit, "limit", memory.DefaultTagLimit, "number of tags (max 100)")
+	return cmd
+}
+
 func newStatsCmd(d deps, flags *rootFlags) *cobra.Command {
 	return &cobra.Command{
 		Use:     "stats",

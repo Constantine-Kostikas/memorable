@@ -85,7 +85,7 @@ func TestListCmd_AnyTag(t *testing.T) {
 	a := fakeApp(t)
 	for _, m := range []struct{ title, tag string }{{"Alpha note", "a"}, {"Beta note", "b"}, {"Gamma note", "c"}} {
 		_, err := a.svc.Write(context.Background(), []memory.NewMemory{
-			{Title: m.title, Content: "content " + m.tag, Type: memory.TypeProject, Source: memory.SourceUserStated, Tags: []string{m.tag}},
+			{Title: m.title, Content: "content " + m.tag, Type: memory.TypeProject, Source: memory.SourceUserStated, Tags: []string{m.tag}, OnSimilar: memory.OnSimilarKeepBoth},
 		})
 		require.NoError(t, err)
 	}
@@ -99,4 +99,30 @@ func TestListCmd_AnyTag(t *testing.T) {
 	assert.Contains(t, out, "Alpha note")
 	assert.Contains(t, out, "Beta note")
 	assert.NotContains(t, out, "Gamma note")
+}
+
+func TestTagsCmd(t *testing.T) {
+	t.Parallel()
+	a := fakeApp(t)
+	for _, m := range []struct {
+		title string
+		tags  []string
+	}{{"Alpha note", []string{"go", "ci"}}, {"Beta note", []string{"go"}}} {
+		_, err := a.svc.Write(context.Background(), []memory.NewMemory{
+			{Title: m.title, Content: "content " + m.title, Type: memory.TypeProject, Source: memory.SourceUserStated, Tags: m.tags, OnSimilar: memory.OnSimilarKeepBoth},
+		})
+		require.NoError(t, err)
+	}
+	d := defaultDeps()
+	d.build = func(context.Context, string, []string, *slog.Logger) (*app, error) { return a, nil }
+	d.cwd = func() (string, error) { return "/home/x/projects/demo", nil }
+
+	out, err := runRoot(t, d, "", "tags", "-o", "json")
+	require.NoError(t, err, out)
+	assert.JSONEq(t, `[{"tag":"go","count":2},{"tag":"ci","count":1}]`, out)
+
+	out, err = runRoot(t, d, "", "tags")
+	require.NoError(t, err, out)
+	assert.Contains(t, out, "go\t2")
+	assert.Contains(t, out, "ci\t1")
 }

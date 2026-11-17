@@ -93,7 +93,7 @@ func TestTools_Listed(t *testing.T) {
 	}
 	assert.ElementsMatch(t, []string{
 		"memory_write", "memory_get", "memory_update", "memory_delete", "memory_restore", "memory_history",
-		"memory_search", "memory_list", "memory_top", "memory_feedback", "memory_link", "memory_review",
+		"memory_search", "memory_list", "memory_tags", "memory_top", "memory_feedback", "memory_link", "memory_review",
 	}, names)
 	assert.Less(t, budget, 12000, "tool definitions must stay small; about 4 chars per token")
 }
@@ -280,7 +280,7 @@ func TestSearchAndListTools_TagsAny(t *testing.T) {
 	h := newHarness(t)
 	for _, m := range []struct{ title, tag string }{{"Alpha note", "a"}, {"Beta note", "b"}, {"Gamma note", "c"}} {
 		out, isErr := call(t, h.session, "memory_write", map[string]any{"memories": []map[string]any{{
-			"title": m.title, "content": "shared words " + m.tag, "type": "project", "source": "user_stated", "tags": []string{m.tag},
+			"title": m.title, "content": "shared words " + m.tag, "type": "project", "source": "user_stated", "tags": []string{m.tag}, "on_similar": "keep_both",
 		}}})
 		require.False(t, isErr, out)
 	}
@@ -295,4 +295,31 @@ func TestSearchAndListTools_TagsAny(t *testing.T) {
 	require.False(t, isErr, out)
 	assert.Contains(t, out, "Alpha note")
 	assert.NotContains(t, out, "Gamma note")
+}
+
+func TestTagsTool(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	for _, m := range []struct {
+		title string
+		tags  []string
+	}{{"Alpha note", []string{"go", "ci"}}, {"Beta note", []string{"go"}}} {
+		out, isErr := call(t, h.session, "memory_write", map[string]any{"memories": []map[string]any{{
+			"title": m.title, "content": "words " + m.title, "type": "project", "source": "user_stated", "tags": m.tags, "on_similar": "keep_both",
+		}}})
+		require.False(t, isErr, out)
+	}
+
+	out, isErr := call(t, h.session, "memory_tags", map[string]any{})
+
+	require.False(t, isErr, out)
+	assert.Equal(t, `<memory-tags count="2">go (2), ci (1)</memory-tags>`, out)
+}
+
+func TestTagsTool_NoTags(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	out, isErr := call(t, h.session, "memory_tags", map[string]any{})
+	require.False(t, isErr, out)
+	assert.Equal(t, `<memory-tags count="0"></memory-tags>`, out)
 }

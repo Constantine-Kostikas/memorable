@@ -445,3 +445,31 @@ func TestSearch_TagsAny(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []uuid.UUID{ma.ID}, resultIDs(res.Results))
 }
+
+func TestTagCounts(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, nil)
+	for i, tags := range [][]string{{"go", "ci"}, {"go"}, {"ci", "go"}, {"docs"}} {
+		n := note("Memory "+string(rune('a'+i)), "content "+string(rune('a'+i)))
+		n.Tags, n.OnSimilar = tags, memory.OnSimilarKeepBoth
+		created(t, e, n)
+	}
+
+	got, err := e.svc.TagCounts(context.Background(), false, 0)
+
+	require.NoError(t, err)
+	assert.Equal(t, []memory.TagCount{{Tag: "go", Count: 3}, {Tag: "ci", Count: 2}, {Tag: "docs", Count: 1}}, got)
+
+	got, err = e.svc.TagCounts(context.Background(), false, 2)
+	require.NoError(t, err)
+	assert.Len(t, got, 2)
+}
+
+func TestTagCounts_Validation(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, nil)
+	for _, limit := range []int{-1, 101} {
+		_, err := e.svc.TagCounts(context.Background(), false, limit)
+		require.ErrorIs(t, err, memory.ErrValidation, limit)
+	}
+}

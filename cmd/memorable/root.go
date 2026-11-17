@@ -75,6 +75,7 @@ func newRootCmdWith(info buildInfo, d deps) *cobra.Command {
 		newGetCmd(d, flags),
 		newListCmd(d, flags),
 		newTopCmd(d, flags),
+		newTagsCmd(d, flags),
 		newStatsCmd(d, flags),
 		newEditCmd(d, flags),
 		newReviewCmd(d, flags),
