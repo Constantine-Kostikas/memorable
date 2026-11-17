@@ -121,3 +121,25 @@ func FuzzSnippet(f *testing.F) {
 		}
 	})
 }
+
+func TestNormalizeTags(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		in   []string
+		want []string
+	}{
+		{"nil stays nil", nil, nil},
+		{"lowercase and trim", []string{" Go ", "CI"}, []string{"go", "ci"}},
+		{"spaces and underscores", []string{"web ui", "web_ui", "Web  UI"}, []string{"web-ui"}},
+		{"drops empty", []string{"", "  "}, []string{}},
+		{"keeps first-seen order", []string{"b", "a", "B"}, []string{"b", "a"}},
+		{"invalid characters survive for validation", []string{"C++"}, []string{"c++"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.want, NormalizeTags(tt.in))
+		})
+	}
+}

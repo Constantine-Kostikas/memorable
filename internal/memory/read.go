@@ -180,7 +180,7 @@ func (s *Service) List(ctx context.Context, r ListRequest) (ListResponse, error)
 		statuses = nil
 	}
 	f := s.filter()
-	f.Tags, f.Types, f.AllProjects = r.Tags, r.Types, r.AllProjects
+	f.Tags, f.Types, f.AllProjects = NormalizeTags(r.Tags), r.Types, r.AllProjects
 	if r.Project != nil {
 		f.Project, f.AllProjects = r.Project, false
 	}

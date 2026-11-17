@@ -76,6 +76,7 @@ func (s *Service) scanText(title, content string, tags []string) (secret, inject
 }
 
 func (s *Service) writeOne(ctx context.Context, n NewMemory) (WriteResult, error) {
+	n.Tags = NormalizeTags(n.Tags)
 	if err := n.Validate(); err != nil {
 		return WriteResult{Outcome: OutcomeRejected, Reason: err.Error()}, nil //nolint:nilerr // validation failures are per-item results
 	}

@@ -254,3 +254,31 @@ func TestDelegates(t *testing.T) {
 	assert.Equal(t, []uuid.UUID{id}, fa.purged)
 	assert.Equal(t, []uuid.UUID{id}, fa.deleted)
 }
+
+func TestProfileAddNormalizesTags(t *testing.T) {
+	t.Parallel()
+	fa := &fakeAdmin{}
+	ops := adminops.New(fa, nil, newScanner(t), 90, time.Now)
+
+	in := validInput()
+	in.Tags = []string{"Style", "style", "Web UI"}
+	got, err := ops.ProfileAdd(context.Background(), in)
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"style", "web-ui"}, got.Tags)
+}
+
+func TestProfileEditNormalizesTags(t *testing.T) {
+	t.Parallel()
+	id := uuid.New()
+	cur := memory.Memory{ID: id, Title: "Spelling", Content: "Use US spelling.", Tags: []string{"style"}, Type: memory.TypeUser, Pinned: true}
+	fa := &fakeAdmin{profile: []memory.Memory{cur}}
+	ops := adminops.New(fa, &fakeEmbedder{}, newScanner(t), 90, time.Now)
+
+	in := validInput()
+	in.Tags = []string{"Style"}
+	_, err := ops.ProfileEdit(context.Background(), id, in)
+
+	require.NoError(t, err)
+	assert.Zero(t, fa.updateCalls, "a differently cased tag is not a change")
+}

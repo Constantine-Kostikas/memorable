@@ -29,6 +29,10 @@ func (s *Service) Update(ctx context.Context, id uuid.UUID, expected *int, p Pat
 	if err := s.writable(); err != nil {
 		return Memory{}, err
 	}
+	if p.Tags != nil {
+		tags := NormalizeTags(*p.Tags)
+		p.Tags = &tags
+	}
 	if err := p.Validate(); err != nil {
 		return Memory{}, err
 	}

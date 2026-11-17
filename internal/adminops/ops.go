@@ -94,6 +94,7 @@ func (o *Ops) ProfileDelete(ctx context.Context, id uuid.UUID) error {
 
 // ProfileAdd validates, secret-scans, embeds, and stores a new profile memory.
 func (o *Ops) ProfileAdd(ctx context.Context, in ProfileInput) (memory.Memory, error) {
+	in.Tags = memory.NormalizeTags(in.Tags)
 	n := memory.NewMemory{Title: in.Title, Content: in.Content, Type: in.Type, Tags: in.Tags, Source: memory.SourceUserStated, Pinned: in.Pinned}
 	if err := n.Validate(); err != nil {
 		return memory.Memory{}, err //nolint:wrapcheck // already contextual
@@ -116,6 +117,7 @@ func (o *Ops) ProfileAdd(ctx context.Context, in ProfileInput) (memory.Memory, e
 // ProfileEdit applies the differences between in and the stored profile memory.
 // Nothing is written when in matches the stored memory.
 func (o *Ops) ProfileEdit(ctx context.Context, id uuid.UUID, in ProfileInput) (memory.Memory, error) {
+	in.Tags = memory.NormalizeTags(in.Tags)
 	mems, err := o.admin.ProfileList(ctx)
 	if err != nil {
 		return memory.Memory{}, err //nolint:wrapcheck // shown to the user as is

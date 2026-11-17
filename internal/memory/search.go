@@ -75,7 +75,7 @@ func (s *Service) Search(ctx context.Context, r SearchRequest) (SearchResponse, 
 		return SearchResponse{}, err
 	}
 	f := s.filter()
-	f.Tags, f.Types, f.AllProjects = r.Tags, r.Types, r.AllProjects
+	f.Tags, f.Types, f.AllProjects = NormalizeTags(r.Tags), r.Types, r.AllProjects
 	if r.Project != nil {
 		f.Project, f.AllProjects = r.Project, false
 	}

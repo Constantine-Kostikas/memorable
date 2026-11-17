@@ -239,3 +239,13 @@ func TestSupersedeRejects(t *testing.T) {
 	ro := newEnv(t, func(s *memory.Settings) { s.Scope.ReadOnly = true })
 	require.ErrorIs(t, ro.svc.Supersede(ctx, old.ID, replacement.ID), memory.ErrReadOnly)
 }
+
+func TestUpdate_NormalizesTags(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, nil)
+	m := created(t, e, note("Ports", "postgres on 5433"))
+	tags := []string{"Infra", "infra", "Web UI"}
+	got, err := e.svc.Update(context.Background(), m.ID, nil, memory.Patch{Tags: &tags})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"infra", "web-ui"}, got.Tags)
+}

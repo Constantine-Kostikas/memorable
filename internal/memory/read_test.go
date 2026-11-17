@@ -383,3 +383,28 @@ func TestSummaries_CarryUpdatedAt(t *testing.T) {
 	require.Len(t, res.Results, 1)
 	assert.True(t, m.UpdatedAt.Equal(res.Results[0].UpdatedAt), "search summary carries updated_at")
 }
+
+func TestSearch_NormalizesTagFilter(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, nil)
+	n := note("Postgres port", "postgres runs on port 5434")
+	n.Tags = []string{"go"}
+	m := created(t, e, n)
+
+	res, err := e.svc.Search(context.Background(), memory.SearchRequest{Query: "postgres port", Tags: []string{"Go"}})
+	require.NoError(t, err)
+	assert.Equal(t, []uuid.UUID{m.ID}, resultIDs(res.Results))
+}
+
+func TestList_NormalizesTagFilter(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, nil)
+	n := note("Postgres port", "postgres runs on port 5434")
+	n.Tags = []string{"ci"}
+	m := created(t, e, n)
+
+	res, err := e.svc.List(context.Background(), memory.ListRequest{Tags: []string{"CI"}})
+	require.NoError(t, err)
+	require.Len(t, res.Items, 1)
+	assert.Equal(t, m.ID, res.Items[0].ID)
+}
