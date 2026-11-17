@@ -296,13 +296,108 @@
   function onSectionClick(evt) {
     var link = evt.target && evt.target.closest && evt.target.closest('[data-section-nav] a[href^="#"]');
     if (link) {
-      selectSection(link.closest('[data-section-nav]'), link.getAttribute('href').replace(/^#/, ''));
+      var section = link.getAttribute('href').replace(/^#/, '');
+      selectSection(link.closest('[data-section-nav]'), section);
+      openSectionFold(section);
     }
   }
 
   function onHashChange() {
     rememberUrl();
     bindSectionNav(document);
+    openSectionFold(hashSection());
+  }
+
+  // Section folds: a heading button collapses its section. Only heading clicks change the stored collapsed set;
+  // opening a section for a link, a validation error, find-in-page, or the expanded editor is not a preference.
+
+  var COLLAPSED_KEY = 'memorable.collapsed';
+
+  function storedCollapsed() {
+    try {
+      var value = JSON.parse(window.localStorage.getItem(COLLAPSED_KEY) || '[]');
+      return Array.isArray(value) ? value : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function storeCollapsed(name, collapsed) {
+    var names = storedCollapsed().filter(function (other) { return other !== name; });
+    if (collapsed) {
+      names.push(name);
+    }
+    try {
+      if (names.length) {
+        window.localStorage.setItem(COLLAPSED_KEY, JSON.stringify(names));
+      } else {
+        window.localStorage.removeItem(COLLAPSED_KEY);
+      }
+    } catch (e) {
+      // Storage can be unavailable; folds then reset on the next selection.
+    }
+  }
+
+  function setFoldOpen(fold, open) {
+    var button = fold && fold.querySelector('[data-section-toggle]');
+    var body = fold && fold.querySelector('[data-section-body]');
+    if (!button || !body) {
+      return;
+    }
+    button.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) {
+      body.removeAttribute('hidden');
+    } else {
+      body.setAttribute('hidden', 'until-found');
+    }
+  }
+
+  function isFoldOpen(fold) {
+    var body = fold.querySelector('[data-section-body]');
+    return !!body && !body.hasAttribute('hidden');
+  }
+
+  function openSectionFold(section) {
+    if (SECTIONS.indexOf(section) !== -1) {
+      setFoldOpen(document.querySelector('[data-section-fold="' + section + '"]'), true);
+    }
+  }
+
+  function isForcedOpen(name) {
+    return name === hashSection() || (name === 'content' && isExpanded());
+  }
+
+  function bindSectionFolds(root) {
+    var collapsed = storedCollapsed();
+    each(root, '[data-section-fold]', function (fold) {
+      var name = fold.getAttribute('data-section-fold');
+      if (collapsed.indexOf(name) !== -1 && !isForcedOpen(name)) {
+        setFoldOpen(fold, false);
+      }
+    });
+  }
+
+  function onSectionToggle(evt) {
+    var button = evt.target && evt.target.closest && evt.target.closest('[data-section-toggle]');
+    var fold = button && button.closest('[data-section-fold]');
+    if (!fold) {
+      return;
+    }
+    var name = fold.getAttribute('data-section-fold');
+    if (name === 'content' && isExpanded()) {
+      return;
+    }
+    var open = !isFoldOpen(fold);
+    setFoldOpen(fold, open);
+    storeCollapsed(name, !open);
+  }
+
+  // invalid and beforematch do not bubble; the capture phase still sees them.
+  function openEnclosingFold(evt) {
+    var fold = evt.target && evt.target.closest && evt.target.closest('[data-section-fold]');
+    if (fold && !isFoldOpen(fold)) {
+      setFoldOpen(fold, true);
+    }
   }
 
   // Toasts: dismiss on click; notices leave after five seconds, errors stay until dismissed.
@@ -373,6 +468,7 @@
   function setExpanded(expanded) {
     if (expanded) {
       document.body.setAttribute('data-expanded', 'true');
+      openSectionFold('content');
     } else {
       document.body.removeAttribute('data-expanded');
     }
@@ -1189,6 +1285,7 @@
     if (!content || content.disabled) {
       return false;
     }
+    openSectionFold('content');
     content.focus();
     return true;
   }
@@ -1244,6 +1341,7 @@
   onReady(bindExpand);
   onReady(bindEditors);
   onReady(bindSectionNav);
+  onReady(bindSectionFolds);
   onReady(bindToasts);
   onReady(bindExpiryClear);
   onReady(bindTagChips);
@@ -1278,6 +1376,9 @@
   document.addEventListener('click', ignoreCleanDiscard, true);
   document.addEventListener('click', onExpandClick);
   document.addEventListener('click', onSectionClick);
+  document.addEventListener('click', onSectionToggle);
+  document.addEventListener('invalid', openEnclosingFold, true);
+  document.addEventListener('beforematch', openEnclosingFold, true);
   document.addEventListener('click', onToastDismiss);
   document.addEventListener('keydown', saveShortcut);
   document.addEventListener('keydown', expandShortcut);

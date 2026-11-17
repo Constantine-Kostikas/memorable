@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"regexp"
 	"strings"
 	"sync"
@@ -550,6 +551,26 @@ func TestDetailIsAnEditor(t *testing.T) {
 		assert.Contains(t, body, `id="`+section+`"`, section)
 	}
 	assert.Contains(t, editor, "Expires (UTC, empty means never)")
+}
+
+func TestDetailSectionsFoldOpenWithoutJS(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, nil)
+
+	rec := send(f.h, http.MethodGet, f.path(""), "", withCookie(f.c), withHeader("HX-Request", "true"))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	body := rec.Body.String()
+	script, err := os.ReadFile("static/app.js")
+	require.NoError(t, err)
+	sections := []string{"content", "versions", "links", "activity"}
+	assert.Contains(t, string(script), `var SECTIONS = ['`+strings.Join(sections, `', '`)+`'];`, "app.js folds the same sections")
+	for _, section := range sections {
+		assert.Regexp(t, `<section id="`+section+`"[^>]*data-section-fold="`+section+`"`, body, section)
+		assert.Regexp(t, `<h2 class="section-heading"><button type="button"[^>]*data-section-toggle aria-expanded="true" aria-controls="`+section+`-body">`, body, section)
+		assert.Contains(t, body, `<div id="`+section+`-body" data-section-body>`, section)
+	}
+	assert.Regexp(t, `aria-controls="links-body">Links <span class="section-count"><span class="sr-only">\(</span>\d+<span class="sr-only">\)</span></span>`, body)
 }
 
 func TestPristineEditorMatchesItsOriginals(t *testing.T) {
