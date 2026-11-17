@@ -105,5 +105,16 @@
   {"query": "κράτηση αεροπορικών εισιτηρίων", "project": "", "relevant": []},
   {"query": "elasticsearch shard allocation", "project": "shop", "relevant": []},
   {"query": "ios app store submission", "project": "", "relevant": []},
-  {"query": "salary negotiation tips", "project": "", "relevant": []}
+  {"query": "salary negotiation tips", "project": "", "relevant": []},
+
+  {"query": "security", "project": "memorable", "relevant": ["memorable/docker-boundary"], "tag_only": true},
+  {"query": "security", "project": "shop", "relevant": ["shop/payments"], "tag_only": true},
+  {"query": "security notes", "project": "memorable", "relevant": ["memorable/docker-boundary"], "tag_only": true},
+  {"query": "monitoring", "project": "shop", "relevant": ["shop/sentry"], "tag_only": true},
+  {"query": "monitoring setup", "project": "shop", "relevant": ["shop/sentry"], "tag_only": true},
+  {"query": "i18n", "project": "", "relevant": ["greek/family", "greek/recipe", "greek/language", "greek/accountant", "greek/gym"], "tag_only": true},
+  {"query": "i18n entries", "project": "memorable", "relevant": ["greek/family", "greek/recipe", "greek/language", "greek/accountant", "greek/gym"], "tag_only": true},
+  {"query": "infra", "project": "shop", "relevant": ["shop/queue", "shop/search", "shop/storage", "shop/redis-port", "shop/cache"], "tag_only": true},
+  {"query": "infra", "project": "memorable", "relevant": ["memorable/embedding-model", "memorable/v2-scope", "memorable/ollama-port", "os/fedora"], "tag_only": true},
+  {"query": "infra notes", "project": "", "relevant": ["os/fedora"], "tag_only": true}
 ]
