@@ -3,8 +3,10 @@ package mcpserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"runtime/debug"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -40,9 +42,23 @@ func New(backend Backend, info Info, logger *slog.Logger) *Server {
 		InitializedHandler: info.OnInitialized,
 		Capabilities:       &mcp.ServerCapabilities{},
 	})
+	s.mcp.AddReceivingMiddleware(s.recoverPanics)
 	s.addTools()
 	s.addResources()
 	return s
+}
+
+// recoverPanics turns a handler panic into an error response so one bad request cannot end the session.
+func (s *Server) recoverPanics(next mcp.MethodHandler) mcp.MethodHandler {
+	return func(ctx context.Context, method string, req mcp.Request) (res mcp.Result, err error) {
+		defer func() {
+			if r := recover(); r != nil {
+				s.logger.ErrorContext(ctx, "handler panicked", "method", method, "panic", r, "stack", string(debug.Stack()))
+				res, err = nil, errors.New("internal error")
+			}
+		}()
+		return next(ctx, method, req)
+	}
 }
 
 // Run serves over t until the client disconnects or ctx ends.

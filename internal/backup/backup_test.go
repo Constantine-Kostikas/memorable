@@ -73,3 +73,28 @@ func TestDefaultDir(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "/data/memorable/backups", got)
 }
+
+func TestBackup_RejectsInvalidDumpAndKeepsOldOnes(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	o := Options{Container: "c", User: "u", Database: "d", Dir: dir, Keep: 1}
+	good := func(_ context.Context, w io.Writer, _ string, _ ...string) error {
+		_, err := io.WriteString(w, "PGDMP-rest")
+		return err
+	}
+	first, err := Backup(context.Background(), good, o, time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+	require.NoError(t, err)
+
+	for _, body := range []string{"", "PGD", "not a dump"} {
+		bad := func(_ context.Context, w io.Writer, _ string, _ ...string) error {
+			_, err := io.WriteString(w, body)
+			return err
+		}
+		_, err = Backup(context.Background(), bad, o, time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC))
+		require.ErrorContains(t, err, "not a pg_dump archive", "body %q", body)
+	}
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	assert.Equal(t, filepath.Base(first), entries[0].Name())
+}

@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -322,4 +323,20 @@ func TestTagsTool_NoTags(t *testing.T) {
 	out, isErr := call(t, h.session, "memory_tags", map[string]any{})
 	require.False(t, isErr, out)
 	assert.Equal(t, `<memory-tags count="0"></memory-tags>`, out)
+}
+
+func TestServer_RecoversFromHandlerPanic(t *testing.T) {
+	t.Parallel()
+	var calls atomic.Int32
+	cs := connect(t, func(context.Context) (*memory.Service, error) {
+		calls.Add(1)
+		panic("boom")
+	})
+	for range 2 {
+		_, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "memory_search", Arguments: map[string]any{"query": "x"}})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "internal error")
+		assert.NotContains(t, err.Error(), "boom")
+	}
+	assert.Equal(t, int32(2), calls.Load())
 }

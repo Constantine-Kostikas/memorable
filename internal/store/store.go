@@ -51,7 +51,8 @@ func Open(ctx context.Context, db config.Database, password, schema, owner strin
 	cfg.MaxConnLifetime = 30 * time.Minute
 	cfg.AfterConnect = func(ctx context.Context, conn *pgx.Conn) error {
 		setup := "SET search_path = " + pgx.Identifier{schema}.Sanitize() + ", public; " +
-			"SET hnsw.iterative_scan = relaxed_order; SET hnsw.ef_search = 100"
+			"SET hnsw.iterative_scan = relaxed_order; SET hnsw.ef_search = 100; " +
+			"SET statement_timeout = '30s'; SET lock_timeout = '5s'; SET idle_in_transaction_session_timeout = '60s'"
 		if _, err := conn.Exec(ctx, setup); err != nil {
 			return fmt.Errorf("configuring session: %w", err)
 		}
@@ -95,6 +96,12 @@ func (s *Store) withTx(ctx context.Context, fn func(pgx.Tx) error) error {
 	return nil
 }
 
+const (
+	sqlstateUniqueViolation  = "23505"
+	sqlstateQueryCanceled    = "57014"
+	sqlstateLockNotAvailable = "55P03"
+)
+
 // mapErr translates driver errors to domain errors.
 func mapErr(op string, err error) error {
 	if err == nil {
@@ -105,8 +112,11 @@ func mapErr(op string, err error) error {
 	}
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
-		if pgErr.Code == "23505" {
+		switch pgErr.Code {
+		case sqlstateUniqueViolation:
 			return fmt.Errorf("%s: %w: %s", op, memory.ErrConflict, pgErr.ConstraintName)
+		case sqlstateQueryCanceled, sqlstateLockNotAvailable:
+			return fmt.Errorf("%s: %w: %w", op, memory.ErrUnavailable, err)
 		}
 		return fmt.Errorf("%s: %w", op, err)
 	}

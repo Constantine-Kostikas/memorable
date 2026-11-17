@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -158,4 +159,21 @@ func TestHook_NoTagLineWithoutTags(t *testing.T) {
 	out := hookOutput(t, fakeApp(t))
 	assert.Contains(t, out, "<memory-preload")
 	assert.NotContains(t, out, "Tags in use")
+}
+
+func TestHook_BoundsWorkWithDeadline(t *testing.T) {
+	t.Parallel()
+	d := defaultDeps()
+	var deadline time.Time
+	var hasDeadline bool
+	d.build = func(ctx context.Context, _ string, _ []string, _ *slog.Logger) (*app, error) {
+		deadline, hasDeadline = ctx.Deadline()
+		return nil, errors.New("stop")
+	}
+	start := time.Now()
+	out, err := runRoot(t, d, `{"cwd":"/x"}`, "hook", "session-start")
+	require.NoError(t, err)
+	assert.Empty(t, out)
+	require.True(t, hasDeadline)
+	assert.WithinDuration(t, start.Add(hookTimeout), deadline, time.Second)
 }

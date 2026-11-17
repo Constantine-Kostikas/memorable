@@ -30,9 +30,10 @@ const (
 )
 
 var (
-	once     sync.Once
-	baseDSN  string
-	startErr error
+	once        sync.Once
+	baseDSN     string
+	containerID string
+	startErr    error
 	// bootstrapMu serializes role creation, which is cluster-wide and not concurrency-safe.
 	bootstrapMu sync.Mutex
 )
@@ -58,8 +59,22 @@ func start() {
 		startErr = fmt.Errorf("starting postgres container: %w", err)
 		return
 	}
+	containerID = c.GetContainerID()
 	baseDSN, startErr = c.ConnectionString(ctx, "sslmode=disable")
 }
+
+// ContainerID returns the shared test container's id, for tests that run tools inside it with docker exec.
+func ContainerID(tb testing.TB) string {
+	tb.Helper()
+	once.Do(start)
+	if startErr != nil {
+		tb.Fatal(startErr)
+	}
+	return containerID
+}
+
+// AdminUser is the superuser role inside the test container.
+const AdminUser = adminUser
 
 // NewDatabase creates a uniquely named database and returns its DSNs.
 func NewDatabase(tb testing.TB) Database {
