@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -41,11 +42,34 @@ type versionView struct {
 	Diff       []diffLine
 }
 
+// linkView is one link from the open memory, labeled by the other memory's title. Hidden marks a
+// quarantined other side and Unavailable one that could not be loaded; both show only the id.
 type linkView struct {
-	Kind     string
-	Outgoing bool
-	OtherID  string
-	Href     string
+	Kind        string
+	Outgoing    bool
+	OtherID     string
+	Href        string
+	Title       string
+	Type        string
+	TypeClass   string
+	Status      string
+	Project     string
+	Updated     string
+	Snippet     string
+	Hidden      bool
+	Unavailable bool
+}
+
+// Label is the link text: the other memory's title when it is known, its id otherwise.
+func (l linkView) Label() string {
+	switch {
+	case l.Hidden:
+		return "Quarantined memory"
+	case l.Title != "":
+		return l.Title
+	default:
+		return l.OtherID
+	}
 }
 
 // activityEntry is one feedback or audit event on a memory, merged into one newest-first list.
@@ -201,7 +225,7 @@ func (s *Server) loadDetail(r *http.Request, rc requestContext, id uuid.UUID) (d
 		return view, fmt.Errorf("load activity: %w", err)
 	}
 	view.Versions = versionViews(history, m.Version)
-	view.Links = linkViews(rc.Name, id, fetched.Links)
+	view.Links = linkViews(rc.Name, id, fetched.Links, s.linkedMemories(r, rc, linkedIDs(id, fetched.Links)), s.cfg.Now())
 	view.Activity = activityEntries(activity)
 	return view, nil
 }
@@ -309,16 +333,87 @@ func lineDiff(oldText, newText string) (lines []diffLine, ok bool) {
 	return lines, true
 }
 
-func linkViews(contextName string, id uuid.UUID, links []memory.Link) []linkView {
+func linkOther(id uuid.UUID, l memory.Link) (other uuid.UUID, outgoing bool) {
+	if l.From == id {
+		return l.To, true
+	}
+	return l.From, false
+}
+
+// linkedIDs is the other side of each link, once each, in link order.
+func linkedIDs(id uuid.UUID, links []memory.Link) []uuid.UUID {
+	ids := make([]uuid.UUID, 0, len(links))
+	for _, l := range links {
+		if other, _ := linkOther(id, l); !slices.Contains(ids, other) {
+			ids = append(ids, other)
+		}
+	}
+	return ids
+}
+
+// linkedMemories reads the linked memories passively, in batches of memory.MaxBatch. A failed batch is
+// logged and leaves its ids out, so the page still renders with ids for labels.
+func (s *Server) linkedMemories(r *http.Request, rc requestContext, ids []uuid.UUID) map[uuid.UUID]memory.Fetched {
+	found := make(map[uuid.UUID]memory.Fetched, len(ids))
+	for batch := range slices.Chunk(ids, memory.MaxBatch) {
+		res, err := rc.Backend.Memories.Get(r.Context(), memory.GetRequest{IDs: batch, Passive: true})
+		if err != nil {
+			s.logger.WarnContext(r.Context(), "load linked memories", "context", rc.Name, "count", len(batch), "error", err)
+			continue
+		}
+		for _, f := range res {
+			ref, parseErr := uuid.Parse(f.Ref)
+			if parseErr != nil {
+				ref = f.Memory.ID
+			}
+			found[ref] = f
+		}
+	}
+	return found
+}
+
+func linkViews(contextName string, id uuid.UUID, links []memory.Link, linked map[uuid.UUID]memory.Fetched, now time.Time) []linkView {
 	views := make([]linkView, 0, len(links))
 	for _, l := range links {
-		other, outgoing := l.From, false
-		if l.From == id {
-			other, outgoing = l.To, true
-		}
-		views = append(views, linkView{Kind: l.Kind, Outgoing: outgoing, OtherID: other.String(), Href: memoryBase(contextName, other)})
+		other, outgoing := linkOther(id, l)
+		view := linkView{Kind: l.Kind, Outgoing: outgoing, OtherID: other.String(), Href: memoryBase(contextName, other)}
+		fillLinked(&view, other, linked[other], now)
+		views = append(views, view)
 	}
 	return views
+}
+
+// fillLinked adds the other memory's summary. A quarantined memory carries only its id and status,
+// so nothing else is read from it.
+func fillLinked(view *linkView, other uuid.UUID, f memory.Fetched, now time.Time) {
+	switch {
+	case errors.Is(f.Err, memory.ErrQuarantined):
+		view.Hidden, view.Status = true, memory.StatusQuarantined.String()
+		return
+	case f.Err != nil || f.Memory.ID != other:
+		view.Unavailable = true
+		return
+	}
+	m := f.Memory
+	view.Title, view.Type, view.Status = m.Title, m.Type.String(), m.Status.String()
+	view.TypeClass = typeClass(view.Type)
+	view.Project = globalProject
+	if m.Project != nil && m.Scope != memory.ScopeGlobal {
+		view.Project = *m.Project
+	}
+	view.Updated = relativeAge(now, m.UpdatedAt)
+	view.Snippet = snippetOf(m.Content)
+}
+
+const linkSnippetRunes = 240
+
+// snippetOf is content with whitespace collapsed, cut to linkSnippetRunes with an ellipsis.
+func snippetOf(content string) string {
+	runes := []rune(strings.Join(strings.Fields(content), " "))
+	if len(runes) <= linkSnippetRunes {
+		return string(runes)
+	}
+	return strings.TrimRight(string(runes[:linkSnippetRunes]), " ") + previewEllipsis
 }
 
 func activityEntries(activity memory.Activity) []activityEntry {
