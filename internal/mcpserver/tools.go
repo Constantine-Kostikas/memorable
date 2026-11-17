@@ -293,6 +293,7 @@ type searchInput struct {
 	Query             string   `json:"query" jsonschema:"what you are looking for, in natural language or keywords"`
 	K                 int      `json:"k,omitempty" jsonschema:"results to return, default 5, max 20"`
 	Tags              []string `json:"tags,omitempty" jsonschema:"only memories with all of these tags"`
+	TagsAny           []string `json:"tags_any,omitempty" jsonschema:"memories with at least one of these tags"`
 	Types             []string `json:"types,omitempty"`
 	AllProjects       bool     `json:"all_projects,omitempty" jsonschema:"include other projects' memories"`
 	IncludeFlagged    bool     `json:"include_flagged,omitempty"`
@@ -304,7 +305,7 @@ func searchTool(ctx context.Context, svc *memory.Service, in searchInput) (strin
 	if err != nil {
 		return "", err
 	}
-	res, err := svc.Search(ctx, memory.SearchRequest{Query: in.Query, K: in.K, Tags: in.Tags, Types: types,
+	res, err := svc.Search(ctx, memory.SearchRequest{Query: in.Query, K: in.K, Tags: in.Tags, TagsAny: in.TagsAny, Types: types,
 		AllProjects: in.AllProjects, IncludeFlagged: in.IncludeFlagged, IncludeSuperseded: in.IncludeSuperseded})
 	if err != nil {
 		return "", err //nolint:wrapcheck // mapped at the boundary
@@ -314,6 +315,7 @@ func searchTool(ctx context.Context, svc *memory.Service, in searchInput) (strin
 
 type listInput struct {
 	Tags        []string `json:"tags,omitempty"`
+	TagsAny     []string `json:"tags_any,omitempty" jsonschema:"memories with at least one of these tags"`
 	Types       []string `json:"types,omitempty"`
 	Statuses    []string `json:"statuses,omitempty" jsonschema:"active, unverified, flagged, superseded, or deleted"`
 	AllProjects bool     `json:"all_projects,omitempty"`
@@ -326,7 +328,7 @@ func listTool(ctx context.Context, svc *memory.Service, in listInput) (string, e
 	if err != nil {
 		return "", err
 	}
-	req := memory.ListRequest{Tags: in.Tags, Types: types, AllProjects: in.AllProjects, Limit: in.Limit}
+	req := memory.ListRequest{Tags: in.Tags, TagsAny: in.TagsAny, Types: types, AllProjects: in.AllProjects, Limit: in.Limit}
 	if in.Statuses != nil {
 		req.Statuses = make([]memory.Status, 0, len(in.Statuses))
 		for _, s := range in.Statuses {

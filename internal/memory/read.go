@@ -147,6 +147,7 @@ func (s *Service) scored(mems []Memory) []Summary {
 // ListRequest browses memories.
 type ListRequest struct {
 	Tags        []string
+	TagsAny     []string
 	Types       []Type
 	Statuses    []Status
 	AllProjects bool
@@ -180,7 +181,7 @@ func (s *Service) List(ctx context.Context, r ListRequest) (ListResponse, error)
 		statuses = nil
 	}
 	f := s.filter()
-	f.Tags, f.Types, f.AllProjects = NormalizeTags(r.Tags), r.Types, r.AllProjects
+	f.Tags, f.TagsAny, f.Types, f.AllProjects = NormalizeTags(r.Tags), NormalizeTags(r.TagsAny), r.Types, r.AllProjects
 	if r.Project != nil {
 		f.Project, f.AllProjects = r.Project, false
 	}

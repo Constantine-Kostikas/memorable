@@ -509,3 +509,25 @@ func TestClaimJobs_CarriesTags(t *testing.T) {
 	require.Len(t, jobs, 1)
 	assert.Equal(t, []string{"ci", "go"}, jobs[0].Tags)
 }
+
+func TestCandidates_TagsAny(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f := newFixture(t)
+	a := insertWith(t, f, "Tagged a", "shared words here", func(m *memory.Memory) { m.Tags = []string{"a"} }, -1)
+	b := insertWith(t, f, "Tagged b", "shared words here", func(m *memory.Memory) { m.Tags = []string{"b"} }, -1)
+	insertWith(t, f, "Tagged c", "shared words here", func(m *memory.Memory) { m.Tags = []string{"c"} }, -1)
+	filter := memory.Filter{Owner: "dev", Now: time.Now()}
+
+	any := filter
+	any.TagsAny = []string{"a", "b"}
+	got, err := f.store.CandidatesFTS(ctx, "shared", any, 10)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []uuid.UUID{a.ID, b.ID}, ids(got))
+
+	both := any
+	both.Tags = []string{"a"}
+	got, err = f.store.CandidatesFTS(ctx, "shared", both, 10)
+	require.NoError(t, err)
+	assert.Equal(t, []uuid.UUID{a.ID}, ids(got), "all-of and any-of filters combine")
+}

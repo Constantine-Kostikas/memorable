@@ -105,6 +105,7 @@ type Filter struct {
 	Project           *string
 	AllProjects       bool
 	Tags              []string
+	TagsAny           []string
 	Types             []Type
 	IncludeFlagged    bool
 	IncludeSuperseded bool

@@ -408,3 +408,40 @@ func TestList_NormalizesTagFilter(t *testing.T) {
 	require.Len(t, res.Items, 1)
 	assert.Equal(t, m.ID, res.Items[0].ID)
 }
+
+func TestList_TagsAny(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, nil)
+	var want []uuid.UUID
+	for i, tag := range []string{"a", "b", "c"} {
+		n := note("Memory "+tag, "content "+tag)
+		n.Tags = []string{tag}
+		m := created(t, e, n)
+		if i < 2 {
+			want = append(want, m.ID)
+		}
+	}
+
+	res, err := e.svc.List(context.Background(), memory.ListRequest{TagsAny: []string{"A", "b"}})
+	require.NoError(t, err)
+	got := make([]uuid.UUID, 0, len(res.Items))
+	for _, it := range res.Items {
+		got = append(got, it.ID)
+	}
+	assert.ElementsMatch(t, want, got)
+}
+
+func TestSearch_TagsAny(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, nil)
+	a := note("Postgres port a", "postgres runs on port 5434")
+	a.Tags = []string{"a"}
+	ma := created(t, e, a)
+	c := note("Postgres port c", "postgres runs on port 5434 too")
+	c.Tags = []string{"c"}
+	created(t, e, c)
+
+	res, err := e.svc.Search(context.Background(), memory.SearchRequest{Query: "postgres port", TagsAny: []string{"a", "b"}})
+	require.NoError(t, err)
+	assert.Equal(t, []uuid.UUID{ma.ID}, resultIDs(res.Results))
+}

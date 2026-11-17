@@ -8,6 +8,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/constantine-kostikas/memorable/internal/memory"
 )
 
 func fakeDeps(t *testing.T) deps {
@@ -76,4 +78,25 @@ func TestExitCodes(t *testing.T) {
 	_, err = runRoot(t, defaultDeps(), "", "version", "-o", "yaml")
 	assert.Equal(t, 2, exitCode(err))
 	assert.Equal(t, 0, exitCode(nil))
+}
+
+func TestListCmd_AnyTag(t *testing.T) {
+	t.Parallel()
+	a := fakeApp(t)
+	for _, m := range []struct{ title, tag string }{{"Alpha note", "a"}, {"Beta note", "b"}, {"Gamma note", "c"}} {
+		_, err := a.svc.Write(context.Background(), []memory.NewMemory{
+			{Title: m.title, Content: "content " + m.tag, Type: memory.TypeProject, Source: memory.SourceUserStated, Tags: []string{m.tag}},
+		})
+		require.NoError(t, err)
+	}
+	d := defaultDeps()
+	d.build = func(context.Context, string, []string, *slog.Logger) (*app, error) { return a, nil }
+	d.cwd = func() (string, error) { return "/home/x/projects/demo", nil }
+
+	out, err := runRoot(t, d, "", "list", "--any-tag", "a", "--any-tag", "b")
+
+	require.NoError(t, err, out)
+	assert.Contains(t, out, "Alpha note")
+	assert.Contains(t, out, "Beta note")
+	assert.NotContains(t, out, "Gamma note")
 }

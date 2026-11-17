@@ -274,3 +274,25 @@ func TestQuarantinedWriteDoesNotSupersede(t *testing.T) {
 	require.False(t, isErr, out)
 	assert.Contains(t, out, `status="active"`)
 }
+
+func TestSearchAndListTools_TagsAny(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	for _, m := range []struct{ title, tag string }{{"Alpha note", "a"}, {"Beta note", "b"}, {"Gamma note", "c"}} {
+		out, isErr := call(t, h.session, "memory_write", map[string]any{"memories": []map[string]any{{
+			"title": m.title, "content": "shared words " + m.tag, "type": "project", "source": "user_stated", "tags": []string{m.tag},
+		}}})
+		require.False(t, isErr, out)
+	}
+
+	out, isErr := call(t, h.session, "memory_search", map[string]any{"query": "shared words", "tags_any": []string{"a", "b"}})
+	require.False(t, isErr, out)
+	assert.Contains(t, out, "Alpha note")
+	assert.Contains(t, out, "Beta note")
+	assert.NotContains(t, out, "Gamma note")
+
+	out, isErr = call(t, h.session, "memory_list", map[string]any{"tags_any": []string{"a", "b"}})
+	require.False(t, isErr, out)
+	assert.Contains(t, out, "Alpha note")
+	assert.NotContains(t, out, "Gamma note")
+}

@@ -573,6 +573,9 @@ func visible(m *memory.Memory, f memory.Filter) bool {
 			return false
 		}
 	}
+	if len(f.TagsAny) > 0 && !slices.ContainsFunc(f.TagsAny, func(t string) bool { return slices.Contains(m.Tags, t) }) {
+		return false
+	}
 	return len(f.Types) == 0 || slices.Contains(f.Types, m.Type)
 }
 
