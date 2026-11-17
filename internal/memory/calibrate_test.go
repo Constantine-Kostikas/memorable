@@ -78,7 +78,7 @@ func TestCalibrateSavesUsageFit(t *testing.T) {
 
 	again, err := e.svc.Calibrate(context.Background(), true)
 	require.NoError(t, err)
-	assert.Equal(t, def, again.Prior, "refits shrink toward the built-in default, never a stored fit")
+	assert.Equal(t, def, again.Prior, "refits regularize toward the built-in default, never a stored fit")
 }
 
 func TestCalibrateDryRun(t *testing.T) {
