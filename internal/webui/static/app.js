@@ -296,13 +296,87 @@
   function onSectionClick(evt) {
     var link = evt.target && evt.target.closest && evt.target.closest('[data-section-nav] a[href^="#"]');
     if (link) {
-      selectSection(link.closest('[data-section-nav]'), link.getAttribute('href').replace(/^#/, ''));
+      var section = link.getAttribute('href').replace(/^#/, '');
+      selectSection(link.closest('[data-section-nav]'), section);
+      openSectionFold(section);
     }
   }
 
   function onHashChange() {
     rememberUrl();
     bindSectionNav(document);
+    openSectionFold(hashSection());
+  }
+
+  // Section folds: each detail section collapses on its heading; the collapsed set persists across selections and reloads.
+
+  var COLLAPSED_KEY = 'memorable.collapsed';
+
+  function storedCollapsed() {
+    try {
+      var value = JSON.parse(window.localStorage.getItem(COLLAPSED_KEY) || '[]');
+      return Array.isArray(value) ? value : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function storeCollapsed(collapsed) {
+    try {
+      if (collapsed.length) {
+        window.localStorage.setItem(COLLAPSED_KEY, JSON.stringify(collapsed));
+      } else {
+        window.localStorage.removeItem(COLLAPSED_KEY);
+      }
+    } catch (e) {
+      // Storage can be unavailable; folds then reset on the next selection.
+    }
+  }
+
+  function openFold(fold) {
+    if (fold && !fold.open) {
+      fold.open = true;
+    }
+  }
+
+  function openSectionFold(section) {
+    if (SECTIONS.indexOf(section) === -1) {
+      return;
+    }
+    var target = document.getElementById(section);
+    openFold(target && target.querySelector('[data-section-fold]'));
+  }
+
+  function bindSectionFolds(root) {
+    var collapsed = storedCollapsed();
+    var linked = hashSection();
+    each(root, '[data-section-fold]', function (fold) {
+      var name = fold.getAttribute('data-section-fold');
+      var forcedOpen = name === linked || (name === 'content' && isExpanded());
+      if (collapsed.indexOf(name) !== -1 && !forcedOpen) {
+        fold.open = false;
+      }
+    });
+  }
+
+  // toggle does not bubble; the capture phase still sees it.
+  function onSectionFoldToggle(evt) {
+    var fold = evt.target;
+    if (!fold || !fold.hasAttribute || !fold.hasAttribute('data-section-fold')) {
+      return;
+    }
+    var name = fold.getAttribute('data-section-fold');
+    var collapsed = storedCollapsed().filter(function (other) { return other !== name; });
+    if (!fold.open) {
+      collapsed.push(name);
+    }
+    storeCollapsed(collapsed);
+  }
+
+  // A required field inside a collapsed section cannot show its validation message: open the section first.
+  function onInvalidInFold(evt) {
+    var fold = evt.target && evt.target.closest && evt.target.closest('[data-section-fold]');
+    openFold(fold);
   }
 
   // Toasts: dismiss on click; notices leave after five seconds, errors stay until dismissed.
@@ -373,6 +447,7 @@
   function setExpanded(expanded) {
     if (expanded) {
       document.body.setAttribute('data-expanded', 'true');
+      openSectionFold('content');
     } else {
       document.body.removeAttribute('data-expanded');
     }
@@ -1244,6 +1319,7 @@
   onReady(bindExpand);
   onReady(bindEditors);
   onReady(bindSectionNav);
+  onReady(bindSectionFolds);
   onReady(bindToasts);
   onReady(bindExpiryClear);
   onReady(bindTagChips);
@@ -1278,6 +1354,8 @@
   document.addEventListener('click', ignoreCleanDiscard, true);
   document.addEventListener('click', onExpandClick);
   document.addEventListener('click', onSectionClick);
+  document.addEventListener('toggle', onSectionFoldToggle, true);
+  document.addEventListener('invalid', onInvalidInFold, true);
   document.addEventListener('click', onToastDismiss);
   document.addEventListener('keydown', saveShortcut);
   document.addEventListener('keydown', expandShortcut);
