@@ -958,6 +958,34 @@
     }
   }
 
+  // Link peeks: Esc hides an open peek card until the pointer or focus leaves its link.
+  function openLinkPeek() {
+    var peeks = document.querySelectorAll('[data-link-peek]:hover, [data-link-peek]:focus-within');
+    return Array.prototype.find.call(peeks, function (peek) {
+      var card = peek.querySelector('[role="tooltip"]');
+      return !peek.hasAttribute('data-dismissed') && card && window.getComputedStyle(card).visibility === 'visible';
+    });
+  }
+
+  // Capture phase, so the Esc that hides a peek does not also leave Expand.
+  function onLinkPeekEscape(evt) {
+    if (evt.key !== 'Escape' || evt.isComposing || openDialog()) {
+      return;
+    }
+    var peek = openLinkPeek();
+    if (peek) {
+      evt.preventDefault();
+      peek.setAttribute('data-dismissed', '');
+    }
+  }
+
+  function onLinkPeekLeave(evt) {
+    var peek = evt.target && evt.target.closest && evt.target.closest('[data-link-peek][data-dismissed]');
+    if (peek && !(evt.relatedTarget && peek.contains(evt.relatedTarget))) {
+      peek.removeAttribute('data-dismissed');
+    }
+  }
+
   // Capture phase: the dialog closes itself on Esc, so the Esc that leaves Expand never sees it.
   function onDialogEscape(evt) {
     var dialog = openDialog();
@@ -1355,6 +1383,9 @@
   document.addEventListener('htmx:afterSettle', markPaneRow);
   // Capture phase: these run before the document-level shortcuts below, which skip prevented events.
   document.addEventListener('keydown', onDialogEscape, true);
+  document.addEventListener('keydown', onLinkPeekEscape, true);
+  document.addEventListener('mouseout', onLinkPeekLeave);
+  document.addEventListener('focusout', onLinkPeekLeave);
   document.addEventListener('keydown', onPaletteKeydown, true);
   document.addEventListener('keydown', onTagKeydown, true);
   document.addEventListener('keydown', onLookupKeydown, true);

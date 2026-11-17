@@ -3,6 +3,8 @@ package webui
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -36,11 +38,13 @@ type detailMemories struct {
 	activity memory.Activity
 	bySlug   map[string]memory.Fetched
 	byID     map[uuid.UUID]memory.Fetched
-	mutErr   error
-	updated  memory.Memory
-	listReqs []memory.ListRequest
-	searches []memory.SearchRequest
-	results  []memory.Summary
+	// getErrByID fails a Get whose first id is a key, so a test can fail only the linked-memory reads.
+	getErrByID map[uuid.UUID]error
+	mutErr     error
+	updated    memory.Memory
+	listReqs   []memory.ListRequest
+	searches   []memory.SearchRequest
+	results    []memory.Summary
 }
 
 func (d *detailMemories) rows() []memory.Summary {
@@ -105,6 +109,9 @@ func (d *detailMemories) Get(_ context.Context, r memory.GetRequest) ([]memory.F
 	d.getReqs = append(d.getReqs, r)
 	if len(r.Slugs) > 0 {
 		return []memory.Fetched{d.bySlug[r.Slugs[0]]}, nil
+	}
+	if err, ok := d.getErrByID[r.IDs[0]]; ok {
+		return nil, err
 	}
 	if f, ok := d.byID[r.IDs[0]]; ok {
 		return []memory.Fetched{f}, nil
@@ -281,9 +288,122 @@ func TestDetailIsPassive(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rec.Code)
 	gets := f.mem.lastGets()
-	require.Len(t, gets, 1)
-	assert.True(t, gets[0].Passive)
+	require.Len(t, gets, 2)
 	assert.Equal(t, []uuid.UUID{f.id}, gets[0].IDs)
+	assert.Equal(t, []uuid.UUID{linkedID(f)}, gets[1].IDs)
+	for _, g := range gets {
+		assert.True(t, g.Passive)
+	}
+}
+
+func linkedID(f detailFixture) uuid.UUID {
+	return f.mem.fetched[0].Links[0].To
+}
+
+func linksSection(t *testing.T, body string) string {
+	t.Helper()
+	start := strings.Index(body, `id="links"`)
+	end := strings.Index(body, `id="activity"`)
+	require.True(t, start >= 0 && end > start, "links section not found")
+	return body[start:end]
+}
+
+func TestDetailLinkShowsLinkedTitleAndPeek(t *testing.T) {
+	t.Parallel()
+	project := "memorable"
+	f := newDetailFixture(t, func(m *detailMemories, _ uuid.UUID) {
+		other := m.fetched[0].Links[0].To
+		m.byID[other] = memory.Fetched{Ref: other.String(), Memory: memory.Memory{
+			ID: other, Title: "Deploy checklist " + hostile, Content: "first   line\n\nsecond line", Type: memory.TypeProject,
+			Status: memory.StatusFlagged, Scope: memory.ScopeProject, Project: &project, UpdatedAt: time.Date(2026, 11, 2, 9, 0, 0, 0, time.UTC),
+		}}
+	})
+
+	rec := send(f.h, http.MethodGet, f.path(""), "", withCookie(f.c))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	links := linksSection(t, rec.Body.String())
+	assert.Contains(t, links, `aria-describedby="link-peek-0">Deploy checklist &lt;img src=x onerror=alert(1)&gt;</a>`)
+	assert.Contains(t, links, `role="tooltip" id="link-peek-0"`)
+	assert.Contains(t, links, "first line second line")
+	assert.Contains(t, links, "chip-status-flagged")
+	assert.Contains(t, links, "memorable · ")
+	assert.Contains(t, links, linkedID(f).String())
+	assert.NotContains(t, links, hostile)
+}
+
+func TestDetailLinkToQuarantinedHidesItsTitle(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, func(m *detailMemories, _ uuid.UUID) {
+		other := m.fetched[0].Links[0].To
+		m.byID[other] = memory.Fetched{Ref: other.String(), Memory: memory.Memory{ID: other, Title: "secret title", Status: memory.StatusQuarantined}, Err: memory.ErrQuarantined}
+	})
+
+	rec := send(f.h, http.MethodGet, f.path(""), "", withCookie(f.c))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	links := linksSection(t, rec.Body.String())
+	assert.Contains(t, links, ">Quarantined memory</a>")
+	assert.Contains(t, links, "quarantined, content hidden")
+	assert.NotContains(t, links, "secret title")
+}
+
+func TestDetailLinkFallsBackToIDWhenUnavailable(t *testing.T) {
+	t.Parallel()
+	cases := map[string]func(*detailMemories, uuid.UUID){
+		"not found": nil,
+		"get failed": func(m *detailMemories, other uuid.UUID) {
+			m.getErrByID = map[uuid.UUID]error{other: errors.New("boom")}
+		},
+	}
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			f := newDetailFixture(t, func(m *detailMemories, _ uuid.UUID) {
+				if mutate != nil {
+					mutate(m, m.fetched[0].Links[0].To)
+				}
+			})
+
+			rec := send(f.h, http.MethodGet, f.path(""), "", withCookie(f.c))
+
+			require.Equal(t, http.StatusOK, rec.Code)
+			links := linksSection(t, rec.Body.String())
+			assert.Contains(t, links, `aria-describedby="link-peek-0">`+linkedID(f).String()+"</a>")
+			assert.Contains(t, links, "Not found or unavailable.")
+		})
+	}
+}
+
+func TestLinkedIDsDedupesAndBatches(t *testing.T) {
+	t.Parallel()
+	id := uuid.New()
+	others := make([]uuid.UUID, memory.MaxBatch+1)
+	links := make([]memory.Link, 0, len(others)+1)
+	for i := range others {
+		others[i] = uuid.New()
+		links = append(links, memory.Link{From: id, To: others[i], Kind: memory.LinkRelated})
+	}
+	links = append(links, memory.Link{From: others[0], To: id, Kind: memory.LinkSupersedes})
+
+	assert.Equal(t, others, linkedIDs(id, links))
+
+	mem := &detailMemories{byID: map[uuid.UUID]memory.Fetched{}}
+	s := &Server{logger: slog.New(slog.DiscardHandler)}
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	s.linkedMemories(r, requestContext{Backend: Backend{Memories: mem}}, others)
+
+	gets := mem.lastGets()
+	require.Len(t, gets, 2)
+	assert.Len(t, gets[0].IDs, memory.MaxBatch)
+	assert.Len(t, gets[1].IDs, 1)
+}
+
+func TestSnippetOf(t *testing.T) {
+	t.Parallel()
+	assert.Equal(t, "a b c", snippetOf("  a\n\tb   c \n"))
+	long := strings.Repeat("é", linkSnippetRunes+5)
+	assert.Equal(t, strings.Repeat("é", linkSnippetRunes)+previewEllipsis, snippetOf(long))
 }
 
 func TestDetailQuarantinedHidden(t *testing.T) {

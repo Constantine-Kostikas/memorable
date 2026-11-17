@@ -143,9 +143,19 @@
     <h2 class="section-heading"><button type="button" class="section-toggle" data-section-toggle aria-expanded="true" aria-controls="links-body">Links <span class="section-count"><span class="sr-only">(</span>{{len .Links}}<span class="sr-only">)</span></span></button></h2>
       <div id="links-body" data-section-body>
     <ul class="mb-3">
-      {{range .Links}}<li class="mb-1 flex items-center gap-2 text-body">
-        <span>{{if .Outgoing}}{{.Kind}} to{{else}}{{.Kind}} from{{end}}</span>
-        <a href="{{.Href}}" class="underline">{{.OtherID}}</a>
+      {{range $i, $link := .Links}}<li class="mb-1 flex items-center gap-2 text-body">
+        <span class="shrink-0">{{if .Outgoing}}{{.Kind}} to{{else}}{{.Kind}} from{{end}}</span>
+        <span class="link-peek min-w-0" data-link-peek>
+          <a href="{{.Href}}" class="block truncate underline{{if .Unavailable}} font-mono{{end}}" aria-describedby="link-peek-{{$i}}">{{.Label}}</a>
+          <span role="tooltip" id="link-peek-{{$i}}" class="link-peek-card">
+            {{if .Hidden}}<span class="block"><span class="chip chip-warn">quarantined, content hidden</span></span>
+            {{else if .Unavailable}}<span class="block text-ink-muted">Not found or unavailable.</span>
+            {{else}}<span class="block font-bold">{{.Title}}</span>
+            <span class="mt-1 flex flex-wrap items-center gap-1 text-meta text-ink-muted"><span class="chip chip-type-{{.TypeClass}}">{{.Type}}</span>{{if ne .Status "active"}}<span class="chip chip-status-{{.Status}}">{{.Status}}</span>{{end}}<span>{{.Project}} · {{.Updated}}</span></span>
+            {{if .Snippet}}<span class="link-peek-snippet mt-2 block">{{.Snippet}}</span>{{end}}{{end}}
+            <span class="mt-2 block font-mono text-meta text-ink-muted">{{.OtherID}}</span>
+          </span>
+        </span>
         {{if and .Outgoing (not $.ReadOnly)}}<form method="post" action="{{$.Base}}/unlink{{$.FilterQuery}}" hx-post="{{$.Base}}/unlink{{$.FilterQuery}}" hx-target="#detail-pane" hx-swap="outerHTML">
           <input type="hidden" name="csrf" value="{{$.CSRF}}">
           <input type="hidden" name="to" value="{{.OtherID}}">
