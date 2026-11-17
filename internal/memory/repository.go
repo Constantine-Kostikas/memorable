@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/constantine-kostikas/memorable/internal/rank"
 )
 
 // AuditEntry describes a change for the append-only audit log; it never carries content.
@@ -85,8 +87,16 @@ type Repository interface {
 	AddLink(ctx context.Context, l Link) error
 	RemoveLink(ctx context.Context, l Link) error
 	LinksFor(ctx context.Context, ids []uuid.UUID) ([]Link, error)
-	LogSearch(ctx context.Context, query string, project *string, returned []uuid.UUID) (uuid.UUID, error)
+	LogEvent(ctx context.Context, e Event) (uuid.UUID, error)
 	LogGet(ctx context.Context, id uuid.UUID, searchID *uuid.UUID, project *string) error
+	// SessionShown returns the memory ids preloaded or injected in a session since its last context reset.
+	SessionShown(ctx context.Context, sessionID string) ([]uuid.UUID, error)
+	// LabeledResults returns one sample per shown result of MCP searches and injections created before the
+	// cutoff for the given embedding model, labeled relevant when that result was fetched with the event's id.
+	LabeledResults(ctx context.Context, before time.Time, model string, dims int) ([]rank.Sample, error)
+	SaveCalibration(ctx context.Context, c StoredCalibration) error
+	// LatestCalibration returns the newest stored fit for the model, or nil when there is none.
+	LatestCalibration(ctx context.Context, model string, dims int) (*StoredCalibration, error)
 
 	CandidatesVector(ctx context.Context, vec []float32, f Filter, limit int) ([]Candidate, error)
 	CandidatesFTS(ctx context.Context, query string, f Filter, limit int) ([]Candidate, error)
@@ -98,6 +108,64 @@ type Repository interface {
 	List(ctx context.Context, f Filter, statuses []Status, cursor *uuid.UUID, limit int) ([]Memory, *uuid.UUID, error)
 	Review(ctx context.Context, now time.Time, staleAfter, halfLife time.Duration) (ReviewQueue, error)
 	TagCounts(ctx context.Context, f Filter, limit int) ([]TagCount, error)
+}
+
+// EventKind classifies an access event.
+type EventKind string
+
+// Event kinds. Gets are logged through Repository.LogGet.
+const (
+	EventSearch  EventKind = "search"
+	EventInject  EventKind = "inject"
+	EventPreload EventKind = "preload"
+)
+
+// Event origins.
+const (
+	OriginMCP  = "mcp"
+	OriginCLI  = "cli"
+	OriginHook = "hook"
+)
+
+// ResultSignals records the retrieval evidence for one shown result, so calibration can learn from it later.
+type ResultSignals struct {
+	ID         uuid.UUID `json:"id"`
+	Similarity float64   `json:"sim"`
+	FTS        bool      `json:"fts"`
+	Trigram    bool      `json:"tri"`
+	VectorRank int       `json:"vrank"`
+}
+
+// EventDetails is the structured part of an access event.
+type EventDetails struct {
+	Origin string `json:"origin,omitempty"`
+	// HookSource is the SessionStart source (startup, resume, clear, compact) of a preload event.
+	HookSource string          `json:"hook_source,omitempty"`
+	Model      string          `json:"model,omitempty"`
+	Dimensions int             `json:"dims,omitempty"`
+	Signals    []ResultSignals `json:"signals,omitempty"`
+}
+
+// Event is a logged search, injection, or preload.
+type Event struct {
+	Kind EventKind
+	// Query is nil when no query applies or the query must not be stored.
+	Query     *string
+	Project   *string
+	SessionID string
+	Returned  []uuid.UUID
+	Details   EventDetails
+}
+
+// StoredCalibration is a relevance calibration fitted from usage for one embedding model.
+type StoredCalibration struct {
+	Model        string
+	Dimensions   int
+	Coefficients rank.Calibration
+	Positives    int
+	Negatives    int
+	Source       string
+	FittedAt     time.Time
 }
 
 // Filter scopes candidate and listing queries.

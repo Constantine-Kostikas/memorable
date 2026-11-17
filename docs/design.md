@@ -200,7 +200,8 @@ Trigram GIN index on `title`.
 - **memory_links** `(from_id, to_id, kind)` PK: `related`, `supersedes`, `contradicts`; soft removal via `removed_at`.
 - **memory_project_access** `(memory_id, project)` PK: count, decayed score, score_updated_at, rank_key.
 - **memory_feedback**: memory_id, kind (`useful`, `wrong`, `outdated`), note, project, created_at.
-- **access_events**: kind (`search`, `get`), query, project, returned ids, fetched id, search_id, created_at. 90-day retention.
+- **access_events**: kind (`search`, `get`, `inject`, `preload`), query (NULL when the prompt held a secret), project, returned ids, fetched id, search_id, session_id, details jsonb (origin, hook source, embedding model and dimensions, and per-result retrieval signals), created_at. 90-day retention.
+- **calibrations**: embedding model, dimensions, coefficients b0 to b4, relevant and irrelevant label counts, source, fitted_at. Append-only for the app role.
 - **audit_log**: append-only; action, memory_id, content hash (never content), cwd, process id + start time, details jsonb.
 - **embedding_jobs**: memory_id, target version, attempts, next_attempt_at, last_error, done_at.
 
@@ -247,7 +248,7 @@ Results also carry structured JSON. Total tool description budget: under 1,500 t
 
 ### Errors
 
-Sentinel errors in `memory`: `ErrNotFound`, `ErrConflict`, `ErrValidation`, `ErrSecretDetected`, `ErrQuarantined`, `ErrReadOnly`, `ErrNoContext`. Inner layers wrap with `%w`. The MCP boundary maps them to tool errors with short safe messages (database internals never reach Claude) and logs each error once, there.
+Sentinel errors in `memory`: `ErrNotFound`, `ErrConflict`, `ErrValidation`, `ErrSecretDetected`, `ErrQuarantined`, `ErrReadOnly`, `ErrNoContext`, `ErrSchemaBehind` (a missing column or table: the binary is newer than the schema; search still returns results without a `search_id` until `memorable migrate` runs). Inner layers wrap with `%w`. The MCP boundary maps them to tool errors with short safe messages (database internals never reach Claude) and logs each error once, there.
 
 ### Recommended Claude Code permissions
 
@@ -292,6 +293,17 @@ Sentinel errors in `memory`: `ErrNotFound`, `ErrConflict`, `ErrValidation`, `Err
 ### Preload (hook and `memorable://top`)
 
 Pinned first, then highest `rank_key` among `active` memories whose source is not `tool_output`, across current project, context-global, and profile. Budget: 10 items, 4,000 characters. Titles, slugs, and snippets only. One extra line, `Tags in use: a (12), b (7)`, lists the top 20 tags by count; it sits outside the character budget and is omitted when no tags exist. The SessionStart hook bounds all of its work with a 3-second deadline and prints nothing on any failure, so a stopped database delays session start by seconds at most.
+
+### Prompt recall (opt-in UserPromptSubmit hook)
+
+`memorable hook prompt-submit` reads the prompt from the hook input and prints pointers to at most `max_items` (3) memories whose calibrated relevance is at least `min_relevance` (70%), wrapped in `<memory-recall search_id="...">` as stored data. Each pointer shows the percentage, id, slug, title, and snippet; Claude fetches the ones it needs with `memory_get`, passing the `search_id`. It skips prompts under `min_words` (3) words and slash commands, truncates the query to 500 characters, shows nothing when the vector search is unavailable or no calibration exists, never shows `tool_output` or non-active memories, and never repeats a memory already preloaded or injected in the session since its last `startup`, `clear`, `compact`, or `fork`. Each injection is logged as an `inject` event with the session id; a prompt holding a secret is logged with a NULL query. The whole hook runs under `deadline_ms` (1.5 s), starting before the database connection, and prints nothing on any failure. Injections, like preload, never count as accesses.
+
+### Relevance calibration
+
+Relevance is `sigmoid(b0 + b1·similarity + b2·fts_hit + b3·trigram_hit + b4/vector_rank)`, where `similarity` is the vector cosine (0 when absent), the hits are 1 when the result was in that candidate list, and the last term is 0 when the result is absent from the vector list. The vector rank term was added after the three-signal fit proved miscalibrated on the evaluation set: five-fold cross-validated log loss fell from 0.50 to 0.26.
+
+- **Default:** fitted from the evaluation set by `make test-eval` and compiled in per embedding model (`embeddinggemma`/768 today). Another model has no default, so recall shows nothing and `doctor` says so.
+- **Usage fit:** `memorable calibrate` learns from MCP searches and injections. A shown result fetched with that event's `search_id` is relevant; one not fetched within 24 hours is irrelevant. CLI searches and profile memories are excluded. The fit is regularized toward the default (worth 10 samples) and saved only with at least 20 relevant and 20 irrelevant labels; the newest saved fit for the configured model wins. `--dry-run` prints the fit and a reliability table without saving.
 
 ### Embedding worker
 
@@ -369,7 +381,9 @@ Imperatives aimed at the agent ("ignore previous", "you must always", "system pr
 | `memorable reembed [--pending] [--all]` | Process jobs or re-embed after a model change; handles dimension changes |
 | `memorable backup` | `pg_dump -Fc` inside the container; keeps the last 14 in `~/.local/share/memorable/backups`. A dump that does not start with the custom-format header is discarded before rotation, so a failed dump never deletes a good one |
 | `memorable export [--format json or md]` / `import <path>` | Portable export; import JSON or Claude Code `memory/*.md` files with full scanning |
-| `memorable hook session-start` | Reads hook JSON on stdin; prints the preload set |
+| `memorable hook session-start` | Reads hook JSON on stdin; prints the preload set and logs it for recall dedup |
+| `memorable hook prompt-submit` | Reads UserPromptSubmit hook JSON on stdin; prints calibrated recall pointers (section 7) |
+| `memorable calibrate [--dry-run]` | Fit recall relevance to usage; prints label counts, coefficients, and a reliability table |
 | `memorable stats` | Counts per status, type, project; embedding coverage |
 | `memorable completion bash\|zsh\|fish` | Print the completion script (cobra); setup installs it |
 | `memorable version` | Version, commit, build date (ldflags) |
@@ -442,6 +456,12 @@ writes_per_minute = 60
 [retention]
 access_events_days = 90
 backups_keep = 14
+
+[recall]
+min_relevance = 0.70   # calibrated relevance a memory needs to be shown, (0, 1)
+max_items = 3          # 1 to 10
+min_words = 3          # shorter prompts are skipped
+deadline_ms = 1500     # 200 to 5000
 ```
 
 ## 11. Observability
@@ -490,4 +510,5 @@ backups_keep = 14
 | Whether MCP requests carry a Claude Code session id | Verify; fall back to process id + start time |
 | `embeddinggemma` query and document prompt prefixes | 768 dimensions and L2-normalized output verified locally (Ollama 0.40.16); prefixes taken from the model card, effect measured by the evaluation set |
 | Gatekeeper behavior for `gh release download` on macOS | Verify on a colleague's Mac before relying on it |
-| Threshold defaults | Tune per model with the evaluation set |
+| Threshold defaults | Recall uses calibrated relevance (section 7); the default fit comes from the evaluation set, refined by `memorable calibrate` |
+| Whether compaction keeps the Claude Code session id | Not documented; recall dedup is correct either way |

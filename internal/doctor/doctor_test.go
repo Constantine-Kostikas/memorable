@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -20,6 +21,7 @@ type fakeProbe struct {
 	ext  map[string]string
 	ver  int64
 	dims int
+	cal  *memory.StoredCalibration
 }
 
 func (f *fakeProbe) Ping(context.Context) error { return nil }
@@ -29,6 +31,9 @@ func (f *fakeProbe) Extensions(context.Context) (map[string]string, error) {
 func (f *fakeProbe) SchemaVersion(context.Context, string) (int64, error) { return f.ver, nil }
 func (f *fakeProbe) EmbeddingDimensions(context.Context) (int, error)     { return f.dims, nil }
 func (f *fakeProbe) Close()                                               {}
+func (f *fakeProbe) LatestCalibration(context.Context, string, int) (*memory.StoredCalibration, error) {
+	return f.cal, nil
+}
 
 func ollama(t *testing.T, models ...string) *httptest.Server {
 	t.Helper()
@@ -147,4 +152,65 @@ func TestRun_ConfigError(t *testing.T) {
 	checks := Run(context.Background(), Deps{ConfigErr: errors.New("bad toml")})
 	require.Len(t, checks, 1)
 	assert.Equal(t, StatusFail, checks[0].Status)
+}
+
+func withHook(d Deps, installed bool) Deps {
+	settings := `{}`
+	if installed {
+		settings = `{"hooks":{"UserPromptSubmit":[{"hooks":[{"type":"command","command":"memorable hook prompt-submit"}]}]}}`
+	}
+	d.ClaudeSettings = func() ([]byte, error) { return []byte(settings), nil }
+	return d
+}
+
+func TestRun_RecallHook(t *testing.T) {
+	t.Parallel()
+	checks := byName(Run(context.Background(), withHook(healthy(t), true)))
+	assert.Equal(t, StatusOK, checks["recall hook"].Status)
+	assert.Equal(t, "installed", checks["recall hook"].Detail)
+
+	checks = byName(Run(context.Background(), withHook(healthy(t), false)))
+	assert.Equal(t, StatusOK, checks["recall hook"].Status)
+	assert.Contains(t, checks["recall hook"].Detail, "not installed")
+}
+
+func TestRun_CalibrationDefault(t *testing.T) {
+	t.Parallel()
+	checks := byName(Run(context.Background(), withHook(healthy(t), true)))
+	assert.Equal(t, StatusOK, checks["calibration"].Status)
+	assert.Contains(t, checks["calibration"].Detail, "built-in default")
+}
+
+func TestRun_CalibrationUsage(t *testing.T) {
+	t.Parallel()
+	d := withHook(healthy(t), true)
+	d.Open = func(context.Context, string) (Probe, error) {
+		return &fakeProbe{ext: map[string]string{"vector": "0.8.7", "pg_trgm": "1.6"}, ver: store.LatestVersion(store.SchemaContext), dims: 768,
+			cal: &memory.StoredCalibration{Positives: 21, Negatives: 40, FittedAt: time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC)}}, nil
+	}
+	checks := byName(Run(context.Background(), d))
+	assert.Equal(t, StatusOK, checks["calibration"].Status)
+	assert.Contains(t, checks["calibration"].Detail, "usage fit from 21 relevant and 40 irrelevant labels, 2026-12-01")
+}
+
+func TestRun_CalibrationMissing(t *testing.T) {
+	t.Parallel()
+	d := withHook(healthy(t), true)
+	d.Config.Embedding.Model, d.Config.Embedding.URL = "other-model", ollama(t, "other-model:latest").URL
+	checks := byName(Run(context.Background(), d))
+	assert.Equal(t, StatusFail, checks["calibration"].Status, "the hook is installed but cannot work")
+	assert.Contains(t, checks["calibration"].Hint, "make test-eval")
+
+	d = withHook(d, false)
+	checks = byName(Run(context.Background(), d))
+	assert.Equal(t, StatusSkipped, checks["calibration"].Status)
+	assert.Contains(t, checks["calibration"].Detail, "prompt recall disabled")
+}
+
+func TestRun_CalibrationSkippedOnProfileSchema(t *testing.T) {
+	t.Parallel()
+	d := withHook(healthy(t), true)
+	d.ProfileOnly = true
+	checks := byName(Run(context.Background(), d))
+	assert.Equal(t, StatusSkipped, checks["calibration"].Status)
 }

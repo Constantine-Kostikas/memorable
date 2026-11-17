@@ -16,5 +16,6 @@ var (
 	ErrReadOnly       = errors.New("context is read-only")
 	ErrUnavailable    = errors.New("dependency unavailable")
 	ErrRateLimited    = errors.New("write rate limit reached")
+	ErrSchemaBehind   = errors.New("database schema is behind; run `memorable migrate`")
 	ErrNoContext      = scope.ErrNoContext
 )

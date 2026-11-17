@@ -345,6 +345,15 @@ func (s *setupRun) settings() error {
 			return err //nolint:wrapcheck // shown to the user
 		}
 	}
+	recall, err := s.confirm("Also show relevant memories on every prompt (UserPromptSubmit hook, about 1 to 3 short lines when something matches)?", false)
+	if err != nil {
+		return err
+	}
+	if recall {
+		if after, err = claudecfg.AddHook(after, "UserPromptSubmit", claudecfg.PromptHookCommand); err != nil {
+			return err //nolint:wrapcheck // shown to the user
+		}
+	}
 	return s.writeFile(path, string(after))
 }
 

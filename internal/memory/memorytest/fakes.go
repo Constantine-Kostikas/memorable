@@ -43,6 +43,9 @@ type Repo struct {
 	jobs      map[uuid.UUID]*memory.Job
 	jobDone   map[uuid.UUID]bool
 	events    []string
+	logged    []loggedEvent
+	gets      []loggedGet
+	cals      []memory.StoredCalibration
 	projScore map[string]float64
 
 	// NearestOverride, when set, replaces NearestByVector and NearestByTrigram results.
@@ -53,6 +56,8 @@ type Repo struct {
 	Audits []string
 	// OnGet, when set, runs after GetByIDs returns (outside the lock), to simulate a concurrent writer.
 	OnGet func()
+	// LogEventErr, when set, fails LogEvent only.
+	LogEventErr error
 	// VectorErr, when set, fails vector queries only.
 	VectorErr error
 }
@@ -98,6 +103,28 @@ func (r *Repo) Vector(id uuid.UUID) []float32 {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.vecs[id]
+}
+
+type loggedEvent struct {
+	id uuid.UUID
+	e  memory.Event
+	at time.Time
+}
+
+type loggedGet struct {
+	memoryID uuid.UUID
+	searchID *uuid.UUID
+}
+
+// LoggedEvents returns every event passed to LogEvent, in order.
+func (r *Repo) LoggedEvents() []memory.Event {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]memory.Event, 0, len(r.logged))
+	for _, l := range r.logged {
+		out = append(out, l.e)
+	}
+	return out
 }
 
 // Events returns logged access event kinds.
@@ -554,20 +581,96 @@ func (r *Repo) LinksFor(_ context.Context, ids []uuid.UUID) ([]memory.Link, erro
 	return out, r.Err
 }
 
-// LogSearch implements memory.Repository.
-func (r *Repo) LogSearch(context.Context, string, *string, []uuid.UUID) (uuid.UUID, error) {
+// LogEvent implements memory.Repository.
+func (r *Repo) LogEvent(_ context.Context, e memory.Event) (uuid.UUID, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.events = append(r.events, "search")
-	return uuid.Must(uuid.NewV7()), r.Err
+	if r.LogEventErr != nil {
+		return uuid.Nil, r.LogEventErr
+	}
+	id := uuid.Must(uuid.NewV7())
+	r.events = append(r.events, string(e.Kind))
+	r.logged = append(r.logged, loggedEvent{id: id, e: e, at: time.Now()})
+	return id, r.Err
 }
 
 // LogGet implements memory.Repository.
-func (r *Repo) LogGet(context.Context, uuid.UUID, *uuid.UUID, *string) error {
+func (r *Repo) LogGet(_ context.Context, id uuid.UUID, searchID *uuid.UUID, _ *string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.events = append(r.events, "get")
+	r.gets = append(r.gets, loggedGet{memoryID: id, searchID: searchID})
 	return r.Err
+}
+
+// SessionShown implements memory.Repository.
+func (r *Repo) SessionShown(_ context.Context, sessionID string) ([]uuid.UUID, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	start := 0
+	for i, l := range r.logged {
+		if l.e.SessionID == sessionID && l.e.Kind == memory.EventPreload &&
+			slices.Contains([]string{"startup", "clear", "compact", "fork"}, l.e.Details.HookSource) {
+			start = i
+		}
+	}
+	var out []uuid.UUID
+	for _, l := range r.logged[start:] {
+		if l.e.SessionID == sessionID && (l.e.Kind == memory.EventPreload || l.e.Kind == memory.EventInject) {
+			for _, id := range l.e.Returned {
+				if !slices.Contains(out, id) {
+					out = append(out, id)
+				}
+			}
+		}
+	}
+	return out, r.Err
+}
+
+// LabeledResults implements memory.Repository.
+func (r *Repo) LabeledResults(_ context.Context, before time.Time, model string, dims int) ([]rank.Sample, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []rank.Sample
+	for _, l := range r.logged {
+		d := l.e.Details
+		usable := l.e.Kind == memory.EventInject || (l.e.Kind == memory.EventSearch && d.Origin == memory.OriginMCP)
+		if !usable || !l.at.Before(before) || d.Model != model || d.Dimensions != dims {
+			continue
+		}
+		for _, sig := range d.Signals {
+			if _, ok := r.mems[sig.ID]; !ok {
+				continue
+			}
+			fetched := slices.ContainsFunc(r.gets, func(g loggedGet) bool {
+				return g.memoryID == sig.ID && g.searchID != nil && *g.searchID == l.id
+			})
+			out = append(out, rank.Sample{Relevant: fetched, Signals: rank.Signals{
+				Similarity: sig.Similarity, FTS: sig.FTS, Trigram: sig.Trigram, VectorRank: sig.VectorRank}})
+		}
+	}
+	return out, r.Err
+}
+
+// SaveCalibration implements memory.Repository.
+func (r *Repo) SaveCalibration(_ context.Context, c memory.StoredCalibration) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	c.FittedAt = time.Now()
+	r.cals = append(r.cals, c)
+	return r.Err
+}
+
+// LatestCalibration implements memory.Repository.
+func (r *Repo) LatestCalibration(_ context.Context, model string, dims int) (*memory.StoredCalibration, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for i := len(r.cals) - 1; i >= 0; i-- {
+		if c := r.cals[i]; c.Model == model && c.Dimensions == dims {
+			return &c, r.Err
+		}
+	}
+	return nil, r.Err
 }
 
 func visible(m *memory.Memory, f memory.Filter) bool {
@@ -885,8 +988,20 @@ type Embedder struct {
 	Down bool
 	// Vectors overrides the vector for exact input texts (after any query prefix is removed).
 	Vectors map[string][]float32
-	mu      sync.Mutex
-	Calls   int
+	// ModelName overrides the reported model name ("fake" by default).
+	ModelName string
+	// Block makes every call wait until its context is done, to simulate a hung Ollama.
+	Block  bool
+	mu     sync.Mutex
+	Calls  int
+	inputs []string
+}
+
+// Inputs returns every text passed to Embed, in order.
+func (e *Embedder) Inputs() []string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return slices.Clone(e.inputs)
 }
 
 var _ memory.Embedder = (*Embedder)(nil)
@@ -895,10 +1010,15 @@ var _ memory.Embedder = (*Embedder)(nil)
 func NewEmbedder() *Embedder { return &Embedder{Dims: 64, Vectors: map[string][]float32{}} }
 
 // Embed implements memory.Embedder.
-func (e *Embedder) Embed(_ context.Context, _ memory.EmbedKind, texts []string) ([][]float32, error) {
+func (e *Embedder) Embed(ctx context.Context, _ memory.EmbedKind, texts []string) ([][]float32, error) {
+	if e.Block {
+		<-ctx.Done()
+		return nil, fmt.Errorf("%w: %w", memory.ErrUnavailable, ctx.Err())
+	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.Calls++
+	e.inputs = append(e.inputs, texts...)
 	if e.Down {
 		return nil, fmt.Errorf("%w: fake embedder down", memory.ErrUnavailable)
 	}
@@ -923,7 +1043,12 @@ func (e *Embedder) Embed(_ context.Context, _ memory.EmbedKind, texts []string) 
 }
 
 // Model implements memory.Embedder.
-func (e *Embedder) Model() string { return "fake" }
+func (e *Embedder) Model() string {
+	if e.ModelName != "" {
+		return e.ModelName
+	}
+	return "fake"
+}
 
 // Dimensions implements memory.Embedder.
 func (e *Embedder) Dimensions() int { return e.Dims }

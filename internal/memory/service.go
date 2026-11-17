@@ -28,6 +28,7 @@ type Settings struct {
 	Scope           scope.Resolution
 	Search          config.Search
 	Preload         config.Preload
+	Recall          config.Recall
 	WritesPerMinute int
 	Process         string
 	Cwd             string
@@ -109,7 +110,7 @@ func (s *Service) embedOne(ctx context.Context, kind EmbedKind, text string) ([]
 func summarize(m Memory, score float64) Summary {
 	return Summary{
 		ID: m.ID, Slug: m.Slug, Project: m.Project, Title: m.Title, Snippet: Snippet(m.Content, SnippetRunes),
-		Type: m.Type, Tags: m.Tags, Scope: m.Scope, Status: m.Status, Score: score,
+		Type: m.Type, Tags: m.Tags, Scope: m.Scope, Status: m.Status, Source: m.Source, Score: score,
 		UpdatedAt: m.UpdatedAt,
 	}
 }

@@ -100,6 +100,8 @@ const (
 	sqlstateUniqueViolation  = "23505"
 	sqlstateQueryCanceled    = "57014"
 	sqlstateLockNotAvailable = "55P03"
+	sqlstateUndefinedColumn  = "42703"
+	sqlstateUndefinedTable   = "42P01"
 )
 
 // mapErr translates driver errors to domain errors.
@@ -117,6 +119,8 @@ func mapErr(op string, err error) error {
 			return fmt.Errorf("%s: %w: %s", op, memory.ErrConflict, pgErr.ConstraintName)
 		case sqlstateQueryCanceled, sqlstateLockNotAvailable:
 			return fmt.Errorf("%s: %w: %w", op, memory.ErrUnavailable, err)
+		case sqlstateUndefinedColumn, sqlstateUndefinedTable:
+			return fmt.Errorf("%s: %w", op, memory.ErrSchemaBehind)
 		}
 		return fmt.Errorf("%s: %w", op, err)
 	}

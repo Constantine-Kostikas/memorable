@@ -21,6 +21,7 @@ import (
 	"github.com/constantine-kostikas/memorable/internal/config"
 	"github.com/constantine-kostikas/memorable/internal/embed"
 	"github.com/constantine-kostikas/memorable/internal/memory"
+	"github.com/constantine-kostikas/memorable/internal/rank"
 	"github.com/constantine-kostikas/memorable/internal/scan"
 	"github.com/constantine-kostikas/memorable/internal/scope"
 	"github.com/constantine-kostikas/memorable/internal/store"
@@ -51,16 +52,20 @@ type evalQuery struct {
 	Project  string   `json:"project"`
 	Relevant []string `json:"relevant"`
 	TagOnly  bool     `json:"tag_only"`
+	// PromptShaped marks conversational, multi-sentence queries shaped like real prompts.
+	PromptShaped bool `json:"prompt_shaped"`
 }
 
 type evalResult struct {
-	Model             string   `json:"model"`
-	RecallAt5         float64  `json:"recall_at_5"`
-	MRR               float64  `json:"mrr"`
-	TagOnlyRecallAt5  float64  `json:"tag_only_recall_at_5"`
-	NoAnswerFalsePos  float64  `json:"no_answer_false_positive_rate"`
-	Misses            []string `json:"misses"`
-	NoAnswerResponses []string `json:"no_answer_responses"`
+	Model             string           `json:"model"`
+	RecallAt5         float64          `json:"recall_at_5"`
+	MRR               float64          `json:"mrr"`
+	TagOnlyRecallAt5  float64          `json:"tag_only_recall_at_5"`
+	NoAnswerFalsePos  float64          `json:"no_answer_false_positive_rate"`
+	Prompt            classMetrics     `json:"prompt_shaped"`
+	Calibration       rank.Calibration `json:"calibration"`
+	Misses            []string         `json:"misses"`
+	NoAnswerResponses []string         `json:"no_answer_responses"`
 }
 
 func loadJSON(t *testing.T, name string, v any) {
@@ -113,7 +118,12 @@ func TestEval(t *testing.T) { //nolint:paralleltest // one heavy, sequential eva
 		r := evaluate(t, model, dims, mems, queries)
 		results = append(results, r)
 		t.Logf("%-24s recall@5=%.3f  MRR=%.3f  tag-only recall@5=%.3f  no-answer false positives=%.2f", r.Model, r.RecallAt5, r.MRR, r.TagOnlyRecallAt5, r.NoAnswerFalsePos)
+		t.Logf("%-24s prompt-shaped: %d queries  recall@5=%.3f  MRR=%.3f  no-answer false positives=%.2f",
+			r.Model, r.Prompt.Queries, r.Prompt.RecallAt5, r.Prompt.MRR, r.Prompt.NoAnswerFalsePos)
 		if *evalVerbose {
+			for _, m := range r.Prompt.Misses {
+				t.Logf("  prompt miss: %s", m)
+			}
 			for _, m := range r.Misses {
 				t.Logf("  miss: %s", m)
 			}
@@ -173,14 +183,31 @@ func evaluate(t *testing.T, model string, dims int, mems []evalMemory, queries [
 	var recallSum, rrSum float64
 	var tagOnlySum float64
 	answerable, noAnswer, noAnswerHits, tagOnly := 0, 0, 0, 0
+	var shortSamples, promptSamples []rank.Sample
+	var prompt classAccumulator
 	for _, q := range queries {
-		res, err := service(q.Project).Search(ctx, memory.SearchRequest{Query: q.Query, K: 10})
+		res, err := service(q.Project).Search(ctx, memory.SearchRequest{Query: q.Query, K: 10, Explain: true})
 		require.NoError(t, err, q.Query)
 		var got []string
 		for _, s := range res.Results {
-			if s.Slug != nil {
-				got = append(got, *s.Slug)
+			if s.Slug == nil {
+				continue
 			}
+			got = append(got, *s.Slug)
+			e := res.Explain[s.ID]
+			sample := rank.Sample{
+				Signals:  rank.Signals{Similarity: e.Similarity, FTS: e.FTSRank > 0, Trigram: e.TrigramRank > 0, VectorRank: e.VectorRank},
+				Relevant: slices.Contains(q.Relevant, *s.Slug),
+			}
+			if q.PromptShaped {
+				promptSamples = append(promptSamples, sample)
+			} else {
+				shortSamples = append(shortSamples, sample)
+			}
+		}
+		if q.PromptShaped {
+			prompt.add(q, got)
+			continue
 		}
 		if len(q.Relevant) == 0 {
 			noAnswer++
@@ -220,5 +247,77 @@ func evaluate(t *testing.T, model string, dims int, mems []evalMemory, queries [
 		r.TagOnlyRecallAt5 = tagOnlySum / float64(tagOnly)
 	}
 	r.NoAnswerFalsePos = float64(noAnswerHits) / float64(noAnswer)
+	r.Prompt = prompt.metrics()
+
+	all := append(slices.Clone(shortSamples), promptSamples...)
+	r.Calibration = rank.Fit(all, rank.Calibration{}, calibrationLambda)
+	for _, set := range []struct {
+		name    string
+		samples []rank.Sample
+	}{{"all", all}, {"short", shortSamples}, {"prompt-shaped", promptSamples}} {
+		t.Logf("%s reliability (%s, %d samples):", model, set.name, len(set.samples))
+		for _, b := range rank.Reliability(set.samples, r.Calibration) {
+			t.Logf("  [%.1f, %.1f)  predicted %.2f  observed %.2f  n=%d", b.Low, b.High, b.Predicted, b.Observed, b.N)
+		}
+	}
+	c := r.Calibration
+	t.Logf("default calibration literal:\n\t%q: {B0: %.4f, B1: %.4f, B2: %.4f, B3: %.4f, B4: %.4f},", fmt.Sprintf("%s/%d", model, dims), c.B0, c.B1, c.B2, c.B3, c.B4)
 	return r
+}
+
+// calibrationLambda lightly regularizes the default fit toward zero so a signal that never varies stays finite.
+const calibrationLambda = 1e-3
+
+// classMetrics reports retrieval quality for one class of queries.
+type classMetrics struct {
+	Queries          int      `json:"queries"`
+	RecallAt5        float64  `json:"recall_at_5"`
+	MRR              float64  `json:"mrr"`
+	NoAnswerFalsePos float64  `json:"no_answer_false_positive_rate"`
+	Misses           []string `json:"misses"`
+}
+
+type classAccumulator struct {
+	recallSum, rrSum                   float64
+	answerable, noAnswer, noAnswerHits int
+	misses                             []string
+}
+
+func (a *classAccumulator) add(q evalQuery, got []string) {
+	if len(q.Relevant) == 0 {
+		a.noAnswer++
+		if len(got) > 0 {
+			a.noAnswerHits++
+		}
+		return
+	}
+	a.answerable++
+	top5 := got[:min(5, len(got))]
+	found := 0
+	for _, rel := range q.Relevant {
+		if slices.Contains(top5, rel) {
+			found++
+		}
+	}
+	a.recallSum += float64(found) / float64(len(q.Relevant))
+	for i, g := range got {
+		if slices.Contains(q.Relevant, g) {
+			a.rrSum += 1 / float64(i+1)
+			break
+		}
+	}
+	if found < len(q.Relevant) {
+		a.misses = append(a.misses, fmt.Sprintf("%q want %v got %v", q.Query, q.Relevant, top5))
+	}
+}
+
+func (a *classAccumulator) metrics() classMetrics {
+	m := classMetrics{Queries: a.answerable + a.noAnswer, Misses: a.misses}
+	if a.answerable > 0 {
+		m.RecallAt5, m.MRR = a.recallSum/float64(a.answerable), a.rrSum/float64(a.answerable)
+	}
+	if a.noAnswer > 0 {
+		m.NoAnswerFalsePos = float64(a.noAnswerHits) / float64(a.noAnswer)
+	}
+	return m
 }

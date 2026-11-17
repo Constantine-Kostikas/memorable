@@ -279,6 +279,7 @@ type Summary struct {
 	Tags    []string
 	Scope   Scope
 	Status  Status
+	Source  Source
 	Score   float64
 	// UpdatedAt is shown by the web UI only; MCP renderings omit it.
 	UpdatedAt time.Time

@@ -37,6 +37,21 @@ func (s *Store) Explain(ctx context.Context, sql string, args []any, noSeqScan b
 	return string(b), err
 }
 
+// MigrateDownTo rolls a context schema back to version, for upgrade tests.
+func MigrateDownTo(ctx context.Context, adminDSN, schema string, dims int, version int64) error {
+	db, err := openSchemaDB(adminDSN, schema)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = db.Close() }()
+	p, err := newProvider(db, schema, SchemaContext, dims)
+	if err != nil {
+		return err
+	}
+	_, err = p.DownTo(ctx, version)
+	return err
+}
+
 // Setting returns a run-time parameter as the store's own sessions see it.
 func (s *Store) Setting(ctx context.Context, name string) (string, error) {
 	var v string

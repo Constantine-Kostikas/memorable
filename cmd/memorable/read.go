@@ -58,7 +58,7 @@ func newSearchCmd(d deps, flags *rootFlags) *cobra.Command {
 				return err
 			}
 			return withApp(cmd, d, flags, func(ctx context.Context, a *app) error {
-				res, err := a.svc.Search(ctx, memory.SearchRequest{Query: strings.Join(args, " "), K: k, Tags: tags, TagsAny: tagsAny, Types: typ, AllProjects: all})
+				res, err := a.svc.Search(ctx, memory.SearchRequest{Query: strings.Join(args, " "), K: k, Tags: tags, TagsAny: tagsAny, Types: typ, AllProjects: all, Origin: memory.OriginCLI})
 				if err != nil {
 					return err //nolint:wrapcheck // shown to the user as is
 				}
@@ -288,8 +288,8 @@ func newStatsCmd(d deps, flags *rootFlags) *cobra.Command {
 				if p.IsJSON() {
 					return p.JSON(st)
 				}
-				p.Panel("memorable · "+a.res.Context, fmt.Sprintf("memories   %d\nembedded   %d\npending    %d embedding jobs",
-					st.Total, st.Embedded, st.PendingJobs))
+				p.Panel("memorable · "+a.res.Context, fmt.Sprintf("memories   %d\nembedded   %d\npending    %d embedding jobs\nrecall     %d prompts (%.1f a day), %d memories shown, %d fetched (last %d days)",
+					st.Total, st.Embedded, st.PendingJobs, st.Recall.Injections, st.Recall.PerDay, st.Recall.Shown, st.Recall.Fetched, st.Recall.Days))
 				for _, group := range []struct {
 					name string
 					m    map[string]int

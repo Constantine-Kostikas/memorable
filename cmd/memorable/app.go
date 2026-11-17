@@ -229,7 +229,7 @@ func openApp(ctx context.Context, d deps, cfgPath string, logger *slog.Logger, s
 	}
 	svc := memory.NewService(st, st, emb, sec, scan.Injection, memory.Settings{
 		Owner: owner, Scope: res, Search: cfg.Search, Preload: cfg.Preload,
-		WritesPerMinute: cfg.Limits.WritesPerMinute, Cwd: spec.cwd,
+		Recall: cfg.Recall, WritesPerMinute: cfg.Limits.WritesPerMinute, Cwd: spec.cwd,
 		Process: spec.process, AuditDetails: spec.auditDetails,
 	})
 	logger.DebugContext(ctx, "session ready", "context", res.Context, "read_only", res.ReadOnly)

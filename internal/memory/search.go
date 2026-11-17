@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -28,6 +29,8 @@ type SearchRequest struct {
 	Passive bool
 	// Explain fills SearchResponse.Explain with the ranking breakdown of each result.
 	Explain bool
+	// Origin records who asked (OriginMCP, OriginCLI); calibration learns only from MCP searches.
+	Origin string
 	// Project overrides the session project and restricts results to it plus context-global memories.
 	Project *string
 }
@@ -124,13 +127,23 @@ func (s *Service) Search(ctx context.Context, r SearchRequest) (SearchResponse, 
 		results = results[:r.K]
 	}
 	resp := SearchResponse{Results: results, VectorUnavailable: vectorUnavailable}
-	if r.Explain {
+	if r.Explain || !r.Passive {
 		resp.Explain = explanations(results, parts, fused, vecHits, ftsHits, triHits)
 	}
 	if r.Passive {
 		return resp, nil
 	}
-	searchID, err := s.repo.LogSearch(ctx, r.Query, s.settings.Scope.Project, summaryIDs(results))
+	query := r.Query
+	searchID, err := s.repo.LogEvent(ctx, Event{Kind: EventSearch, Query: &query, Project: s.settings.Scope.Project,
+		Returned: summaryIDs(results), Details: s.eventDetails(r.Origin, results, resp.Explain)})
+	if !r.Explain {
+		resp.Explain = nil
+	}
+	if errors.Is(err, ErrSchemaBehind) {
+		// Between `memorable update` and `memorable migrate` the event cannot be logged; the results are
+		// still right, they just carry no search_id.
+		return resp, nil
+	}
 	if err != nil {
 		return SearchResponse{}, err //nolint:wrapcheck // repository errors are already contextual
 	}
