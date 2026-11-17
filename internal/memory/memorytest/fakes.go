@@ -983,6 +983,8 @@ type Embedder struct {
 	Down bool
 	// Vectors overrides the vector for exact input texts (after any query prefix is removed).
 	Vectors map[string][]float32
+	// ModelName overrides the reported model name ("fake" by default).
+	ModelName string
 	// Block makes every call wait until its context is done, to simulate a hung Ollama.
 	Block  bool
 	mu     sync.Mutex
@@ -1036,7 +1038,12 @@ func (e *Embedder) Embed(ctx context.Context, _ memory.EmbedKind, texts []string
 }
 
 // Model implements memory.Embedder.
-func (e *Embedder) Model() string { return "fake" }
+func (e *Embedder) Model() string {
+	if e.ModelName != "" {
+		return e.ModelName
+	}
+	return "fake"
+}
 
 // Dimensions implements memory.Embedder.
 func (e *Embedder) Dimensions() int { return e.Dims }

@@ -86,6 +86,7 @@ func newRootCmdWith(info buildInfo, d deps) *cobra.Command {
 		newProfileCmd(d, flags),
 		newUICmd(d, flags),
 		newReembedCmd(d, flags),
+		newCalibrateCmd(d, flags),
 		newDoctorCmd(d, flags),
 		newExportCmd(d, flags),
 		newImportCmd(d, flags),
