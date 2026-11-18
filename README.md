@@ -1,53 +1,45 @@
 # memorable
 
-Persistent, searchable memory for Claude Code. Claude stores and retrieves memories through MCP tools instead of reading files, with hybrid semantic and keyword search, readable keys, and per-project scoping. An optional prompt hook points Claude to relevant memories before it answers, each with a calibrated relevance percentage. Everything runs on your machine: Postgres with pgvector in Docker, embeddings from a local Ollama.
+Persistent, searchable memory for Claude Code.
 
-## Requirements
+Claude Code forgets everything between sessions, and its own memory is plain Markdown files with no search. memorable gives it a real memory store over MCP: Claude saves decisions, preferences, and project facts as it works, and finds them again with hybrid semantic and keyword search. An optional prompt hook goes further and surfaces relevant memories before Claude answers, each with a calibrated relevance percentage, so you stop repeating yourself.
 
-- macOS or Linux
-- [Docker](https://docs.docker.com/get-docker/) (Docker Desktop on macOS)
-- [Ollama](https://ollama.com/download), installed natively so it can use your GPU
-- [Claude Code](https://claude.com/claude-code)
-- The [GitHub CLI](https://cli.github.com/) while the repository is private
+Everything runs on your machine. Postgres with pgvector in Docker stores the memories, a local Ollama computes the embeddings, and both listen on `127.0.0.1` only.
 
-## Install
+- **Proactive recall:** relevant memories show up on their own at session start and with each prompt.
+- **Good search:** semantic plus keyword ranking, readable slugs like `infra/db-port`, tags, and links between memories.
+- **Scoped:** separate contexts (say, `work` and `personal`) per directory, and per-project memories inside each.
+- **Safe by default:** secrets are rejected, prompt injection is quarantined, every change is versioned, and nothing is ever hard-deleted without you.
+- **A CLI and a web UI** to search, review, and edit what Claude remembers.
 
-The repository is private, so install a release with the GitHub CLI (you need collaborator access). Every release so far is a pre-release, which `gh release download` skips unless you name the tag, so look up the newest tag first:
+## Quick start
 
-```sh
-tag=$(gh release list -R constantine-kostikas/memorable --exclude-drafts --limit 1 --json tagName --jq '.[0].tagName')
-gh release download "$tag" -R constantine-kostikas/memorable -p "memorable_$(uname -s)_$(uname -m).tar.gz" -O - | tar -xz memorable
-sudo mv memorable /usr/local/bin/
-memorable --version
-```
-
-To build from source instead: `make build` (needs Go 1.26), then copy `bin/memorable` onto your `PATH`.
-
-## Update
+You need macOS or Linux, [Docker](https://docs.docker.com/get-docker/), [Ollama](https://ollama.com/download) (installed natively so it can use your GPU), and [Claude Code](https://claude.com/claude-code).
 
 ```sh
-memorable update --check   # report what would change
-memorable update
-```
-
-`memorable update` finds the newest release on GitHub, checks the GPG signature on its `checksums.txt` against the release key built into the binary, checks the archive's sha256, and only then replaces the binary in place. Any failed check aborts and leaves the installed binary untouched.
-
-- **Token:** while the repository is private, update reads a token from `GH_TOKEN`, `GITHUB_TOKEN`, or `gh auth token`, in that order.
-- **Pre-releases:** a stable install only moves to stable releases unless you pass `--pre`. A pre-release install also sees newer pre-releases.
-- **Pin a version:** `memorable update --version v0.2.0`, which can also downgrade.
-- **Root-owned directories:** if the binary's directory (for example `/usr/local/bin`) is not writable, update stages the verified binary in a private temp directory and runs `sudo install -m 0755 <staged> <target>` on a terminal, or prints that command otherwise. Do not run `sudo memorable update`: root has no GitHub token.
-- **Not handled:** development builds (`make build` without a tag) are refused unless you pass `--force`, and Homebrew installs are refused in favor of `brew upgrade`.
-
-Afterwards, restart your Claude Code sessions, because running `memorable serve` processes keep the old binary. Then run `memorable doctor`, and `memorable migrate` if it reports schema versions behind.
-
-## Set up
-
-```sh
-memorable setup --dry-run   # preview every change
+curl -fsSL https://raw.githubusercontent.com/constantine-kostikas/memorable/main/install.sh | sh
 memorable setup
 ```
 
-Setup walks through each step, shows what it will change (as a diff for files), and asks before applying it:
+Then start a new Claude Code session. That's it.
+
+The installer downloads the newest release for your platform, checks its sha256, and puts the binary in `~/.local/bin`. Set `MEMORABLE_INSTALL_DIR` to install elsewhere, or `MEMORABLE_VERSION=v0.1.0` to pin a release. `memorable setup` creates the database container, pulls the embedding model, and registers memorable with Claude Code, asking before each change ([details](#what-setup-does)). If anything looks off later, run `memorable doctor`.
+
+Other ways to install:
+
+- **Manually:** download `memorable_<OS>_<arch>.tar.gz` from [Releases](https://github.com/constantine-kostikas/memorable/releases), check it against `checksums.txt`, and put `memorable` on your `PATH`.
+- **From source** (Go 1.26): `go install github.com/constantine-kostikas/memorable/cmd/memorable@latest`, or clone and run `make build`. Source builds report version `dev`, so `memorable update` will not manage them.
+
+## How it works
+
+1. `memorable serve` runs as a stdio MCP server that Claude Code starts on demand. It exposes tools such as `memory_search`, `memory_get`, `memory_write`, and `memory_update`.
+2. A short block in `~/.claude/CLAUDE.md` tells Claude when to search and when to save.
+3. A SessionStart hook preloads your pinned and most used memories, and a UserPromptSubmit hook adds pointers to memories that match the prompt.
+4. Each memory is embedded by Ollama and stored in a Postgres schema for its context, with full-text and vector indexes.
+
+## What setup does
+
+`memorable setup --dry-run` previews every change. Setup walks through each step, shows what it will change (as a diff for files), and asks before applying it:
 
 1. Checks Docker and Ollama.
 2. Creates the `memorable-postgres` container on `127.0.0.1:5434` with a generated admin password. **The admin password is shown once. Store it in your password manager**; admin commands ask for it.
@@ -60,8 +52,6 @@ Setup walks through each step, shows what it will change (as a diff for files), 
 9. Optionally installs a daily backup job (systemd user timer or launchd agent).
 10. Optionally installs tab completion for your login shell (bash, zsh, or fish).
 11. Runs `memorable doctor`.
-
-Start a new Claude Code session afterwards. `memorable doctor` checks everything and tells you how to fix what is broken.
 
 ### Shell completion
 
@@ -176,6 +166,23 @@ memorable import ~/.claude/projects/<project>/memory
 
 Imports go through the same validation, secret scan, injection scan, and duplicate checks as anything Claude writes.
 
+## Update
+
+```sh
+memorable update --check   # report what would change
+memorable update
+```
+
+`memorable update` finds the newest release on GitHub, checks the GPG signature on its `checksums.txt` against the release key built into the binary, checks the archive's sha256, and only then replaces the binary in place. Any failed check aborts and leaves the installed binary untouched.
+
+- **Token:** none needed. If `GH_TOKEN`, `GITHUB_TOKEN`, or `gh auth token` provides one, update uses it to raise the GitHub API rate limit.
+- **Pre-releases:** a stable install only moves to stable releases unless you pass `--pre`. A pre-release install also sees newer pre-releases.
+- **Pin a version:** `memorable update --version v0.2.0`, which can also downgrade.
+- **Root-owned directories:** if the binary's directory (for example `/usr/local/bin`) is not writable, update stages the verified binary in a private temp directory and runs `sudo install -m 0755 <staged> <target>` on a terminal, or prints that command otherwise. Do not run `sudo memorable update`.
+- **Not handled:** development builds (`make build` without a tag, or `go install`) are refused unless you pass `--force`, and Homebrew installs are refused in favor of `brew upgrade`.
+
+Afterwards, restart your Claude Code sessions, because running `memorable serve` processes keep the old binary. Then run `memorable doctor`, and `memorable migrate` if it reports schema versions behind.
+
 ## Troubleshooting
 
 Run `memorable doctor`. It checks the config, keyring, container, port, database login, extensions, schema versions, Ollama, the model, and the embedding dimensions, and prints a fix for each failure.
@@ -211,4 +218,8 @@ make test-eval          # search quality against local Ollama
 make lint vuln sec
 ```
 
-See [`docs/design.md`](docs/design.md) for the design.
+See [`docs/design.md`](docs/design.md) for the design. Bug reports and pull requests are welcome.
+
+## License
+
+[MIT](LICENSE)

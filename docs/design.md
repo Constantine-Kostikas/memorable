@@ -394,7 +394,7 @@ Imperatives aimed at the agent ("ignore previous", "you must always", "system pr
 
 1. **Select.** The newest published release newer than the running version, compared as semver. Pre-releases count when the running version is a pre-release, when `--pre` is passed, or for a `--force`d development build. `--version` pins a tag (and may downgrade). `--check` reports and touches nothing. GitHub's "latest release" endpoint skips pre-releases, so update lists releases itself.
 2. **Refuse** development builds (`dev` or any non-semver version) unless `--force`, and any binary under a Homebrew `Cellar` or `Caskroom`.
-3. **Token** from `GH_TOKEN`, `GITHUB_TOKEN`, or `gh auth token`; none works once the repository is public.
+3. **Token** from `GH_TOKEN`, `GITHUB_TOKEN`, or `gh auth token` when present, to raise the API rate limit; the public repository needs none.
 4. **Verify** as in the security controls, then **replace** atomically (running `serve` processes keep the old inode), or stage and `sudo install`.
 5. **Report** old and new versions, and tell the user to restart Claude Code sessions and run `doctor` (and `migrate` if schema versions are behind). `doctor` does not check for updates in v1, to stay offline.
 
@@ -483,17 +483,12 @@ deadline_ms = 1500     # 200 to 5000
 
 ## 13. Repository, CI, and releases
 
-- Private GitHub repository `constantine-kostikas/memorable` (created with author approval at the first commit).
-- Root files: `Makefile`, `.golangci.yml`, `.gitignore`, `CLAUDE.md` (with the always-load directive for the `golang-how-to` skill), `README.md`.
+- Public GitHub repository `constantine-kostikas/memorable`, MIT licensed.
+- Root files: `Makefile`, `.golangci.yml`, `.gitignore`, `CLAUDE.md` (with the always-load directive for the `golang-how-to` skill), `README.md`, `LICENSE`, `install.sh`.
 - **CI** (`.github/workflows/ci.yml`, push and PR to main): build, `go test -race`, golangci-lint, govulncheck, gosec, integration tests.
 - **Release** (`.github/workflows/release.yml`, on a pushed `v*` tag or the "Run workflow" button, which tags the head of main with the entered version and releases it in the same run): GoReleaser v2, `CGO_ENABLED=0`, archives that include `completions/memorable.{bash,zsh,fish}`, linux and darwin on amd64 and arm64, archive names matching `uname`, GPG-signed checksums (`GPG_PRIVATE_KEY`, `GPG_PASSPHRASE` secrets), GitHub-native release notes grouped by PR label (`.github/release.yml`, labels applied from branch prefixes by `.github/labeler.yml`), version via ldflags. Mirrors GitQuick's setup without its push-to-main trigger.
-- **Homebrew tap:** configured in `.goreleaser.yaml` but commented out until the repository is made public.
-- **Install while private** (colleagues are collaborators). `gh release download` without a tag skips pre-releases, so name the newest tag:
-  ```sh
-  tag=$(gh release list -R constantine-kostikas/memorable --exclude-drafts --limit 1 --json tagName --jq '.[0].tagName')
-  gh release download "$tag" -R constantine-kostikas/memorable -p "memorable_$(uname -s)_$(uname -m).tar.gz" -O - | tar -xz memorable
-  sudo mv memorable /usr/local/bin/
-  ```
+- **Homebrew tap:** configured in `.goreleaser.yaml` but commented out until the `homebrew-tap` repository and its token exist.
+- **Install:** `install.sh` picks the highest semver release tag (pre-releases included, since the list API is not in version order), downloads the archive for `uname -s`/`uname -m`, checks its sha256 against `checksums.txt`, and installs to `~/.local/bin` (`MEMORABLE_INSTALL_DIR`, `MEMORABLE_VERSION` override). GPG verification is left to `memorable update`.
 - **Update:** `memorable update` (see section 9).
 
 ## 14. Deliverables

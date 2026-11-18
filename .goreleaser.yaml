@@ -46,6 +46,7 @@ archives:
       {{- else }}{{ .Arch }}{{ end }}
     files:
       - README.md
+      - LICENSE
       - completions/*
 
 checksum:

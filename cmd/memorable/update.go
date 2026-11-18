@@ -63,7 +63,7 @@ func newUpdateCmd(d deps, flags *rootFlags, info buildInfo) *cobra.Command {
 		Short: "Replace this binary with the newest verified release",
 		Long: "update finds the newest GitHub release, verifies its GPG-signed checksums, and replaces the running binary.\n" +
 			"Stable installs only move to stable releases unless --pre is given; pre-release installs also see pre-releases.\n" +
-			"The repository is private, so update reads a token from GH_TOKEN, GITHUB_TOKEN, or `gh auth token`.",
+			"A token from GH_TOKEN, GITHUB_TOKEN, or `gh auth token` is used when present, to raise the GitHub API rate limit.",
 		Example: "  memorable update --check\n  memorable update\n  memorable update --version v0.2.0",
 		GroupID: groupSetup,
 		Args:    argsUsage(cobra.NoArgs),
