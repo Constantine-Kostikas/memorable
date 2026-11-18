@@ -3,7 +3,6 @@
 Persistent, searchable memory for Claude Code over MCP, written in Go.
 
 - Design spec: `docs/design.md` (binding authority).
-- Implementation plan: `docs/superpowers/plans/2026-11-14-memorable-v1.md`.
 
 ## Go development
 
