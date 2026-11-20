@@ -397,7 +397,8 @@ Imperatives aimed at the agent ("ignore previous", "you must always", "system pr
 2. **Refuse** development builds (`dev` or any non-semver version) unless `--force`, and any binary under a Homebrew `Cellar` or `Caskroom`.
 3. **Token** from `GH_TOKEN`, `GITHUB_TOKEN`, or `gh auth token`; none works once the repository is public.
 4. **Verify** as in the security controls, then **replace** atomically (running `serve` processes keep the old inode), or stage and `sudo install`.
-5. **Report** old and new versions, and tell the user to restart Claude Code sessions and run `doctor` (and `migrate` if schema versions are behind). `doctor` does not check for updates in v1, to stay offline.
+5. **Progress** goes to stderr in text mode (none with `-o json`): each step (checking, the release found, verifying, installing) and, on a terminal, a live progress bar for the archive download; piped, the download is one line at the start and one at the end.
+6. **Report** old and new versions, and tell the user to restart Claude Code sessions and run `doctor` (and `migrate` if schema versions are behind). `doctor` does not check for updates in v1, to stay offline.
 
 ### `memorable setup`
 

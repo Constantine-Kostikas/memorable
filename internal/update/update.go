@@ -2,6 +2,7 @@ package update
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/rand"
 	"errors"
@@ -73,6 +74,8 @@ type Updater struct {
 	IsTTY    bool
 	// Sudo runs argv (argv[0] is "sudo") attached to the terminal. It is only used on a TTY.
 	Sudo func(ctx context.Context, argv ...string) error
+	// Report receives progress. Nil means silent.
+	Report Reporter
 }
 
 // Run finds the release opts selects and, unless opts.Check is set, installs it over the running binary.
@@ -100,6 +103,7 @@ func (u *Updater) Run(ctx context.Context, opts Options) (Result, error) {
 		}
 	}
 
+	u.status("Checking GitHub for releases")
 	rel, found, err := u.selectRelease(ctx, current, pinned, opts.Pre)
 	if err != nil {
 		return res, err
@@ -122,10 +126,12 @@ func (u *Updater) Run(ctx context.Context, opts Options) (Result, error) {
 		return res, nil
 	}
 
+	u.status("Found memorable %s (installed: %s)", rel.Tag, cmp.Or(current, "development build"))
 	bin, err := u.fetchVerified(ctx, rel)
 	if err != nil {
 		return res, err
 	}
+	u.status("Installing to %s", target)
 	return u.install(ctx, res, bin)
 }
 
@@ -226,6 +232,7 @@ func (u *Updater) fetchVerified(ctx context.Context, rel Release) ([]byte, error
 		return nil, verificationError("release %s is missing checksums.txt or checksums.txt.sig", rel.Tag)
 	}
 
+	u.status("Verifying the release signature")
 	sums, err := u.GitHub.Download(ctx, sumsAsset, maxSignedFileBytes)
 	if err != nil {
 		return nil, err
@@ -241,13 +248,14 @@ func (u *Updater) fetchVerified(ctx context.Context, rel Release) ([]byte, error
 	if err != nil {
 		return nil, err
 	}
-	archive, err := u.GitHub.Download(ctx, archiveAsset, maxArchiveBytes)
+	archive, err := u.download(ctx, archiveAsset, maxArchiveBytes)
 	if err != nil {
 		return nil, err
 	}
 	if err := VerifyChecksum(archive, wantSum); err != nil {
 		return nil, err
 	}
+	u.status("Checksum verified")
 	var bin bytes.Buffer
 	if err := ExtractBinary(archive, &bin, maxBinaryBytes); err != nil {
 		return nil, err

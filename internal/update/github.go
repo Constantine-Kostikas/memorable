@@ -109,11 +109,16 @@ func (g *GitHub) ReleaseByTag(ctx context.Context, tag string) (Release, error) 
 
 // Download fetches an asset through the API, refusing anything larger than maxBytes.
 func (g *GitHub) Download(ctx context.Context, a Asset, maxBytes int64) ([]byte, error) {
+	return g.DownloadTo(ctx, a, maxBytes, io.Discard)
+}
+
+// DownloadTo is Download that also writes each received chunk to progress as it arrives.
+func (g *GitHub) DownloadTo(ctx context.Context, a Asset, maxBytes int64, progress io.Writer) ([]byte, error) {
 	prefix := g.BaseURL + "/repos/" + g.Repo + "/releases/assets/"
 	if !strings.HasPrefix(a.URL, prefix) {
 		return nil, fmt.Errorf("%s: %q is not a release asset of %s", a.Name, a.URL, g.Repo)
 	}
-	body, err := g.get(ctx, a.URL, "application/octet-stream", maxBytes)
+	body, err := g.get(ctx, a.URL, "application/octet-stream", maxBytes, progress)
 	if err != nil {
 		return nil, fmt.Errorf("downloading %s: %w", a.Name, err)
 	}
@@ -121,7 +126,7 @@ func (g *GitHub) Download(ctx context.Context, a Asset, maxBytes int64) ([]byte,
 }
 
 func (g *GitHub) getJSON(ctx context.Context, path string, v any) error {
-	body, err := g.get(ctx, g.BaseURL+path, "application/vnd.github+json", maxJSONBytes)
+	body, err := g.get(ctx, g.BaseURL+path, "application/vnd.github+json", maxJSONBytes, io.Discard)
 	if err != nil {
 		return err
 	}
@@ -131,7 +136,7 @@ func (g *GitHub) getJSON(ctx context.Context, path string, v any) error {
 	return nil
 }
 
-func (g *GitHub) get(ctx context.Context, rawURL, accept string, maxBytes int64) ([]byte, error) {
+func (g *GitHub) get(ctx context.Context, rawURL, accept string, maxBytes int64, progress io.Writer) ([]byte, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil || u.Scheme != "https" {
 		return nil, fmt.Errorf("refusing %q: only https is allowed", rawURL)
@@ -156,7 +161,7 @@ func (g *GitHub) get(ctx context.Context, rawURL, accept string, maxBytes int64)
 	if resp.StatusCode != http.StatusOK {
 		return nil, g.statusError(resp)
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
+	body, err := io.ReadAll(io.TeeReader(io.LimitReader(resp.Body, maxBytes+1), progress))
 	if err != nil {
 		return nil, fmt.Errorf("reading %s: %w", u.Redacted(), err)
 	}
