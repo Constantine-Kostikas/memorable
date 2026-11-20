@@ -54,7 +54,7 @@ type deps struct {
 	lookPath      func(string) (string, error)
 	executable    func() (string, error)
 	goos          string
-	selfUpdate    func(cmd *cobra.Command, current string, opts update.Options) (update.Result, error)
+	selfUpdate    func(cmd *cobra.Command, current string, opts update.Options, report update.Reporter) (update.Result, error)
 	openBrowser   func(path string) error
 }
 
@@ -71,8 +71,8 @@ func defaultDeps() deps {
 		return buildAppFor(ctx, d, cfgPath, contextName, logger, details)
 	}
 	d.openBrowser = openBrowserWith(d.run, d.goos)
-	d.selfUpdate = func(cmd *cobra.Command, current string, opts update.Options) (update.Result, error) {
-		return runSelfUpdate(d, cmd, current, opts)
+	d.selfUpdate = func(cmd *cobra.Command, current string, opts update.Options, report update.Reporter) (update.Result, error) {
+		return runSelfUpdate(d, cmd, current, opts, report)
 	}
 	return d
 }

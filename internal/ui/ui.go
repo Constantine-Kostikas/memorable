@@ -9,6 +9,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"charm.land/bubbles/v2/progress"
 	"charm.land/lipgloss/v2"
 	"charm.land/lipgloss/v2/table"
 	"github.com/charmbracelet/x/term"
@@ -50,6 +51,12 @@ func NewPrinter(out io.Writer, format string, getenv func(string) string) (*Prin
 		styled = true
 	}
 	return &Printer{out: out, styled: styled}, nil
+}
+
+// ProgressBar returns a bar of width cells, percentage included, blended in the CLI's accent and success colors.
+// Render it with ViewAs; it needs no Bubble Tea program.
+func ProgressBar(width int) progress.Model {
+	return progress.New(progress.WithColors(accent, green), progress.WithWidth(width))
 }
 
 // IsJSON reports whether output is JSON.

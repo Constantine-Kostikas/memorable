@@ -14,7 +14,7 @@ import (
 
 func updateDeps(res update.Result, err error, got *update.Options) deps {
 	d := defaultDeps()
-	d.selfUpdate = func(_ *cobra.Command, _ string, opts update.Options) (update.Result, error) {
+	d.selfUpdate = func(_ *cobra.Command, _ string, opts update.Options, _ update.Reporter) (update.Result, error) {
 		if got != nil {
 			*got = opts
 		}

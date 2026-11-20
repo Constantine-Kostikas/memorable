@@ -16,7 +16,7 @@ import (
 )
 
 // runSelfUpdate wires the real updater: GitHub over HTTPS, the embedded release key, and sudo on the terminal.
-func runSelfUpdate(d deps, cmd *cobra.Command, current string, opts update.Options) (update.Result, error) {
+func runSelfUpdate(d deps, cmd *cobra.Command, current string, opts update.Options, report update.Reporter) (update.Result, error) {
 	var gh update.RunFunc
 	if _, err := d.lookPath("gh"); err == nil {
 		gh = d.run
@@ -36,6 +36,7 @@ func runSelfUpdate(d deps, cmd *cobra.Command, current string, opts update.Optio
 		Executable: d.executable,
 		IsTTY:      d.isTTY(cmd),
 		Sudo:       sudoOnTerminal(cmd),
+		Report:     report,
 	}
 	return u.Run(cmd.Context(), opts) //nolint:wrapcheck // errors from internal/update are already contextual
 }
@@ -72,7 +73,11 @@ func newUpdateCmd(d deps, flags *rootFlags, info buildInfo) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			res, err := d.selfUpdate(cmd, info.Version, opts)
+			var report update.Reporter
+			if !p.IsJSON() {
+				report = newProgressReporter(cmd.ErrOrStderr(), d.getenv)
+			}
+			res, err := d.selfUpdate(cmd, info.Version, opts, report)
 			if errors.Is(err, update.ErrInvalidVersion) {
 				return usageError{err}
 			}
