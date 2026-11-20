@@ -24,6 +24,7 @@ require (
 	github.com/tidwall/gjson v1.20.3
 	github.com/tidwall/pretty v1.3.0
 	github.com/tidwall/sjson v1.2.9
+	github.com/yuin/goldmark v1.8.7
 	github.com/zalando/go-keyring v0.2.8
 	go.uber.org/goleak v1.3.0
 	golang.org/x/mod v0.43.0

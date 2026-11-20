@@ -36,7 +36,10 @@
             hx-get="/c/{{.Context}}/memories" hx-trigger="input changed delay:300ms" hx-target="#memory-rows" hx-include="closest form" hx-push-url="true">
         </label>
       </div>
-      <button type="submit" class="btn btn-primary mt-2">Apply</button>
+      <div class="mt-2 flex items-center gap-2">
+        <button type="submit" class="btn btn-primary">Apply</button>
+        <a href="/c/{{.Context}}/memories" class="btn" title="Clear the search and all filters">Reset</a>
+      </div>
     </details>
   </form>
   <ul id="memory-rows" class="divide-y divide-line">

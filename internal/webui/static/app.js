@@ -1212,6 +1212,87 @@
     return pane ? pane.getAttribute('data-memory-href') : null;
   }
 
+  // Markdown: Write and Preview views of the content. The formatting toolbar is @github/markdown-toolbar-element
+  // (static/markdown-toolbar-element.js); this code only hides it in Preview and maps Ctrl/Cmd B and I to it.
+
+  function markdownParts() {
+    var pane = document.getElementById('detail-pane');
+    var bar = pane && pane.querySelector('[data-markdown-bar]');
+    var content = pane && pane.querySelector('#memory-content');
+    var preview = pane && pane.querySelector('#memory-preview');
+    return bar && content && preview ? { bar: bar, content: content, preview: preview } : null;
+  }
+
+  function bindMarkdown(root) {
+    each(root, '[data-markdown-bar]', function (bar) {
+      bar.hidden = false;
+    });
+  }
+
+  function setMarkdownView(parts, view) {
+    parts.content.hidden = view !== 'write';
+    parts.preview.hidden = view !== 'preview';
+    each(parts.bar, '[data-markdown-view]', function (button) {
+      button.setAttribute('aria-pressed', String(button.getAttribute('data-markdown-view') === view));
+    });
+    each(parts.bar, '[data-markdown-toolbar]', function (toolbar) {
+      toolbar.hidden = view !== 'write';
+    });
+  }
+
+  // htmx fetches the preview on the same click; the previous render shows until the new one swaps in.
+  function onMarkdownViewClick(evt) {
+    var button = evt.target && evt.target.closest && evt.target.closest('[data-markdown-view]');
+    var parts = button && markdownParts();
+    if (!parts || !parts.bar.contains(button)) {
+      return;
+    }
+    setMarkdownView(parts, button.getAttribute('data-markdown-view'));
+    if (!parts.content.hidden && !parts.content.disabled) {
+      parts.content.focus();
+    }
+  }
+
+  var MARKDOWN_SHORTCUTS = { b: 'md-bold', i: 'md-italic' };
+
+  function markdownShortcut(evt) {
+    if (!(evt.ctrlKey || evt.metaKey) || evt.altKey || evt.shiftKey || evt.isComposing) {
+      return;
+    }
+    var tag = MARKDOWN_SHORTCUTS[String(evt.key).toLowerCase()];
+    var field = evt.target;
+    var parts = tag && field && field.id === 'memory-content' && !field.disabled ? markdownParts() : null;
+    var button = parts && parts.bar.querySelector('[data-markdown-toolbar] ' + tag);
+    if (!button) {
+      return;
+    }
+    evt.preventDefault();
+    button.click();
+  }
+
+  // Delete: name the open memory's list neighbor (the row below, else the row above) so the pane moves on to it.
+
+  function neighborMemoryId(href) {
+    var links = Array.prototype.slice.call(rowLinks());
+    var index = links.indexOf(rowLinkFor(href));
+    if (index === -1) {
+      return '';
+    }
+    var neighbor = links[index + 1] || links[index - 1];
+    return neighbor ? pathOf(neighbor.getAttribute('href')).split('/').pop() : '';
+  }
+
+  function onDeleteConfigRequest(evt) {
+    var detail = evt.detail || {};
+    if (!detail.elt || !detail.elt.hasAttribute || !detail.elt.hasAttribute('data-delete-memory')) {
+      return;
+    }
+    var next = neighborMemoryId(paneMemoryHref());
+    if (next) {
+      detail.parameters.next = next;
+    }
+  }
+
   // Marks the row of the memory the pane shows, so rows from a filter refresh or a palette jump agree with it.
   function markPaneRow() {
     var href = paneMemoryHref();
@@ -1314,6 +1395,10 @@
       return false;
     }
     openSectionFold('content');
+    var parts = markdownParts();
+    if (parts && content.hidden) {
+      setMarkdownView(parts, 'write');
+    }
     content.focus();
     return true;
   }
@@ -1375,7 +1460,11 @@
   onReady(bindTagChips);
   onReady(bindLookups);
   onReady(bindPaletteButtons);
+  onReady(bindMarkdown);
+  document.addEventListener('click', onMarkdownViewClick);
+  document.addEventListener('keydown', markdownShortcut);
   document.addEventListener('htmx:configRequest', onLookupConfigRequest);
+  document.addEventListener('htmx:configRequest', onDeleteConfigRequest);
   document.addEventListener('htmx:afterSwap', onLookupSwap);
   document.addEventListener('htmx:beforeSwap', onPaletteBeforeSwap);
   document.addEventListener('htmx:afterRequest', onPaletteAfterRequest);

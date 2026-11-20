@@ -143,6 +143,16 @@ func TestListFiltersPassed(t *testing.T) {
 	assert.Equal(t, cursor, *req.Cursor)
 }
 
+func TestFilterFormHasResetBesideApply(t *testing.T) {
+	t.Parallel()
+	h, c := newMemoriesServer(t, &recordingMemories{})
+
+	rec := getPage(h, c, "/c/personal/memories?q=port&type=feedback&tag=go")
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Regexp(t, `(?s)<button type="submit"[^>]*>Apply</button>\s*<a href="/c/personal/memories"[^>]*>Reset</a>`, rec.Body.String())
+}
+
 func TestListRejectsBadFilters(t *testing.T) {
 	t.Parallel()
 	h, c := newMemoriesServer(t, &recordingMemories{})

@@ -513,6 +513,110 @@
     transition: opacity 100ms ease-out 450ms, visibility 0s linear 450ms;
   }
 
+  /* Rendered memory content. Preflight strips element styles, so Markdown output gets its own. */
+  .markdown-body {
+    min-height: calc(14 * var(--sheet-line));
+    overflow-wrap: anywhere;
+    line-height: var(--sheet-line);
+  }
+
+  .markdown-body > :first-child {
+    margin-top: 0;
+  }
+
+  .markdown-body :is(p, ul, ol, blockquote, pre, table, hr) {
+    margin-block: 0 0.75rem;
+  }
+
+  .markdown-body :is(h1, h2, h3, h4, h5, h6) {
+    margin-block: 1rem 0.5rem;
+    font-weight: 700;
+  }
+
+  .markdown-body h1 {
+    font-size: var(--text-page);
+  }
+
+  .markdown-body h2 {
+    font-size: var(--text-title);
+  }
+
+  .markdown-body ul {
+    list-style: disc;
+    padding-left: 1.5rem;
+  }
+
+  .markdown-body ol {
+    list-style: decimal;
+    padding-left: 1.5rem;
+  }
+
+  .markdown-body li > :is(ul, ol) {
+    margin-bottom: 0;
+  }
+
+  .markdown-body li:has(> input[type=checkbox]) {
+    list-style: none;
+  }
+
+  .markdown-body a {
+    color: var(--accent);
+    text-decoration: underline;
+  }
+
+  .markdown-body blockquote {
+    border-left: 3px solid var(--line);
+    padding-left: 0.75rem;
+    color: var(--ink-muted);
+  }
+
+  .markdown-body code {
+    border-radius: 4px;
+    background-color: var(--neutral-soft);
+    padding: 0 0.25rem;
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+  }
+
+  .markdown-body pre {
+    overflow-x: auto;
+    border-radius: 4px;
+    background-color: var(--neutral-soft);
+    padding: 0.5rem 0.75rem;
+  }
+
+  .markdown-body pre code {
+    padding: 0;
+    background: none;
+  }
+
+  .markdown-body table {
+    border-collapse: collapse;
+  }
+
+  .markdown-body :is(th, td) {
+    border: 1px solid var(--line);
+    padding: 0.125rem 0.5rem;
+    text-align: left;
+  }
+
+  .markdown-body hr {
+    border-color: var(--line);
+  }
+
+  /* md-* toolbar elements are custom elements, not buttons: give them the button's focus ring too. */
+  .md-tool {
+    min-width: 2rem;
+    justify-content: center;
+    padding: 0.125rem 0.5rem;
+    user-select: none;
+  }
+
+  .md-tool:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+
   .link-peek-snippet {
     display: -webkit-box;
     -webkit-box-orient: vertical;
@@ -677,7 +781,7 @@ body[data-expanded] #content > .section-heading {
 
   body[data-expanded] #content > [data-section-body] > [data-editor-meta] {
     grid-column: 2;
-    grid-row: 1 / span 2;
+    grid-row: 1 / span 3;
     grid-template-columns: minmax(0, 1fr);
     margin-top: 0;
     border-left: 1px solid var(--line);
@@ -690,7 +794,7 @@ body[data-expanded] #content > .section-heading {
     align-self: start;
   }
 
-  body[data-expanded] #memory-content {
+  body[data-expanded] :is(#memory-content, #memory-preview) {
     min-height: 60vh;
   }
 }
