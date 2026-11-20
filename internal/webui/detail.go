@@ -466,7 +466,7 @@ func isFragmentRequest(r *http.Request) bool {
 // workspace: the list rebuilt from the query string's filter beside the memory. The pane alone never
 // renders the list, so a malformed filter does not fail it; it only drops the filter from the pane's links.
 func (s *Server) respondDetail(w http.ResponseWriter, r *http.Request, rc requestContext, view detailView, status int) {
-	filter, _, err := parseMemoryFilter(r.URL.Query())
+	filter, _, err := parseMemoryFilter(paneFilterQuery(r, rc.Name))
 	fragment := isFragmentRequest(r)
 	switch {
 	case err != nil && fragment:
@@ -477,7 +477,7 @@ func (s *Server) respondDetail(w http.ResponseWriter, r *http.Request, rc reques
 	}
 	view.ListURL = memoriesURL(rc.Name, filter, nil)
 	view.FilterQuery = withQuery("", filterValues(filter))
-	w.Header().Set("Vary", "HX-Request")
+	w.Header().Set("Vary", "HX-Request, HX-Current-URL")
 	if fragment {
 		if view.Row != nil {
 			row := *view.Row
@@ -499,7 +499,7 @@ func (s *Server) respondDetail(w http.ResponseWriter, r *http.Request, rc reques
 
 // listURLFor is the list URL for the Back link: the request's filter, or the plain list when it is malformed.
 func listURLFor(r *http.Request, rc requestContext) string {
-	filter, _, err := parseMemoryFilter(r.URL.Query())
+	filter, _, err := parseMemoryFilter(paneFilterQuery(r, rc.Name))
 	if err != nil {
 		filter = memoryFilter{}
 	}

@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="/static/app.css">
   <script src="/static/app.js"></script>
   <script src="/static/htmx.min.js" defer></script>
+  <script type="module" src="/static/markdown-toolbar-element.js"></script>
 </head>
 <body hx-headers='{"X-CSRF-Token":"{{.CSRF}}"}' class="bg-paper font-sans text-body text-ink antialiased{{if eq .Page "memories"}} min-[900px]:flex min-[900px]:h-dvh min-[900px]:flex-col{{end}}">
   <header class="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-line bg-sheet px-4 py-3">
