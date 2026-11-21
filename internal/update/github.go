@@ -178,7 +178,7 @@ func (g *GitHub) statusError(resp *http.Response) error {
 		msg += ": API rate limit reached; set GH_TOKEN or try again later"
 	case resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
 		if g.Token == "" {
-			msg += ": the repository is private, so set GH_TOKEN or run `gh auth login`"
+			msg += ": check the repository name, or set GH_TOKEN if GitHub requires a token"
 		} else {
 			msg += ": check that the token can read " + g.Repo
 		}

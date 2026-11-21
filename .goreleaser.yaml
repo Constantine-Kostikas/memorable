@@ -46,6 +46,7 @@ archives:
       {{- else }}{{ .Arch }}{{ end }}
     files:
       - README.md
+      - LICENSE
       - completions/*
 
 checksum:
@@ -65,26 +66,26 @@ release:
 
     Released by [GoReleaser](https://github.com/goreleaser/goreleaser).
 
-# Homebrew tap: enable once the repository is public. Homebrew cannot download release
-# assets from a private repository without a token on every machine.
-#
-# homebrew_casks:
-#   - name: memorable
-#     repository:
-#       owner: constantine-kostikas
-#       name: homebrew-tap
-#       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-#     homepage: https://github.com/constantine-kostikas/memorable
-#     description: Persistent, searchable memory for Claude Code over MCP
-#     binaries:
-#       - memorable
-#     completions:
-#       bash: completions/memorable.bash
-#       zsh: completions/memorable.zsh
-#       fish: completions/memorable.fish
-#     hooks:
-#       post:
-#         install: |
-#           if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0
-#             system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/memorable"]
-#           end
+# Homebrew tap: publishes Casks/memorable.rb to constantine-kostikas/homebrew-tap.
+# Skipped until the HOMEBREW_TAP_TOKEN secret exists, so releases keep working without it.
+homebrew_casks:
+  - name: memorable
+    skip_upload: '{{ if eq (envOrDefault "HOMEBREW_TAP_TOKEN" "") "" }}true{{ else }}false{{ end }}'
+    repository:
+      owner: constantine-kostikas
+      name: homebrew-tap
+      token: '{{ envOrDefault "HOMEBREW_TAP_TOKEN" "" }}'
+    homepage: https://github.com/constantine-kostikas/memorable
+    description: Persistent, searchable memory for Claude Code over MCP
+    binaries:
+      - memorable
+    completions:
+      bash: completions/memorable.bash
+      zsh: completions/memorable.zsh
+      fish: completions/memorable.fish
+    hooks:
+      post:
+        install: |
+          if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/memorable"]
+          end

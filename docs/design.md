@@ -14,7 +14,7 @@ memorable is a persistent memory service for Claude Code. Claude stores and retr
 - Token-efficient access: two-step retrieval, readable keys, automatic scoping.
 - Strong defenses against memory poisoning and secret leakage.
 - Hard isolation between contexts (work, personal, clients).
-- A polished CLI and a guided `memorable setup` so colleagues can run their own instance on Linux or macOS.
+- A polished CLI and a guided `memorable setup`, so anyone can run their own instance on Linux or macOS.
 
 ### Non-goals (v1)
 
@@ -112,7 +112,7 @@ unset PGPW
 - Bound to `127.0.0.1` only. Port 5434 by default (5432 and 5433 are commonly taken); override in config or `MEMORABLE_DB_PORT`.
 - Postgres 18 images mount the volume at `/var/lib/postgresql`, not `/var/lib/postgresql/data`.
 - pgvector 0.8+ is required: filtered HNSW queries use `SET hnsw.iterative_scan = relaxed_order` so scope and status filters still return k results.
-- `memorable setup` runs this for colleagues, generating passwords so no interactive shell prompt is involved.
+- `memorable setup` runs this, generating passwords so no interactive shell prompt is involved.
 - Status on the author's machine: running, `vector` 0.8.7 and `pg_trgm` 1.6 enabled.
 
 ### Ollama (native on every platform)
@@ -131,7 +131,7 @@ A context is the hard isolation boundary. Each context has its own schema `mem_<
 - Every pooled session also sets `statement_timeout = 30s`, `lock_timeout = 5s`, and `idle_in_transaction_session_timeout = 60s`, so a stuck query or held lock cannot exhaust the 4-connection pool. Timeouts surface as `ErrUnavailable`. Migrations use their own connection and are not bounded.
 - Resolution order: MCP client roots, then process working directory, then path-prefix match in config.
 - **Unmatched directory:** writes are refused with `ErrReadOnly`. Reads use `fallback_context` if configured (read-only); otherwise every tool returns a clear "no context for this directory" error that names `memorable context add`.
-- Author's machine: one context, `personal` = `~/development/projects`, `~/development/OBSIDIAN`; `fallback_context = "personal"`. Colleagues: `fallback_context` unset by default.
+- `fallback_context` is unset by default.
 
 ### Profile schema
 
@@ -397,7 +397,7 @@ Imperatives aimed at the agent ("ignore previous", "you must always", "system pr
 
 1. **Select.** The newest published release newer than the running version, compared as semver. Pre-releases count when the running version is a pre-release, when `--pre` is passed, or for a `--force`d development build. `--version` pins a tag (and may downgrade). `--check` reports and touches nothing. GitHub's "latest release" endpoint skips pre-releases, so update lists releases itself.
 2. **Refuse** development builds (`dev` or any non-semver version) unless `--force`, and any binary under a Homebrew `Cellar` or `Caskroom`.
-3. **Token** from `GH_TOKEN`, `GITHUB_TOKEN`, or `gh auth token`; none works once the repository is public.
+3. **Token** from `GH_TOKEN`, `GITHUB_TOKEN`, or `gh auth token` when present, to raise the API rate limit; the public repository needs none.
 4. **Verify** as in the security controls, then **replace** atomically (running `serve` processes keep the old inode), or stage and `sudo install`.
 5. **Progress** goes to stderr in text mode (none with `-o json`): each step (checking, the release found, verifying, installing) and, on a terminal, a live progress bar for the archive download; piped, the download is one line at the start and one at the end.
 6. **Report** old and new versions, and tell the user to restart Claude Code sessions and run `doctor` (and `migrate` if schema versions are behind). `doctor` does not check for updates in v1, to stay offline.
@@ -442,7 +442,7 @@ dimensions = 768
 allow_remote = false
 
 [contexts.personal]
-paths = ["~/development/projects", "~/development/OBSIDIAN"]
+paths = ["~/code", "~/notes"]
 
 [search]
 min_similarity = 0.30
@@ -487,17 +487,12 @@ deadline_ms = 1500     # 200 to 5000
 
 ## 13. Repository, CI, and releases
 
-- Private GitHub repository `constantine-kostikas/memorable` (created with author approval at the first commit).
-- Root files: `Makefile`, `.golangci.yml`, `.gitignore`, `CLAUDE.md` (with the always-load directive for the `golang-how-to` skill), `README.md`.
+- Public GitHub repository `constantine-kostikas/memorable`, MIT licensed.
+- Root files: `Makefile`, `.golangci.yml`, `.gitignore`, `CLAUDE.md` (with the always-load directive for the `golang-how-to` skill), `README.md`, `LICENSE`, `install.sh`.
 - **CI** (`.github/workflows/ci.yml`, push and PR to main): build, `go test -race`, golangci-lint, govulncheck, gosec, integration tests.
-- **Release** (`.github/workflows/release.yml`, on a pushed `v*` tag or the "Run workflow" button, which tags the head of main with the entered version and releases it in the same run): GoReleaser v2, `CGO_ENABLED=0`, archives that include `completions/memorable.{bash,zsh,fish}`, linux and darwin on amd64 and arm64, archive names matching `uname`, GPG-signed checksums (`GPG_PRIVATE_KEY`, `GPG_PASSPHRASE` secrets), GitHub-native release notes grouped by PR label (`.github/release.yml`, labels applied from branch prefixes by `.github/labeler.yml`), version via ldflags. Mirrors GitQuick's setup without its push-to-main trigger.
-- **Homebrew tap:** configured in `.goreleaser.yaml` but commented out until the repository is made public.
-- **Install while private** (colleagues are collaborators). `gh release download` without a tag skips pre-releases, so name the newest tag:
-  ```sh
-  tag=$(gh release list -R constantine-kostikas/memorable --exclude-drafts --limit 1 --json tagName --jq '.[0].tagName')
-  gh release download "$tag" -R constantine-kostikas/memorable -p "memorable_$(uname -s)_$(uname -m).tar.gz" -O - | tar -xz memorable
-  sudo mv memorable /usr/local/bin/
-  ```
+- **Release** (`.github/workflows/release.yml`, on a pushed `v*` tag or the "Run workflow" button, which tags the head of main with the entered version and releases it in the same run): GoReleaser v2, `CGO_ENABLED=0`, archives that include `completions/memorable.{bash,zsh,fish}`, linux and darwin on amd64 and arm64, archive names matching `uname`, GPG-signed checksums (`GPG_PRIVATE_KEY`, `GPG_PASSPHRASE` secrets), GitHub-native release notes grouped by PR label (`.github/release.yml`, labels applied from branch prefixes by `.github/labeler.yml`), version via ldflags.
+- **Homebrew tap:** configured in `.goreleaser.yaml` but commented out until the `homebrew-tap` repository and its token exist.
+- **Install:** `install.sh` picks the highest semver release tag (pre-releases included, since the list API is not in version order), downloads the archive for `uname -s`/`uname -m`, checks its sha256 against `checksums.txt`, and installs to `~/.local/bin` (`MEMORABLE_INSTALL_DIR`, `MEMORABLE_VERSION` override). GPG verification is left to `memorable update`.
 - **Update:** `memorable update` (see section 9).
 
 ## 14. Deliverables
@@ -513,6 +508,6 @@ deadline_ms = 1500     # 200 to 5000
 | Claude Code MCP working directory and roots support | Verify during implementation |
 | Whether MCP requests carry a Claude Code session id | Verify; fall back to process id + start time |
 | `embeddinggemma` query and document prompt prefixes | 768 dimensions and L2-normalized output verified locally (Ollama 0.40.16); prefixes taken from the model card, effect measured by the evaluation set |
-| Gatekeeper behavior for `gh release download` on macOS | Verify on a colleague's Mac before relying on it |
+| Gatekeeper behavior for `install.sh` on macOS | `curl` sets no quarantine attribute, so none expected; verify on a Mac |
 | Threshold defaults | Recall uses calibrated relevance (section 7); the default fit comes from the evaluation set, refined by `memorable calibrate` |
 | Whether compaction keeps the Claude Code session id | Not documented; recall dedup is correct either way |
