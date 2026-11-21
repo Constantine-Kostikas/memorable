@@ -413,7 +413,7 @@ Interactive only (refuses without a TTY). Each step shows what will change, as a
 5. Define contexts and an optional fallback context; write the config.
 6. Register the MCP server: `claude mcp add --scope user memorable -- memorable serve`.
 7. Append the CLAUDE.md snippet to `~/.claude/CLAUDE.md`.
-8. Add permission rules to `~/.claude/settings.json`, including the Bash deny rule `Bash(memorable ui:*)`.
+8. Add permission rules to `~/.claude/settings.json`, including the Bash deny rules `Bash(memorable ui:*)` and `Bash(memorable change-password:*)`.
 9. Optional: SessionStart hook.
 10. Optional: daily backup via systemd user timer (Linux) or launchd agent (macOS).
 11. Optional: tab completion for the login shell (a script file, plus a marked block in `.zshrc`, or in `.bash_profile` for bash on macOS).

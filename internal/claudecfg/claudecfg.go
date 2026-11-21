@@ -231,7 +231,7 @@ func Rules(credentialsPath string) (allow, ask, deny []string) {
 	ask = []string{"mcp__memorable__memory_delete", "mcp__memorable__memory_restore"}
 	deny = []string{
 		"Bash(memorable purge:*)", "Bash(memorable approve:*)", "Bash(memorable profile:*)", "Bash(memorable ui:*)",
-		"Bash(docker exec memorable-postgres:*)", "Bash(docker inspect memorable-postgres:*)", "Bash(psql:*)",
+		"Bash(memorable change-password:*)", "Bash(docker exec memorable-postgres:*)", "Bash(docker inspect memorable-postgres:*)", "Bash(psql:*)",
 		"Read(" + credentialsPath + ")",
 	}
 	return allow, ask, deny
