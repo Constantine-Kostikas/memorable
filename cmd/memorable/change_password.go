@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"unicode/utf8"
 
 	"charm.land/huh/v2"
 	"github.com/jackc/pgx/v5"
@@ -21,7 +22,7 @@ const (
 	roleAdmin = "admin"
 )
 
-const minAdminPasswordLength = 16
+const minAdminPasswordLength = 6
 
 const resyncHint = "run `memorable migrate` to set the role to the stored password"
 
@@ -118,7 +119,7 @@ func promptNewAdminPassword(in io.Reader, out io.Writer, isTTY bool, current str
 
 func validateNewAdminPassword(pw, current string) error {
 	switch {
-	case len(pw) < minAdminPasswordLength:
+	case utf8.RuneCountInString(pw) < minAdminPasswordLength:
 		return fmt.Errorf("use at least %d characters", minAdminPasswordLength)
 	case pw == current:
 		return errors.New("the new password matches the current one")

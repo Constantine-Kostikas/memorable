@@ -46,7 +46,9 @@ func TestValidateNewAdminPassword(t *testing.T) {
 		pw   string
 		want string
 	}{
-		{name: "too short", pw: "short", want: "at least 16"},
+		{name: "too short", pw: "short", want: "at least 6"},
+		{name: "multibyte counted as characters", pw: "αβγδε", want: "at least 6"},
+		{name: "six multibyte characters", pw: "αβγδεζ"},
 		{name: "same as current", pw: current, want: "matches the current"},
 		{name: "valid", pw: "a-brand-new-admin-password"},
 	}

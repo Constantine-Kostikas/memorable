@@ -127,7 +127,7 @@ Claude uses the MCP tools on its own once the CLAUDE.md block is in place. You c
 | `memorable context` | Which context and project this directory uses |
 | `memorable profile add --title "Spelling" --content "Use US spelling."` | Memories that apply everywhere (admin) |
 | `memorable approve --list` | Review memories quarantined by the injection scanner (admin) |
-| `memorable change-password --role admin` | Change the admin password: asks for the current one, then the new one twice (at least 16 characters, terminal only) |
+| `memorable change-password --role admin` | Change the admin password: asks for the current one, then the new one twice (at least 6 characters, terminal only) |
 | `memorable change-password --role app` | Replace the app password with a generated one and store it in the keyring (admin); restart Claude Code sessions and `memorable ui` afterward |
 
 Every read command supports `-o json`. Output is plain text when piped.
