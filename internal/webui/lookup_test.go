@@ -163,7 +163,7 @@ func TestTagChipsWrapTheTagsField(t *testing.T) {
 
 	body := send(f.h, http.MethodGet, f.path(""), "", withCookie(f.c), withHeader("HX-Request", "true")).Body.String()
 
-	editor := editorForm(t, body)
+	editor := editorFields(t, body)
 	assert.Regexp(t, `<input[^>]*name="tags" value="go, ops" data-original="go, ops"[^>]*data-tags-source`, editor)
 	assert.Regexp(t, `<div[^>]*data-tag-chips[^>]*hidden`, editor, "chips appear only when app.js runs")
 	assert.Regexp(t, `<input[^>]*data-tag-entry`, editor)

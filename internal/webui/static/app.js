@@ -113,7 +113,10 @@
     if (form.hasAttribute('data-unsaved')) {
       return true;
     }
-    return Array.prototype.some.call(form.querySelectorAll('[data-original]'), fieldChanged);
+    // form.elements includes controls outside the form element that join it with form="...", such as the rail fields.
+    return Array.prototype.some.call(form.elements, function (field) {
+      return field.hasAttribute('data-original') && fieldChanged(field);
+    });
   }
 
   function currentEditor() {

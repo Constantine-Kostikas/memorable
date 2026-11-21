@@ -727,6 +727,63 @@
   .memory-row:has(> a[aria-current=true]) > a {
     background-color: transparent;
   }
+
+  .detail-pane {
+    container-type: inline-size;
+  }
+
+  .detail-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.25rem;
+  }
+
+  .detail-rail {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-content: start;
+    gap: 1rem;
+    border-top: 1px solid var(--line);
+    padding-top: 1rem;
+    font-size: var(--text-meta);
+  }
+
+  @container (width >= 46rem) {
+    .detail-layout {
+      grid-template-columns: minmax(0, 1fr) 13rem;
+    }
+
+    .detail-rail {
+      grid-template-columns: minmax(0, 1fr);
+      border-top: 0;
+      border-left: 1px solid var(--line);
+      padding-top: 0;
+      padding-left: 1rem;
+    }
+  }
+
+  .rail-fields,
+  .rail-facts {
+    display: grid;
+    align-content: start;
+    gap: 0.875rem;
+  }
+
+  .rail-facts dd {
+    margin: 0;
+  }
+
+  .rail-label {
+    color: var(--ink-muted);
+    font-size: 0.6875rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  .detail-rail .field:not(:hover, :focus, :focus-within) {
+    border-color: transparent;
+    background-color: transparent;
+  }
 }
 
 /* Unlayered so the tab color beats utility border colors such as divide-line. */
@@ -784,32 +841,6 @@ body[data-expanded] #content > .section-heading {
 }
 
 @media (width >= 900px) {
-  body[data-expanded] #content > [data-section-body] {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 260px;
-    column-gap: 1rem;
-    align-items: start;
-  }
-
-  body[data-expanded] #content > [data-section-body] > * {
-    grid-column: 1;
-  }
-
-  body[data-expanded] #content > [data-section-body] > [data-editor-meta] {
-    grid-column: 2;
-    grid-row: 1 / span 3;
-    grid-template-columns: minmax(0, 1fr);
-    margin-top: 0;
-    border-left: 1px solid var(--line);
-    border-radius: 6px;
-    background-color: var(--rail);
-    padding: 0.75rem;
-  }
-
-  body[data-expanded] #content > [data-section-body] > [data-editor-meta] > * {
-    align-self: start;
-  }
-
   body[data-expanded] :is(#memory-content, #memory-preview) {
     min-height: 60vh;
   }
