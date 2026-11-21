@@ -325,10 +325,12 @@
     if (pane && pane.querySelector('#content [role="alert"]')) {
       return 'content';
     }
-    if (hashTab()) {
-      return hashTab();
+    // The tab shown last for this memory wins over the hash: expanding, find-in-page, and focus shortcuts
+    // switch tabs without touching the hash, and a pane swap must not bring back an older tab.
+    if (rememberedTab.memory === paneMemory() && rememberedTab.tab) {
+      return rememberedTab.tab;
     }
-    return rememberedTab.memory === paneMemory() && rememberedTab.tab ? rememberedTab.tab : 'content';
+    return hashTab() || 'content';
   }
 
   function bindTabs(root) {
