@@ -701,12 +701,27 @@
     color: var(--danger);
   }
 
+  .memory-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+  }
+
+  .memory-row {
+    overflow: hidden;
+    border-radius: 6px;
+    background-color: var(--sheet);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 6%);
+  }
+
   .memory-row > a:hover {
-    background-color: color-mix(in srgb, var(--sheet) 50%, var(--rail));
+    background-color: color-mix(in srgb, var(--sheet) 70%, var(--rail));
   }
 
   .memory-row:has(> a[aria-current=true]) {
-    background-color: var(--sheet);
+    outline: 2px solid var(--accent);
+    outline-offset: -1px;
   }
 
   .memory-row:has(> a[aria-current=true]) > a {
@@ -720,6 +735,7 @@
 .type-tab-feedback,
 .type-tab-reference,
 .type-tab-other {
+  border: 1px solid var(--line);
   border-left: 4px solid var(--ink-muted);
 }
 

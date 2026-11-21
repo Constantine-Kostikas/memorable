@@ -463,3 +463,14 @@ func TestRowsCarryTypeTabAgeAndFilter(t *testing.T) {
 	assert.Contains(t, body, "chip-status-flagged")
 	assert.NotContains(t, body, "chip-status-active", "the status chip shows only when not active")
 }
+
+func TestMemoryRowsAreCards(t *testing.T) {
+	t.Parallel()
+	h, c := newMemoriesServer(t, &recordingMemories{})
+
+	rec := getPage(h, c, "/c/personal/memories")
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Regexp(t, `<ul id="memory-rows" class="memory-cards[^"]*">`, rec.Body.String())
+	assert.NotContains(t, rec.Body.String(), `id="memory-rows" class="divide-y`)
+}
