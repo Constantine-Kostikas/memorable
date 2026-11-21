@@ -45,6 +45,17 @@ jobs:
           go-version: "1.26.x"
           check-latest: true
       - run: go test -race -tags=integration ./...
+        env:
+          # The runner VM is discarded after the job, so the reaper is not needed; with it enabled,
+          # containers were removed mid-run and store tests failed with "unexpected EOF".
+          TESTCONTAINERS_RYUK_DISABLED: "true"
+      - name: Dump test containers
+        if: failure()
+        run: |
+          for c in $(docker ps -aq); do
+            docker inspect "$c" --format '{{.Name}} {{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}}'
+            docker logs --tail 80 "$c" 2>&1
+          done
 
   security:
     runs-on: ubuntu-latest

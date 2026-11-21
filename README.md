@@ -127,6 +127,8 @@ Claude uses the MCP tools on its own once the CLAUDE.md block is in place. You c
 | `memorable context` | Which context and project this directory uses |
 | `memorable profile add --title "Spelling" --content "Use US spelling."` | Memories that apply everywhere (admin) |
 | `memorable approve --list` | Review memories quarantined by the injection scanner (admin) |
+| `memorable change-password --role admin` | Change the admin password: asks for the current one, then the new one twice (at least 6 characters, terminal only) |
+| `memorable change-password --role app` | Replace the app password with a generated one and store it in the keyring (admin); restart Claude Code sessions and `memorable ui` afterward |
 
 Every read command supports `-o json`. Output is plain text when piped.
 
@@ -183,6 +185,15 @@ Run `memorable doctor`. It checks the config, keyring, container, port, database
 - **Tools say "memory store unavailable"**: the container is stopped (`docker start memorable-postgres`) or the app password is missing (`memorable migrate`).
 - **Search ignores meaning, matches keywords only**: Ollama is down or the model is missing; pending embeddings are computed later, or now with `memorable reembed`.
 - **After changing the embedding model or dimensions**: `memorable reembed --all`.
+- **Admin password rejected after `change-password --role admin`**: the password `docker inspect` shows is the original one from setup and no longer works. If you have lost the new one, reset it as the container superuser:
+
+  ```sh
+  read -rs "PGPW?new admin password: " && echo     # bash: read -rsp "new admin password: " PGPW
+  docker exec -i memorable-postgres psql -U memorable_admin -d memorable -v pw="$PGPW" \
+    <<<"ALTER ROLE memorable_admin PASSWORD :'pw';"
+  unset PGPW
+  ```
+- **App cannot connect after `change-password --role app`**: restart Claude Code sessions and `memorable ui`. If it still fails, `memorable migrate` sets the role back to the password in the keyring.
 
 ## Security
 
@@ -197,7 +208,7 @@ Run `memorable doctor`. It checks the config, keyring, container, port, database
 ```json
 "deny": [
   "Bash(memorable purge:*)", "Bash(memorable approve:*)", "Bash(memorable profile:*)", "Bash(memorable ui:*)",
-  "Bash(docker exec memorable-postgres:*)", "Bash(docker inspect memorable-postgres:*)", "Bash(psql:*)",
+  "Bash(memorable change-password:*)", "Bash(docker exec memorable-postgres:*)", "Bash(docker inspect memorable-postgres:*)", "Bash(psql:*)",
   "Read(~/.config/memorable/credentials.json)"
 ]
 ```
