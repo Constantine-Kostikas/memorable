@@ -1,0 +1,1 @@
+{{range .Options}}<li role="option" data-value="{{.Tag}}" aria-selected="false" class="lookup-option flex cursor-pointer items-center justify-between gap-2 px-2 py-1"><span>{{.Tag}}</span> <span class="text-meta text-ink-muted">{{.Count}}</span></li>{{else}}{{if .Text}}<li role="presentation" class="px-2 py-1 text-meta text-ink-muted">No matching tags.</li>{{end}}{{end}}

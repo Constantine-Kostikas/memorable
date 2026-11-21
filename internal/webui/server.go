@@ -37,6 +37,7 @@ type Memories interface {
 	Supersede(ctx context.Context, old, replacement uuid.UUID) error
 	Activate(ctx context.Context, id uuid.UUID) error
 	Review(ctx context.Context) (memory.ReviewQueue, error)
+	TagCounts(ctx context.Context, allProjects bool, limit int) ([]memory.TagCount, error)
 }
 
 // StoreReads is the read-only store access the UI needs beyond memory.Service.
@@ -165,6 +166,7 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /c/{context}/profile", s.inContext(s.handleProfile))
 	mux.HandleFunc("GET /c/{context}/stats", s.inContext(s.handleStats))
 	mux.HandleFunc("GET /c/{context}/lookup", s.inContext(s.handleLookup))
+	mux.HandleFunc("GET /c/{context}/tags", s.inContext(s.handleTags))
 	s.registerMemoryRoutes(mux)
 	s.registerAdminRoutes(mux)
 }

@@ -598,12 +598,12 @@ func TestUpdateConflictKeepsSubmittedValues(t *testing.T) {
 	require.Equal(t, http.StatusConflict, rec.Code)
 	body := rec.Body.String()
 	assert.True(t, strings.HasPrefix(body, `<section id="detail-pane"`))
-	editor := editorForm(t, body)
+	editor := editorFields(t, body)
 	assert.Contains(t, editor, `value="Mine"`)
 	assert.Contains(t, editor, "typed text</textarea>")
 	assert.Contains(t, editor, `name="version" value="1"`, "the stale version stays so a re-save conflicts again")
 	assert.Contains(t, body, conflictMessage)
-	assert.Contains(t, body, `<a href="#versions" class="underline">Load latest version</a>`)
+	assert.Contains(t, body, `<a href="#history" class="underline">Load latest version</a>`)
 }
 
 func TestUpdateSecretKeepsSubmittedValues(t *testing.T) {
@@ -683,7 +683,7 @@ func TestFailedSaveKeepsExpiryOriginal(t *testing.T) {
 	rec := f.post("/update", updateForm(url.Values{"expires_at": {"2026-12-01"}, "expires_at_original": {"2026-12-01T15:30:00Z"}}),
 		withHeader("HX-Request", "true"))
 
-	editor := editorForm(t, rec.Body.String())
+	editor := editorFields(t, rec.Body.String())
 	assert.Contains(t, editor, `name="expires_at" value="2026-12-01"`)
 	assert.Contains(t, editor, `name="expires_at_original" value="2026-12-01T15:30:00Z"`)
 }
@@ -741,7 +741,7 @@ func TestFailedSaveRendersDirtyWithStoredBaseline(t *testing.T) {
 			rec := f.post("/update", updateForm(url.Values{"title": {"Mine"}, "content": {"typed text"}, "tags": {"mine"}}),
 				withHeader("HX-Request", "true"))
 
-			editor := editorForm(t, rec.Body.String())
+			editor := editorFields(t, rec.Body.String())
 			assert.Regexp(t, `<form id="memory-editor"[^>]*data-unsaved`, editor)
 			assert.Regexp(t, `name="title" value="Mine"[^>]*data-original="Port map"`, editor)
 			assert.Regexp(t, `name="tags" value="mine"[^>]*data-original="go, ops"`, editor)

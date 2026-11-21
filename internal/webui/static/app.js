@@ -113,7 +113,10 @@
     if (form.hasAttribute('data-unsaved')) {
       return true;
     }
-    return Array.prototype.some.call(form.querySelectorAll('[data-original]'), fieldChanged);
+    // form.elements includes controls outside the form element that join it with form="...", such as the rail fields.
+    return Array.prototype.some.call(form.elements, function (field) {
+      return field.hasAttribute('data-original') && fieldChanged(field);
+    });
   }
 
   function currentEditor() {
@@ -132,7 +135,7 @@
   function renderDirtyState(form) {
     var dirty = isDirty(form);
     var pane = form.closest('#detail-pane') || document;
-    each(form, '[data-dirty-marker]', function (marker) {
+    each(pane, '[data-dirty-marker]', function (marker) {
       marker.hidden = !dirty;
     });
     each(pane, '[data-save]', function (save) {
@@ -246,7 +249,7 @@
   function guardHistory(evt) {
     if (onlyHashChanged()) {
       // Back or forward between in-pane anchors (#versions) is not a page change: keep htmx from re-fetching.
-      // This also skips rememberUrl below; hashchange fires next and updates lastUrl and the section nav.
+      // This also skips rememberUrl below; hashchange fires next and updates lastUrl and the selected tab.
       evt.stopImmediatePropagation();
       return;
     }
@@ -268,135 +271,122 @@
     }
   }
 
-  // Section nav: mark the link of the section in the URL hash as current, defaulting to Content.
+  // Memory tabs: one panel at a time; inactive panels are hidden="until-found" so find-in-page still reaches them.
+  // Without JS every panel shows in sequence. The tab survives pane swaps of the same memory.
 
-  var SECTIONS = ['content', 'versions', 'links', 'activity'];
+  var TABS = ['content', 'history', 'links', 'activity'];
+  var TAB_ALIASES = { versions: 'history' };
+  var rememberedTab = { memory: null, tab: null };
 
-  function selectSection(nav, section) {
-    var active = '#' + (SECTIONS.indexOf(section) === -1 ? 'content' : section);
-    each(nav, 'a[href^="#"]', function (link) {
-      if (link.getAttribute('href') === active) {
-        link.setAttribute('aria-current', 'true');
-      } else {
-        link.removeAttribute('aria-current');
+  function tabName(name) {
+    var resolved = TAB_ALIASES[name] || name;
+    return TABS.indexOf(resolved) === -1 ? null : resolved;
+  }
+
+  function hashTab() {
+    return tabName(window.location.hash.replace(/^#/, ''));
+  }
+
+  function detailPane() {
+    return document.getElementById('detail-pane');
+  }
+
+  function paneMemory() {
+    var pane = detailPane();
+    return pane ? pane.getAttribute('data-memory-href') : null;
+  }
+
+  function selectTab(name, focus) {
+    var pane = detailPane();
+    var list = pane && pane.querySelector('[data-tabs]');
+    if (!list || !tabName(name)) {
+      return;
+    }
+    each(list, '[role="tab"]', function (tab) {
+      var active = tab.getAttribute('aria-controls') === name;
+      tab.setAttribute('aria-selected', active ? 'true' : 'false');
+      tab.setAttribute('tabindex', active ? '0' : '-1');
+      if (active && focus) {
+        tab.focus();
       }
     });
+    each(pane, '[data-tab-panel]', function (panel) {
+      if (panel.id === name) {
+        panel.removeAttribute('hidden');
+      } else {
+        panel.setAttribute('hidden', 'until-found');
+      }
+    });
+    rememberedTab = { memory: paneMemory(), tab: name };
   }
 
-  function hashSection() {
-    return window.location.hash.replace(/^#/, '');
+  function initialTab() {
+    var pane = detailPane();
+    if (pane && pane.querySelector('#content [role="alert"]')) {
+      return 'content';
+    }
+    // The tab shown last for this memory wins over the hash: expanding, find-in-page, and focus shortcuts
+    // switch tabs without touching the hash, and a pane swap must not bring back an older tab.
+    if (rememberedTab.memory === paneMemory() && rememberedTab.tab) {
+      return rememberedTab.tab;
+    }
+    return hashTab() || 'content';
   }
 
-  function bindSectionNav(root) {
-    each(root, '[data-section-nav]', function (nav) {
-      selectSection(nav, hashSection());
+  function bindTabs(root) {
+    each(root, '[data-tabs]', function () {
+      selectTab(initialTab(), false);
     });
   }
 
-  function onSectionClick(evt) {
-    var link = evt.target && evt.target.closest && evt.target.closest('[data-section-nav] a[href^="#"]');
-    if (link) {
-      var section = link.getAttribute('href').replace(/^#/, '');
-      selectSection(link.closest('[data-section-nav]'), section);
-      openSectionFold(section);
+  function showTab(name, focus) {
+    selectTab(name, focus);
+    window.history.replaceState(window.history.state, '', '#' + name);
+    rememberUrl();
+  }
+
+  function onTabClick(evt) {
+    var tab = evt.target && evt.target.closest && evt.target.closest('#detail-pane [data-tabs] [role="tab"]');
+    if (tab) {
+      evt.preventDefault();
+      showTab(tab.getAttribute('aria-controls'), false);
     }
+  }
+
+  function onTabKeydown(evt) {
+    var tab = evt.target && evt.target.closest && evt.target.closest('#detail-pane [data-tabs] [role="tab"]');
+    if (!tab) {
+      return;
+    }
+    var index = TABS.indexOf(tab.getAttribute('aria-controls'));
+    var next = { ArrowRight: index + 1, ArrowLeft: index - 1, Home: 0, End: TABS.length - 1 }[evt.key];
+    if (next === undefined) {
+      return;
+    }
+    evt.preventDefault();
+    showTab(TABS[(next + TABS.length) % TABS.length], true);
   }
 
   function onHashChange() {
     rememberUrl();
-    bindSectionNav(document);
-    openSectionFold(hashSection());
+    if (hashTab()) {
+      selectTab(hashTab(), false);
+    }
   }
 
-  // Section folds: a heading button collapses its section. Only heading clicks change the stored collapsed set;
-  // opening a section for a link, a validation error, find-in-page, or the expanded editor is not a preference.
+  // Find-in-page (beforematch) and validation errors (invalid) reveal the tab that holds their target.
+  function revealEnclosingTab(evt) {
+    var panel = evt.target && evt.target.closest && evt.target.closest('[data-tab-panel]');
+    if (panel && panel.hasAttribute('hidden')) {
+      selectTab(panel.id, false);
+    }
+  }
 
-  var COLLAPSED_KEY = 'memorable.collapsed';
-
-  function storedCollapsed() {
+  function forgetSectionFolds() {
     try {
-      var value = JSON.parse(window.localStorage.getItem(COLLAPSED_KEY) || '[]');
-      return Array.isArray(value) ? value : [];
+      window.localStorage.removeItem('memorable.sections');
     } catch (e) {
-      return [];
-    }
-  }
-
-  function storeCollapsed(name, collapsed) {
-    var names = storedCollapsed().filter(function (other) { return other !== name; });
-    if (collapsed) {
-      names.push(name);
-    }
-    try {
-      if (names.length) {
-        window.localStorage.setItem(COLLAPSED_KEY, JSON.stringify(names));
-      } else {
-        window.localStorage.removeItem(COLLAPSED_KEY);
-      }
-    } catch (e) {
-      // Storage can be unavailable; folds then reset on the next selection.
-    }
-  }
-
-  function setFoldOpen(fold, open) {
-    var button = fold && fold.querySelector('[data-section-toggle]');
-    var body = fold && fold.querySelector('[data-section-body]');
-    if (!button || !body) {
-      return;
-    }
-    button.setAttribute('aria-expanded', open ? 'true' : 'false');
-    if (open) {
-      body.removeAttribute('hidden');
-    } else {
-      body.setAttribute('hidden', 'until-found');
-    }
-  }
-
-  function isFoldOpen(fold) {
-    var body = fold.querySelector('[data-section-body]');
-    return !!body && !body.hasAttribute('hidden');
-  }
-
-  function openSectionFold(section) {
-    if (SECTIONS.indexOf(section) !== -1) {
-      setFoldOpen(document.querySelector('[data-section-fold="' + section + '"]'), true);
-    }
-  }
-
-  function isForcedOpen(name) {
-    return name === hashSection() || (name === 'content' && isExpanded());
-  }
-
-  function bindSectionFolds(root) {
-    var collapsed = storedCollapsed();
-    each(root, '[data-section-fold]', function (fold) {
-      var name = fold.getAttribute('data-section-fold');
-      if (collapsed.indexOf(name) !== -1 && !isForcedOpen(name)) {
-        setFoldOpen(fold, false);
-      }
-    });
-  }
-
-  function onSectionToggle(evt) {
-    var button = evt.target && evt.target.closest && evt.target.closest('[data-section-toggle]');
-    var fold = button && button.closest('[data-section-fold]');
-    if (!fold) {
-      return;
-    }
-    var name = fold.getAttribute('data-section-fold');
-    if (name === 'content' && isExpanded()) {
-      return;
-    }
-    var open = !isFoldOpen(fold);
-    setFoldOpen(fold, open);
-    storeCollapsed(name, !open);
-  }
-
-  // invalid and beforematch do not bubble; the capture phase still sees them.
-  function openEnclosingFold(evt) {
-    var fold = evt.target && evt.target.closest && evt.target.closest('[data-section-fold]');
-    if (fold && !isFoldOpen(fold)) {
-      setFoldOpen(fold, true);
+      // Storage can be unavailable; there is nothing to forget then.
     }
   }
 
@@ -468,7 +458,7 @@
   function setExpanded(expanded) {
     if (expanded) {
       document.body.setAttribute('data-expanded', 'true');
-      openSectionFold('content');
+      selectTab('content', false);
     } else {
       document.body.removeAttribute('data-expanded');
     }
@@ -742,7 +732,16 @@
 
   var LOOKUP_DISPLAY = 'ref_display';
 
+  // Value mode (data-lookup-mode="value") keeps the input's own name and writes the picked option's
+  // data-value into it, for free-text fields such as the tag filter.
+  function isValueLookup(input) {
+    return input.getAttribute('data-lookup-mode') === 'value';
+  }
+
   function lookupField(input) {
+    if (isValueLookup(input)) {
+      return null;
+    }
     var name = input.getAttribute('data-lookup');
     var form = input.form;
     if (!name || !form) {
@@ -756,7 +755,7 @@
   function bindLookups(root) {
     each(root, '[data-lookup]', function (input) {
       var name = input.getAttribute('data-lookup');
-      if (!name || !input.form) {
+      if (!name || !input.form || isValueLookup(input)) {
         return;
       }
       input.name = LOOKUP_DISPLAY;
@@ -820,6 +819,13 @@
   }
 
   function pickOption(input, option) {
+    if (isValueLookup(input)) {
+      input.value = option.getAttribute('data-value') || '';
+      input.setAttribute('data-lookup-picked', input.value);
+      showLookup(input, false);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      return;
+    }
     var field = lookupField(input);
     var title = option.querySelector('[data-option-title]');
     if (field) {
@@ -835,7 +841,7 @@
 
   function onLookupConfigRequest(evt) {
     var detail = evt.detail || {};
-    if (isLookupInput(detail.elt)) {
+    if (isLookupInput(detail.elt) && !isValueLookup(detail.elt)) {
       detail.parameters.q = detail.elt.value;
       delete detail.parameters[LOOKUP_DISPLAY];
     }
@@ -847,13 +853,17 @@
       return;
     }
     var field = lookupField(input);
+    var picked = isValueLookup(input) && input.getAttribute('data-lookup-picked') === input.value;
     setActiveOption(input, -1);
-    showLookup(input, document.activeElement === input && (!field || field.value === ''));
+    showLookup(input, document.activeElement === input && !picked && (!field || field.value === ''));
   }
 
   function onLookupInput(evt) {
     if (!isLookupInput(evt.target)) {
       return;
+    }
+    if (evt.isTrusted) {
+      evt.target.removeAttribute('data-lookup-picked');
     }
     // Any edit after a pick drops it, so the form never submits an id the input no longer shows.
     var field = lookupField(evt.target);
@@ -1394,7 +1404,7 @@
     if (!content || content.disabled) {
       return false;
     }
-    openSectionFold('content');
+    selectTab('content', false);
     var parts = markdownParts();
     if (parts && content.hidden) {
       setMarkdownView(parts, 'write');
@@ -1453,8 +1463,7 @@
   onReady(bindThemeToggles);
   onReady(bindExpand);
   onReady(bindEditors);
-  onReady(bindSectionNav);
-  onReady(bindSectionFolds);
+  onReady(bindTabs);
   onReady(bindToasts);
   onReady(bindExpiryClear);
   onReady(bindTagChips);
@@ -1495,10 +1504,11 @@
   document.addEventListener('change', onEditorInput);
   document.addEventListener('click', ignoreCleanDiscard, true);
   document.addEventListener('click', onExpandClick);
-  document.addEventListener('click', onSectionClick);
-  document.addEventListener('click', onSectionToggle);
-  document.addEventListener('invalid', openEnclosingFold, true);
-  document.addEventListener('beforematch', openEnclosingFold, true);
+  document.addEventListener('click', onTabClick);
+  document.addEventListener('keydown', onTabKeydown);
+  document.addEventListener('invalid', revealEnclosingTab, true);
+  document.addEventListener('beforematch', revealEnclosingTab, true);
+  forgetSectionFolds();
   document.addEventListener('click', onToastDismiss);
   document.addEventListener('keydown', saveShortcut);
   document.addEventListener('keydown', expandShortcut);
