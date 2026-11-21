@@ -31,6 +31,9 @@ func userMessage(err error) (string, bool) {
 			msg = "profile memories are read-only here; the user manages them with `memorable profile`"
 		}
 		return msg, true
+	case errors.Is(err, memory.ErrAuthFailed):
+		return "the database rejected the app password, most likely because it was rotated after this server started; " +
+			"ask the user to restart Claude Code so the server reloads it", true
 	case errors.Is(err, memory.ErrUnavailable):
 		return "memory store unavailable; ask the user to run `memorable doctor`", true
 	case errors.Is(err, memory.ErrRateLimited):
