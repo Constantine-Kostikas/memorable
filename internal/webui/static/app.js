@@ -742,7 +742,16 @@
 
   var LOOKUP_DISPLAY = 'ref_display';
 
+  // Value mode (data-lookup-mode="value") keeps the input's own name and writes the picked option's
+  // data-value into it, for free-text fields such as the tag filter.
+  function isValueLookup(input) {
+    return input.getAttribute('data-lookup-mode') === 'value';
+  }
+
   function lookupField(input) {
+    if (isValueLookup(input)) {
+      return null;
+    }
     var name = input.getAttribute('data-lookup');
     var form = input.form;
     if (!name || !form) {
@@ -756,7 +765,7 @@
   function bindLookups(root) {
     each(root, '[data-lookup]', function (input) {
       var name = input.getAttribute('data-lookup');
-      if (!name || !input.form) {
+      if (!name || !input.form || isValueLookup(input)) {
         return;
       }
       input.name = LOOKUP_DISPLAY;
@@ -820,6 +829,13 @@
   }
 
   function pickOption(input, option) {
+    if (isValueLookup(input)) {
+      input.value = option.getAttribute('data-value') || '';
+      input.setAttribute('data-lookup-picked', input.value);
+      showLookup(input, false);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      return;
+    }
     var field = lookupField(input);
     var title = option.querySelector('[data-option-title]');
     if (field) {
@@ -835,7 +851,7 @@
 
   function onLookupConfigRequest(evt) {
     var detail = evt.detail || {};
-    if (isLookupInput(detail.elt)) {
+    if (isLookupInput(detail.elt) && !isValueLookup(detail.elt)) {
       detail.parameters.q = detail.elt.value;
       delete detail.parameters[LOOKUP_DISPLAY];
     }
@@ -847,13 +863,17 @@
       return;
     }
     var field = lookupField(input);
+    var picked = isValueLookup(input) && input.getAttribute('data-lookup-picked') === input.value;
     setActiveOption(input, -1);
-    showLookup(input, document.activeElement === input && (!field || field.value === ''));
+    showLookup(input, document.activeElement === input && !picked && (!field || field.value === ''));
   }
 
   function onLookupInput(evt) {
     if (!isLookupInput(evt.target)) {
       return;
+    }
+    if (evt.isTrusted) {
+      evt.target.removeAttribute('data-lookup-picked');
     }
     // Any edit after a pick drops it, so the form never submits an id the input no longer shows.
     var field = lookupField(evt.target);
