@@ -74,7 +74,7 @@ homebrew_casks:
     repository:
       owner: constantine-kostikas
       name: homebrew-tap
-      token: '{{ envOrDefault "HOMEBREW_TAP_TOKEN" "" }}'
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     homepage: https://github.com/constantine-kostikas/memorable
     description: Persistent, searchable memory for Claude Code over MCP
     binaries:
