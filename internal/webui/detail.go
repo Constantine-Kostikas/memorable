@@ -35,7 +35,7 @@ type versionView struct {
 	Tags       []string
 	Type       string
 	ChangeKind string
-	ChangedAt  string
+	ChangedAt  timeView
 	Current    bool
 	HasDiff    bool
 	DiffNote   string
@@ -75,7 +75,7 @@ func (l linkView) Label() string {
 // activityEntry is one feedback or audit event on a memory, merged into one newest-first list.
 type activityEntry struct {
 	At      time.Time
-	When    string
+	When    timeView
 	Kind    string
 	Summary string
 }
@@ -114,9 +114,9 @@ type detailView struct {
 	Tags        []string
 	Pinned      bool
 	Version     int
-	ExpiresAt   string
-	CreatedAt   string
-	UpdatedAt   string
+	ExpiresAt   timeView
+	CreatedAt   timeView
+	UpdatedAt   timeView
 	Embedding   string
 	Form        editFields
 	Stored      editFields
@@ -241,9 +241,9 @@ func fillMemory(view *detailView, m memory.Memory) {
 		view.Slug = *m.Slug
 	}
 	view.Tags, view.Pinned, view.Version = m.Tags, m.Pinned, m.Version
-	view.CreatedAt, view.UpdatedAt = formatTime(m.CreatedAt), formatTime(m.UpdatedAt)
+	view.CreatedAt, view.UpdatedAt = newTimeView(m.CreatedAt), newTimeView(m.UpdatedAt)
 	if m.ExpiresAt != nil {
-		view.ExpiresAt = formatTime(*m.ExpiresAt)
+		view.ExpiresAt = newTimeView(*m.ExpiresAt)
 	}
 	view.Embedding = "Not embedded yet: text search only."
 	if m.EmbeddingModel != nil {
@@ -267,6 +267,17 @@ func fillMemory(view *detailView, m memory.Memory) {
 
 func formatTime(t time.Time) string { return t.UTC().Format(timeLayout) }
 
+// timeView is a timestamp shown as its date, with the full time in a hover title.
+type timeView struct {
+	ISO  string
+	Date string
+	Full string
+}
+
+func newTimeView(t time.Time) timeView {
+	return timeView{ISO: t.UTC().Format(time.RFC3339), Date: t.UTC().Format(time.DateOnly), Full: formatTime(t)}
+}
+
 func versionViews(history []memory.Version, current int) []versionView {
 	sorted := append([]memory.Version(nil), history...)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Version < sorted[j].Version })
@@ -274,7 +285,7 @@ func versionViews(history []memory.Version, current int) []versionView {
 	for i, v := range sorted {
 		view := versionView{
 			Version: v.Version, Title: v.Title, Content: v.Content, Tags: v.Tags, Type: v.Type.String(),
-			ChangeKind: v.ChangeKind, ChangedAt: formatTime(v.ChangedAt), Current: v.Version == current,
+			ChangeKind: v.ChangeKind, ChangedAt: newTimeView(v.ChangedAt), Current: v.Version == current,
 		}
 		if i > 0 {
 			view.HasDiff = true
@@ -440,7 +451,7 @@ func activityEntries(activity memory.Activity) []activityEntry {
 	}
 	sort.SliceStable(entries, func(i, j int) bool { return entries[i].At.After(entries[j].At) })
 	for i := range entries {
-		entries[i].When = formatTime(entries[i].At)
+		entries[i].When = newTimeView(entries[i].At)
 	}
 	return entries
 }

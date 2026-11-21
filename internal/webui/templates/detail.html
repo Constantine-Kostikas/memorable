@@ -24,9 +24,9 @@
         <input id="memory-title" type="text" name="title" value="{{.Form.Title}}" data-original="{{.Stored.Title}}" required class="field w-full text-page font-bold"{{if not .Editable}} disabled{{end}}>
       </h1>
       <p class="mt-2 text-meta text-ink-muted">
-        <span class="chip chip-type-{{typeClass .Type}}">{{.Type}}</span> <span class="chip chip-status-{{.Status}}">{{.Status}}</span> · <span>{{.Project}}</span>{{if .Slug}} · <span class="font-mono">{{.Slug}}</span>{{end}} · <span>version {{.Version}}</span> · <span>updated {{.UpdatedAt}}</span>
+        <span class="chip chip-type-{{typeClass .Type}}">{{.Type}}</span> <span class="chip chip-status-{{.Status}}">{{.Status}}</span> · <span>{{.Project}}</span>{{if .Slug}} · <span class="font-mono">{{.Slug}}</span>{{end}} · <span>version {{.Version}}</span> · <span>updated {{template "time" .UpdatedAt}}</span>
       </p>
-      <p class="mt-1 text-meta text-ink-muted">Created {{.CreatedAt}}{{if .ExpiresAt}}, expires {{.ExpiresAt}}{{end}}. {{.Embedding}}</p>
+      <p class="mt-1 text-meta text-ink-muted">Created {{template "time" .CreatedAt}}{{if .ExpiresAt.Date}}, expires {{template "time" .ExpiresAt}}{{end}}. {{.Embedding}}</p>
     </header>
     <nav aria-label="Memory sections" data-section-nav class="section-nav mb-3 flex flex-wrap gap-x-4 gap-y-1 border-b border-line text-body">
       <a href="#content" aria-current="true" class="pb-2 hover:underline">Content</a>
@@ -141,7 +141,7 @@
     {{range .Versions}}
     <article class="mb-3 rounded-md border border-line bg-sheet p-3">
       <h3 class="text-body font-bold">Version {{.Version}}{{if .Current}} (current){{end}}</h3>
-      <p class="text-meta text-ink-muted">{{.ChangeKind}} · {{.ChangedAt}} · {{.Type}}</p>
+      <p class="text-meta text-ink-muted">{{.ChangeKind}} · {{template "time" .ChangedAt}} · {{.Type}}</p>
       {{if .HasDiff}}
         {{if .DiffNote}}<p class="mt-2 text-meta text-ink-muted">{{.DiffNote}}</p>{{else}}
         <div class="mt-2 text-body"><pre class="whitespace-pre-wrap break-words font-sans">{{range .Diff}}{{if eq .Op "+"}}<span class="block diff-add">{{.Prefix}}{{.Text}}</span>{{else if eq .Op "-"}}<span class="block diff-del">{{.Prefix}}{{.Text}}</span>{{else}}<span class="block">{{.Prefix}}{{.Text}}</span>{{end}}{{end}}</pre></div>{{end}}
@@ -204,7 +204,7 @@
     <h2 class="section-heading"><button type="button" class="section-toggle" data-section-toggle aria-expanded="true" aria-controls="activity-body">Activity <span class="section-count"><span class="sr-only">(</span>{{len .Activity}}<span class="sr-only">)</span></span></button></h2>
       <div id="activity-body" data-section-body>
     <ul>
-      {{range .Activity}}<li class="mb-1 text-body"><span class="font-bold">{{.Kind}}</span> · {{.When}} · {{.Summary}}</li>{{else}}<li class="text-meta text-ink-muted">No activity recorded.</li>{{end}}
+      {{range .Activity}}<li class="mb-1 text-body"><span class="font-bold">{{.Kind}}</span> · {{template "time" .When}} · {{.Summary}}</li>{{else}}<li class="text-meta text-ink-muted">No activity recorded.</li>{{end}}
     </ul>
     {{if .CanPurge}}<div class="mt-6 rounded-md border border-danger p-3">
       <h3 class="mb-2 font-bold text-danger">Danger zone</h3>
@@ -220,6 +220,7 @@
   </section>
   {{end}}
 </section>
+{{define "time"}}<time datetime="{{.ISO}}" title="{{.Full}}">{{.Date}}</time>{{end}}
 {{define "markdown_preview"}}{{if .Empty}}<p class="text-ink-muted">Nothing to preview.</p>{{else}}{{.HTML}}{{end}}{{end}}
 {{define "detail_response"}}{{template "detail.html" .}}
 {{template "toasts_oob" .}}{{with .Row}}

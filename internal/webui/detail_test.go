@@ -799,7 +799,7 @@ func TestActivityMergesFeedbackAndAudit(t *testing.T) {
 
 	require.Len(t, entries, 3)
 	assert.Equal(t, []time.Time{t3, t2, t1}, []time.Time{entries[0].At, entries[1].At, entries[2].At})
-	assert.Equal(t, formatTime(t3), entries[0].When)
+	assert.Equal(t, newTimeView(t3), entries[0].When)
 	assert.Contains(t, entries[0].Summary, "update")
 	assert.Contains(t, entries[0].Summary, "via=ui")
 	assert.Contains(t, entries[1].Summary, "wrong")
@@ -884,4 +884,18 @@ func TestToastRegionInLayout(t *testing.T) {
 	assert.Contains(t, region[:strings.Index(region, "</main>")+1], "Feedback recorded.")
 	assert.NotContains(t, body, "hx-swap-oob", "full pages render toasts inline")
 	assert.Regexp(t, `<button type="button"[^>]*data-toast-dismiss`, body)
+}
+
+func TestDetailDatesShowDateWithTimeOnHover(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, nil)
+
+	rec := send(f.h, http.MethodGet, f.path(""), "", withCookie(f.c), withHeader("HX-Request", "true"))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	body := rec.Body.String()
+	assert.Contains(t, body, `<time datetime="2026-11-02T09:00:00Z" title="2026-11-02 09:00 UTC">2026-11-02</time>`)
+	assert.Contains(t, body, `<time datetime="2026-11-01T09:00:00Z" title="2026-11-01 09:00 UTC">2026-11-01</time>`)
+	assert.Contains(t, body, `<time datetime="2026-11-03T09:00:00Z" title="2026-11-03 09:00 UTC">2026-11-03</time>`)
+	assert.NotContains(t, body, "2026-11-02 09:00 UTC<")
 }
