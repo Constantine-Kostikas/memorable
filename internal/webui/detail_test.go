@@ -39,12 +39,14 @@ type detailMemories struct {
 	bySlug   map[string]memory.Fetched
 	byID     map[uuid.UUID]memory.Fetched
 	// getErrByID fails a Get whose first id is a key, so a test can fail only the linked-memory reads.
-	getErrByID map[uuid.UUID]error
-	mutErr     error
-	updated    memory.Memory
-	listReqs   []memory.ListRequest
-	searches   []memory.SearchRequest
-	results    []memory.Summary
+	getErrByID     map[uuid.UUID]error
+	mutErr         error
+	updated        memory.Memory
+	listReqs       []memory.ListRequest
+	searches       []memory.SearchRequest
+	results        []memory.Summary
+	tagCounts      []memory.TagCount
+	tagAllProjects bool
 }
 
 func (d *detailMemories) rows() []memory.Summary {
