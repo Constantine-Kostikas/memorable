@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -83,4 +84,90 @@ func TestRotateAppPassword_MissingRole(t *testing.T) {
 	err := rotateAppPassword(context.Background(), cfg, storetest.AdminPassword, secrets, "rotated-password")
 	require.ErrorIs(t, err, store.ErrRoleMissing)
 	assert.Contains(t, err.Error(), "memorable migrate")
+}
+
+// adminFixture creates a superuser of its own to change: the shared admin role is cluster-wide.
+func adminFixture(t *testing.T, adminUser, password string) *config.Config {
+	t.Helper()
+	ctx := context.Background()
+	db := storetest.NewDatabase(t)
+	conn, err := pgx.Connect(ctx, db.AdminDSN)
+	require.NoError(t, err)
+	defer func() { _ = conn.Close(ctx) }()
+	var stmt string
+	require.NoError(t, conn.QueryRow(ctx, "SELECT format('CREATE ROLE %I WITH LOGIN SUPERUSER PASSWORD %L', $1::text, $2::text)",
+		adminUser, password).Scan(&stmt))
+	_, err = conn.Exec(ctx, stmt)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		c, err := pgx.Connect(context.Background(), db.AdminDSN)
+		if err == nil {
+			_, _ = c.Exec(context.Background(), "DROP ROLE IF EXISTS "+pgx.Identifier{adminUser}.Sanitize())
+			_ = c.Close(context.Background())
+		}
+	})
+	cfg := config.Default()
+	cfg.Database = storetest.DatabaseConfig(db)
+	cfg.Database.AdminUser = adminUser
+	return &cfg
+}
+
+func adminCanConnect(t *testing.T, cfg *config.Config, password string) bool {
+	t.Helper()
+	conn, err := pgx.Connect(context.Background(), store.DSN(cfg.Database, cfg.Database.AdminUser, password))
+	if err != nil {
+		return false
+	}
+	_ = conn.Close(context.Background())
+	return true
+}
+
+func TestChangeAdminPassword(t *testing.T) {
+	t.Parallel()
+	const current, next = "current-admin-password", "a-brand-new-admin-password"
+	cfg := adminFixture(t, "memorable_admin_change", current)
+
+	require.NoError(t, changeAdminPassword(context.Background(), cfg, current, func() (string, error) { return next, nil }))
+
+	assert.True(t, adminCanConnect(t, cfg, next))
+	assert.False(t, adminCanConnect(t, cfg, current))
+}
+
+func TestChangeAdminPassword_WrongCurrentAsksNothing(t *testing.T) {
+	t.Parallel()
+	const current = "current-admin-password"
+	cfg := adminFixture(t, "memorable_admin_change_wrong", current)
+	asked := false
+
+	err := changeAdminPassword(context.Background(), cfg, "not-the-password", func() (string, error) {
+		asked = true
+		return "a-brand-new-admin-password", nil
+	})
+
+	require.Error(t, err)
+	assert.False(t, asked, "the new password is asked for only after the current one is verified")
+	assert.True(t, adminCanConnect(t, cfg, current))
+}
+
+func TestChangeAdminPassword_RejectsWeakPassword(t *testing.T) {
+	t.Parallel()
+	const current = "current-admin-password"
+	cfg := adminFixture(t, "memorable_admin_change_weak", current)
+
+	err := changeAdminPassword(context.Background(), cfg, current, func() (string, error) { return "short", nil })
+
+	require.Error(t, err)
+	assert.Equal(t, 2, exitCode(err))
+	assert.True(t, adminCanConnect(t, cfg, current))
+}
+
+func TestChangeAdminPassword_PromptErrorKeepsPassword(t *testing.T) {
+	t.Parallel()
+	const current = "current-admin-password"
+	cfg := adminFixture(t, "memorable_admin_change_cancel", current)
+
+	err := changeAdminPassword(context.Background(), cfg, current, func() (string, error) { return "", errors.New("canceled") })
+
+	require.Error(t, err)
+	assert.True(t, adminCanConnect(t, cfg, current))
 }

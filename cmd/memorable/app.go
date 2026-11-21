@@ -49,13 +49,15 @@ type deps struct {
 	buildFor      func(ctx context.Context, cfgPath, contextName string, logger *slog.Logger, details map[string]any) (*app, error)
 	isTTY         func(*cobra.Command) bool
 	adminPassword func(*cobra.Command) (string, error)
-	docker        func(ctx context.Context, args ...string) ([]byte, error)
-	run           func(ctx context.Context, name string, args ...string) ([]byte, error)
-	lookPath      func(string) (string, error)
-	executable    func() (string, error)
-	goos          string
-	selfUpdate    func(cmd *cobra.Command, current string, opts update.Options, report update.Reporter) (update.Result, error)
-	openBrowser   func(path string) error
+	// newAdminPassword asks for a replacement admin password, typed twice.
+	newAdminPassword func(cmd *cobra.Command, current string) (string, error)
+	docker           func(ctx context.Context, args ...string) ([]byte, error)
+	run              func(ctx context.Context, name string, args ...string) ([]byte, error)
+	lookPath         func(string) (string, error)
+	executable       func() (string, error)
+	goos             string
+	selfUpdate       func(cmd *cobra.Command, current string, opts update.Options, report update.Reporter) (update.Result, error)
+	openBrowser      func(path string) error
 }
 
 func defaultDeps() deps {
@@ -63,6 +65,9 @@ func defaultDeps() deps {
 		lookPath: exec.LookPath, executable: os.Executable, goos: runtime.GOOS}
 	d.adminPassword = func(cmd *cobra.Command) (string, error) {
 		return promptAdminPassword(cmd.InOrStdin(), cmd.ErrOrStderr(), d.isTTY(cmd))
+	}
+	d.newAdminPassword = func(cmd *cobra.Command, current string) (string, error) {
+		return promptNewAdminPassword(cmd.InOrStdin(), cmd.ErrOrStderr(), d.isTTY(cmd), current)
 	}
 	d.build = func(ctx context.Context, cfgPath string, dirs []string, logger *slog.Logger) (*app, error) {
 		return buildApp(ctx, d, cfgPath, dirs, logger)
