@@ -44,15 +44,18 @@ jobs:
           # Latest 1.26 patch directly, so the go.mod toolchain line never triggers a second download.
           go-version: "1.26.x"
           check-latest: true
-      - run: go version && docker version --format '{{.Server.Version}}' && nproc && free -m && df -h /dev/shm
       - run: go test -race -tags=integration ./...
         env:
+          # The runner VM is discarded after the job, so the reaper is not needed; with it enabled,
+          # containers were removed mid-run and store tests failed with "unexpected EOF".
           TESTCONTAINERS_RYUK_DISABLED: "true"
-      - if: failure()
+      - name: Dump test containers
+        if: failure()
         run: |
-          docker image inspect pgvector/pgvector:0.8.7-pg18-trixie --format '{{.Id}} {{.Created}}'
-          for c in $(docker ps -aq); do docker inspect "$c" --format '{{.Name}} {{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}}'; docker logs --tail 80 "$c" 2>&1; done
-          sudo dmesg | tail -30 || true
+          for c in $(docker ps -aq); do
+            docker inspect "$c" --format '{{.Name}} {{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}}'
+            docker logs --tail 80 "$c" 2>&1
+          done
 
   security:
     runs-on: ubuntu-latest
