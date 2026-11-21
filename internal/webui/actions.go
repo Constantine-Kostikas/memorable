@@ -357,6 +357,7 @@ func (s *Server) registerMemoryRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST "+base+"/update", s.inContext(s.withMemoryID(s.handleUpdate)))
 	mux.HandleFunc("POST "+base+"/delete", s.inContext(s.withMemoryID(s.handleDelete)))
 	mux.HandleFunc("POST "+base+"/preview", s.inContext(s.withMemoryID(s.handlePreview)))
+	mux.HandleFunc("GET "+base+"/compare", s.inContext(s.withMemoryID(s.handleCompare)))
 	for name, do := range map[string]actionFunc{
 		"feedback": s.doFeedback, "restore": s.doRestore, "activate": s.doActivate,
 		"link": s.doLink(false), "unlink": s.doLink(true), "supersede": s.doSupersede,
