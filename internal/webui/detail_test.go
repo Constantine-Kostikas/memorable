@@ -39,12 +39,14 @@ type detailMemories struct {
 	bySlug   map[string]memory.Fetched
 	byID     map[uuid.UUID]memory.Fetched
 	// getErrByID fails a Get whose first id is a key, so a test can fail only the linked-memory reads.
-	getErrByID map[uuid.UUID]error
-	mutErr     error
-	updated    memory.Memory
-	listReqs   []memory.ListRequest
-	searches   []memory.SearchRequest
-	results    []memory.Summary
+	getErrByID     map[uuid.UUID]error
+	mutErr         error
+	updated        memory.Memory
+	listReqs       []memory.ListRequest
+	searches       []memory.SearchRequest
+	results        []memory.Summary
+	tagCounts      []memory.TagCount
+	tagAllProjects bool
 }
 
 func (d *detailMemories) rows() []memory.Summary {
@@ -269,7 +271,7 @@ func TestDetailTabs(t *testing.T) {
 	assert.Contains(t, body, "line one\n&lt;img src=x onerror=alert(1)&gt;</textarea>")
 	assert.NotContains(t, body, hostile)
 	assert.Contains(t, body, "&lt;img src=x onerror=alert(1)&gt;")
-	assert.Contains(t, body, "Version 1")
+	assert.Contains(t, body, `<b>v1</b>`)
 	assert.Contains(t, body, "- old line")
 	assert.Contains(t, body, "&#43; line two")
 	assert.Contains(t, body, "related")
@@ -631,6 +633,14 @@ func editorForm(t *testing.T, body string) string {
 	return body[start : start+end]
 }
 
+// editorFields is the editor form plus the rail, whose fields submit with it through form="memory-editor".
+func editorFields(t *testing.T, body string) string {
+	t.Helper()
+	header := regexp.MustCompile(`(?s)<header class="detail-header.*?</header>`).FindString(body)
+	require.NotEmpty(t, header, "detail header")
+	return header + editorForm(t, body) + detailRail(t, body)
+}
+
 func TestDetailIsAnEditor(t *testing.T) {
 	t.Parallel()
 	expires := time.Date(2026, 12, 31, 0, 0, 0, 0, time.UTC)
@@ -647,33 +657,25 @@ func TestDetailIsAnEditor(t *testing.T) {
 	assert.Contains(t, editor, `data-editor`)
 	assert.Contains(t, editor, `data-title="Port map"`)
 	assert.Contains(t, editor, `action="`+f.path("/update")+`"`)
-	assert.Contains(t, editor, `name="title" value="Port map"`)
+	assert.Regexp(t, `name="title" value="Port map"[^>]*form="memory-editor"`, body)
 	assert.Contains(t, editor, "line one\n&lt;img src=x onerror=alert(1)&gt;</textarea>")
-	assert.Contains(t, editor, `name="tags" value="go, ops"`)
-	assert.Contains(t, editor, `<option value="project" selected>`)
-	assert.Regexp(t, `<input type="date" name="expires_at" value="2026-12-31"`, editor)
-	assert.Contains(t, editor, `name="expires_at_original" value="2026-12-31T00:00:00Z"`)
-	assert.Regexp(t, `<button type="button"[^>]*data-clear-expiry`, editor)
-	assert.Regexp(t, `name="pinned"[^>]*checked`, editor)
+	fields := editorFields(t, body)
+	assert.Contains(t, fields, `name="tags" value="go, ops"`)
+	assert.Contains(t, fields, `<option value="project" selected>`)
+	assert.Regexp(t, `<input type="date" name="expires_at" value="2026-12-31"`, fields)
+	assert.Contains(t, fields, `name="expires_at_original" value="2026-12-31T00:00:00Z"`)
+	assert.Regexp(t, `<button type="button"[^>]*data-clear-expiry`, fields)
+	assert.Regexp(t, `name="pinned"[^>]*checked`, fields)
 	assert.Contains(t, editor, `name="version" value="2"`)
 	assert.Contains(t, editor, `name="csrf" value="`+f.s.session.csrf+`"`)
-	assert.Regexp(t, `<span[^>]*data-dirty-marker[^>]*hidden`, editor)
+	assert.Regexp(t, `<span[^>]*data-dirty-marker[^>]*hidden`, body)
 	assert.NotContains(t, editor[1:], "<form", "no form is nested in the editor")
 	assert.Regexp(t, `<button[^>]*form="memory-editor"[^>]*data-save`, body)
 	assert.Regexp(t, `<a href="`+regexp.QuoteMeta(f.path(""))+`"[^>]*data-discard>Discard</a>`, body)
-	nav := regexp.MustCompile(`(?s)<nav aria-label="Memory sections"[^>]*>.*?</nav>`).FindString(body)
-	require.NotEmpty(t, nav, "section navigation missing")
-	assert.NotContains(t, body, `role="tab`, "sections are in-page links, not tabs")
-	assert.Contains(t, nav, `<a href="#content" aria-current="true"`, "Content is current without JS")
-	assert.Equal(t, 1, strings.Count(nav, "aria-current"))
-	for _, section := range []string{"content", "versions", "links", "activity"} {
-		assert.Contains(t, nav, `<a href="#`+section+`"`, section)
-		assert.Contains(t, body, `id="`+section+`"`, section)
-	}
-	assert.Contains(t, editor, "Expires (UTC, empty means never)")
+	assert.Contains(t, fields, "(UTC, empty means never)")
 }
 
-func TestDetailSectionsFoldOpenWithoutJS(t *testing.T) {
+func TestDetailTabsRenderAllPanelsWithoutJS(t *testing.T) {
 	t.Parallel()
 	f := newDetailFixture(t, nil)
 
@@ -681,16 +683,25 @@ func TestDetailSectionsFoldOpenWithoutJS(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rec.Code)
 	body := rec.Body.String()
+	assert.Contains(t, body, `<div role="tablist" aria-label="Memory sections" data-tabs`)
+	for _, tab := range []string{"content", "history", "links", "activity"} {
+		assert.Regexp(t, `<a role="tab" href="#`+tab+`" id="tab-`+tab+`" aria-controls="`+tab+`"`, body, tab)
+		assert.Regexp(t, `<section id="`+tab+`" role="tabpanel" aria-labelledby="tab-`+tab+`"[^>]*data-tab-panel>`, body, tab)
+	}
+	assert.Regexp(t, `id="tab-history"[^>]*>History <span class="tab-count">2</span>`, body)
+	assert.Regexp(t, `id="tab-links"[^>]*>Links <span class="tab-count">1</span>`, body)
+	assert.NotContains(t, body, "data-section-fold")
+	assert.NotContains(t, body, "data-section-nav")
+	assert.NotRegexp(t, `data-tab-panel[^>]*hidden`, body)
+	content := regexp.MustCompile(`(?s)<section id="content" role="tabpanel".*?</section>`).FindString(body)
+	assert.Contains(t, content, "data-primary-actions", "Save and the menu belong to the Content tab")
 	script, err := os.ReadFile("static/app.js")
 	require.NoError(t, err)
-	sections := []string{"content", "versions", "links", "activity"}
-	assert.Contains(t, string(script), `var SECTIONS = ['`+strings.Join(sections, `', '`)+`'];`, "app.js folds the same sections")
-	for _, section := range sections {
-		assert.Regexp(t, `<section id="`+section+`"[^>]*data-section-fold="`+section+`"`, body, section)
-		assert.Regexp(t, `<h2 class="section-heading"><button type="button"[^>]*data-section-toggle aria-expanded="true" aria-controls="`+section+`-body">`, body, section)
-		assert.Contains(t, body, `<div id="`+section+`-body" data-section-body>`, section)
-	}
-	assert.Regexp(t, `aria-controls="links-body">Links <span class="section-count"><span class="sr-only">\(</span>\d+<span class="sr-only">\)</span></span>`, body)
+	assert.Contains(t, string(script), `var TABS = ['content', 'history', 'links', 'activity'];`)
+	assert.Contains(t, string(script), `versions: 'history'`)
+	assert.Contains(t, string(script), "'beforematch'")
+	assert.NotContains(t, string(script), "COLLAPSED_KEY")
+	assert.NotContains(t, string(script), "data-section-fold")
 }
 
 func TestPristineEditorMatchesItsOriginals(t *testing.T) {
@@ -704,7 +715,7 @@ func TestPristineEditorMatchesItsOriginals(t *testing.T) {
 	rec := send(f.h, http.MethodGet, f.path(""), "", withCookie(f.c), withHeader("HX-Request", "true"))
 
 	require.Equal(t, http.StatusOK, rec.Code)
-	editor := editorForm(t, rec.Body.String())
+	editor := editorFields(t, rec.Body.String())
 	assert.NotContains(t, editor, "data-unsaved")
 	for _, name := range []string{"title", "tags", "expires_at"} {
 		input := regexp.MustCompile(`<input[^>]*name="` + name + `"[^>]*>`).FindString(editor)
@@ -765,7 +776,7 @@ func TestReadOnlyStatesDisableFields(t *testing.T) {
 
 			require.Equal(t, http.StatusOK, rec.Code)
 			body := rec.Body.String()
-			editor := editorForm(t, body)
+			editor := editorFields(t, body)
 			assert.Regexp(t, `<input[^>]*name="title"[^>]*disabled`, editor)
 			assert.Regexp(t, `<textarea[^>]*name="content"[^>]*disabled`, editor)
 			assert.NotContains(t, body, "data-save")
@@ -799,7 +810,7 @@ func TestActivityMergesFeedbackAndAudit(t *testing.T) {
 
 	require.Len(t, entries, 3)
 	assert.Equal(t, []time.Time{t3, t2, t1}, []time.Time{entries[0].At, entries[1].At, entries[2].At})
-	assert.Equal(t, formatTime(t3), entries[0].When)
+	assert.Equal(t, newTimeView(t3), entries[0].When)
 	assert.Contains(t, entries[0].Summary, "update")
 	assert.Contains(t, entries[0].Summary, "via=ui")
 	assert.Contains(t, entries[1].Summary, "wrong")
@@ -813,7 +824,7 @@ func TestDangerActionsSeparated(t *testing.T) {
 
 	body := send(f.h, http.MethodGet, f.path(""), "", withCookie(f.c)).Body.String()
 
-	more := regexp.MustCompile(`(?s)<details[^>]*>\s*<summary[^>]*>More actions</summary>.*?</details>`).FindString(body)
+	more := regexp.MustCompile(`(?s)<details class="more-actions[^>]*>.*?</details>`).FindString(body)
 	require.NotEmpty(t, more, "a More actions disclosure")
 	divider := strings.Index(more, "<hr")
 	deleteAt := strings.Index(more, `action="`+f.path("/delete")+`"`)
@@ -832,11 +843,55 @@ func TestDangerActionsSeparated(t *testing.T) {
 		mem.byID[m.ID] = memory.Fetched{Ref: m.ID.String(), Memory: m}
 	})
 	page := getPage(admin.h, admin.c, "/c/personal/memories/"+m.ID.String()).Body.String()
-	activity := page[strings.Index(page, `id="activity"`):]
-	zone := activity[strings.Index(activity, "Danger zone"):]
-	assert.Contains(t, zone, `action="/c/personal/memories/`+m.ID.String()+`/purge"`)
-	assert.Contains(t, zone, `name="confirm"`)
-	assert.Equal(t, 1, strings.Count(page, "/purge\""), "Purge only in the danger zone")
+	adminMore := regexp.MustCompile(`(?s)<details class="more-actions[^>]*>.*?</details>`).FindString(page)
+	adminDeleteAt := strings.Index(adminMore, `action="/c/personal/memories/`+m.ID.String()+`/delete"`)
+	purgeAt := strings.Index(adminMore, `action="/c/personal/memories/`+m.ID.String()+`/purge"`)
+	assert.Positive(t, adminDeleteAt)
+	require.Greater(t, purgeAt, adminDeleteAt, "Purge comes after Delete in the menu")
+	assert.Contains(t, adminMore[purgeAt:], `name="confirm"`)
+	assert.Equal(t, 1, strings.Count(page, "/purge\""), "Purge only in the menu")
+}
+
+func detailRail(t *testing.T, body string) string {
+	t.Helper()
+	rail := regexp.MustCompile(`(?s)<aside class="detail-rail[^"]*" aria-label="Properties">.*?</aside>`).FindString(body)
+	require.NotEmpty(t, rail, "properties rail")
+	return rail
+}
+
+func TestRailFieldsBelongToEditor(t *testing.T) {
+	t.Parallel()
+	slug := "port-map"
+	f := newDetailFixture(t, func(m *detailMemories, _ uuid.UUID) { m.fetched[0].Memory.Slug = &slug })
+
+	body := send(f.h, http.MethodGet, f.path(""), "", withCookie(f.c), withHeader("HX-Request", "true")).Body.String()
+
+	rail := detailRail(t, body)
+	for _, name := range []string{"tags", "type", "expires_at", "expires_at_original", "pinned"} {
+		assert.Regexp(t, `<(input|select)[^>]*name="`+name+`"[^>]*form="memory-editor"`, rail, name)
+	}
+	assert.Regexp(t, `data-tag-entry[^>]*form="memory-editor"|form="memory-editor"[^>]*data-tag-entry`, rail)
+	assert.Contains(t, rail, "(global)")
+	assert.Contains(t, rail, "port-map")
+	assert.Contains(t, rail, `<time datetime="2026-11-02T09:00:00Z"`)
+	assert.NotContains(t, rail, "data-section-fold")
+	script, err := os.ReadFile("static/app.js")
+	require.NoError(t, err)
+	assert.NotContains(t, string(script), "form.querySelectorAll('[data-original]')", "dirty tracking must see fields outside the form element")
+	assert.Contains(t, string(script), "form.elements")
+}
+
+func TestHeaderShowsOnlyTypeAndStatus(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, nil)
+
+	body := send(f.h, http.MethodGet, f.path(""), "", withCookie(f.c), withHeader("HX-Request", "true")).Body.String()
+
+	assert.NotContains(t, body, "Editing version")
+	more := regexp.MustCompile(`(?s)<details class="more-actions[^>]*>.*?</details>`).FindString(body)
+	info := regexp.MustCompile(`(?s)<p data-memory-info[^>]*>.*?</p>`).FindString(more)
+	assert.Contains(t, info, "Version 2")
+	assert.Contains(t, info, "Embedded with nomic-embed-text")
 }
 
 func TestPaneIgnoresMalformedFilter(t *testing.T) {
@@ -884,4 +939,70 @@ func TestToastRegionInLayout(t *testing.T) {
 	assert.Contains(t, region[:strings.Index(region, "</main>")+1], "Feedback recorded.")
 	assert.NotContains(t, body, "hx-swap-oob", "full pages render toasts inline")
 	assert.Regexp(t, `<button type="button"[^>]*data-toast-dismiss`, body)
+}
+
+func TestDetailDatesShowDateWithTimeOnHover(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, nil)
+
+	rec := send(f.h, http.MethodGet, f.path(""), "", withCookie(f.c), withHeader("HX-Request", "true"))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	body := rec.Body.String()
+	assert.Contains(t, body, `<time datetime="2026-11-02T09:00:00Z" title="2026-11-02 09:00 UTC">2026-11-02</time>`)
+	assert.Contains(t, body, `<time datetime="2026-11-01T09:00:00Z" title="2026-11-01 09:00 UTC">2026-11-01</time>`)
+	assert.Contains(t, body, `<time datetime="2026-11-03T09:00:00Z" title="2026-11-03 09:00 UTC">2026-11-03</time>`)
+	assert.NotContains(t, body, "2026-11-02 09:00 UTC<")
+}
+
+func selectedOption(t *testing.T, body, id string) string {
+	t.Helper()
+	sel := regexp.MustCompile(`(?s)<select id="` + id + `".*?</select>`).FindString(body)
+	require.NotEmpty(t, sel, id)
+	return regexp.MustCompile(`<option value="(\d+)" selected>`).FindStringSubmatch(sel)[1]
+}
+
+func TestHistoryDefaultsToPreviousVersusCurrent(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, nil)
+
+	body := send(f.h, http.MethodGet, f.path(""), "", withCookie(f.c), withHeader("HX-Request", "true")).Body.String()
+
+	assert.Equal(t, "1", selectedOption(t, body, "compare-from"))
+	assert.Equal(t, "2", selectedOption(t, body, "compare-to"))
+	assert.Contains(t, body, "v2 · 2026-11-02 (current)")
+	assert.Contains(t, body, `hx-get="`+f.path("/compare")+`" hx-trigger="change" hx-target="#version-diff"`)
+	assert.Equal(t, 1, strings.Count(body, "- old line"), "only the comparison shows a diff")
+	assert.Regexp(t, `(?s)<li[^>]*data-version-row>.*?<b>v1</b>.*?>Restore</button>`, body)
+}
+
+func TestHistoryWithOneVersion(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, func(m *detailMemories, _ uuid.UUID) { m.history = m.history[:1] })
+
+	body := send(f.h, http.MethodGet, f.path(""), "", withCookie(f.c), withHeader("HX-Request", "true")).Body.String()
+
+	assert.Contains(t, body, "Only one version.")
+	assert.NotContains(t, body, `id="compare-from"`)
+}
+
+func TestHistoryCompareWithoutJSKeepsFilter(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, nil)
+
+	rec := send(f.h, http.MethodGet, f.path("?from=2&to=1&q=port&tag=go"), "", withCookie(f.c))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	body := rec.Body.String()
+	form := regexp.MustCompile(`(?s)<form method="get" action="` + regexp.QuoteMeta(f.path("")) + `#history".*?</form>`).FindString(body)
+	require.NotEmpty(t, form, "compare form")
+	assert.Contains(t, form, `<input type="hidden" name="q" value="port">`)
+	assert.Contains(t, form, `<input type="hidden" name="tag" value="go">`)
+	assert.Contains(t, body, "- old line")
+	assert.Equal(t, "1", selectedOption(t, body, "compare-from"))
+
+	bad := send(f.h, http.MethodGet, f.path("?from=x&to=1"), "", withCookie(f.c))
+	require.Equal(t, http.StatusOK, bad.Code)
+	assert.Contains(t, bad.Body.String(), "Pick two different versions of this memory.")
+	assert.Equal(t, "2", selectedOption(t, bad.Body.String(), "compare-to"))
 }

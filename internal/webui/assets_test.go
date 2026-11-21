@@ -18,6 +18,7 @@ func TestEmbeddedAssets(t *testing.T) {
 
 	for _, name := range []string{
 		"static/app.css", "static/htmx.min.js", "static/app.js", "static/OFL.txt",
+		"static/markdown-toolbar-element.js", "static/markdown-toolbar-element.LICENSE.txt",
 		"static/atkinson-hyperlegible-regular.woff2", "static/atkinson-hyperlegible-bold.woff2",
 	} {
 		data, err := assetFS.ReadFile(name)
@@ -41,6 +42,7 @@ func TestEmbeddedAssets(t *testing.T) {
 	body := out.String()
 	assert.NotContains(t, body, "<script>x</script>")
 	assert.Contains(t, body, "&lt;script&gt;x&lt;/script&gt;")
+	assert.Contains(t, body, `<script type="module" src="/static/markdown-toolbar-element.js"></script>`)
 	assert.Contains(t, body, `name="htmx-config"`)
 	assert.Contains(t, body, `name="csrf-token" content="token-123"`)
 	assert.Contains(t, body, "Review (3)")

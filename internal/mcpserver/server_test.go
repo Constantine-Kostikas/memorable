@@ -189,6 +189,20 @@ func TestErrorsDoNotLeakInternals(t *testing.T) {
 	assert.Equal(t, "internal error", out)
 }
 
+func TestAuthFailureTellsUserToRestart(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	h.repo.Err = fmt.Errorf("begin: %w: %w: password authentication failed for user \"memorable_app\"",
+		memory.ErrAuthFailed, memory.ErrUnavailable)
+	out, isErr := call(t, h.session, "memory_write", map[string]any{"memories": []map[string]any{{
+		"title": "t", "content": "c", "type": "project", "source": "user_stated",
+	}}})
+	assert.True(t, isErr)
+	assert.NotEqual(t, "internal error", out)
+	assert.Contains(t, out, "restart")
+	assert.NotContains(t, out, "memorable_app")
+}
+
 func TestValidationErrorsAreShown(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)

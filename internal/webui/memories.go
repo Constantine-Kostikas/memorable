@@ -213,6 +213,24 @@ func parseMemoryFilter(q url.Values) (memoryFilter, *uuid.UUID, error) {
 	return f, &id, nil
 }
 
+// paneFilterQuery is the list filter a pane request answers with. An htmx request takes it from the page
+// URL (HX-Current-URL) when that is this context's memory list or a memory in it, because the filter can
+// change after the pane loaded and the pane's own form and link URLs then carry a stale one.
+func paneFilterQuery(r *http.Request, contextName string) url.Values {
+	if !isFragmentRequest(r) {
+		return r.URL.Query()
+	}
+	page, err := url.Parse(r.Header.Get("HX-Current-URL"))
+	if err != nil || page.Path == "" {
+		return r.URL.Query()
+	}
+	list := "/c/" + url.PathEscape(contextName) + "/memories"
+	if page.EscapedPath() != list && !strings.HasPrefix(page.EscapedPath(), list+"/") {
+		return r.URL.Query()
+	}
+	return page.Query()
+}
+
 func memoriesURL(contextName string, f memoryFilter, cursor *uuid.UUID) string {
 	v := filterValues(f)
 	if cursor != nil {

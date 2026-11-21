@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -141,6 +142,16 @@ func TestListFiltersPassed(t *testing.T) {
 	assert.Equal(t, []string{"go"}, req.Tags)
 	require.NotNil(t, req.Cursor)
 	assert.Equal(t, cursor, *req.Cursor)
+}
+
+func TestFilterFormHasResetBesideApply(t *testing.T) {
+	t.Parallel()
+	h, c := newMemoriesServer(t, &recordingMemories{})
+
+	rec := getPage(h, c, "/c/personal/memories?q=port&type=feedback&tag=go")
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Regexp(t, `(?s)<button type="submit"[^>]*>Apply</button>\s*<a href="/c/personal/memories"[^>]*>Reset</a>`, rec.Body.String())
 }
 
 func TestListRejectsBadFilters(t *testing.T) {
@@ -452,4 +463,31 @@ func TestRowsCarryTypeTabAgeAndFilter(t *testing.T) {
 	assert.Contains(t, body, `hx-target="#detail-pane" hx-swap="outerHTML" hx-push-url="true"`)
 	assert.Contains(t, body, "chip-status-flagged")
 	assert.NotContains(t, body, "chip-status-active", "the status chip shows only when not active")
+}
+
+func TestMemoryRowsAreCards(t *testing.T) {
+	t.Parallel()
+	h, c := newMemoriesServer(t, &recordingMemories{})
+
+	rec := getPage(h, c, "/c/personal/memories")
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Regexp(t, `<ul id="memory-rows" class="memory-cards[^"]*">`, rec.Body.String())
+	assert.NotContains(t, rec.Body.String(), `id="memory-rows" class="divide-y`)
+}
+
+func TestTagFilterIsCombobox(t *testing.T) {
+	t.Parallel()
+	h, c := newMemoriesServer(t, &recordingMemories{})
+
+	rec := getPage(h, c, "/c/personal/memories")
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	body := rec.Body.String()
+	assert.Regexp(t, `<input type="text" id="tag-filter" name="tag"[^>]*data-lookup="tag" data-lookup-mode="value" role="combobox"[^>]*aria-controls="tag-options"`, body)
+	assert.Contains(t, body, `hx-get="/c/personal/tags" hx-trigger="input changed delay:150ms from:#tag-filter, focus from:#tag-filter" hx-include="#tag-filter" hx-target="#tag-options"`)
+	assert.Contains(t, body, `<ul id="tag-options" role="listbox" aria-label="Matching tags"`)
+	script, err := os.ReadFile("static/app.js")
+	require.NoError(t, err)
+	assert.Contains(t, string(script), "data-lookup-mode")
 }

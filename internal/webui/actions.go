@@ -84,6 +84,76 @@ func (s *Server) action(do actionFunc) func(http.ResponseWriter, *http.Request, 
 	}
 }
 
+// handleDelete deletes from the workspace pane and moves the pane on to the memory the client names in
+// next, its list neighbor, or to the empty pane when there is none. The deleted row leaves the list out of
+// band. Review deletions and failures answer as every other action does.
+func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request, rc requestContext, id uuid.UUID) {
+	if err := r.ParseForm(); err != nil {
+		s.failResponse(w, r, rc, fmt.Errorf("%w: malformed form", memory.ErrValidation))
+		return
+	}
+	if r.PostFormValue("return") == returnToReview {
+		s.action(s.doDelete)(w, r, rc, id)
+		return
+	}
+	notice, err := s.doDelete(r, rc, id)
+	if err != nil {
+		s.respondActionError(w, r, rc, id, err)
+		return
+	}
+	filter, _, filterErr := parseMemoryFilter(paneFilterQuery(r, rc.Name))
+	if filterErr != nil {
+		filter = memoryFilter{}
+	}
+	listURL := memoriesURL(rc.Name, filter, nil)
+	next, nextErr := uuid.Parse(r.PostFormValue("next"))
+	hasNext := nextErr == nil && next != id
+	if !isFragmentRequest(r) {
+		target := listURL
+		if hasNext {
+			target = withQuery(memoryBase(rc.Name, next), filterValues(filter))
+		}
+		http.Redirect(w, r, target, http.StatusSeeOther) //nolint:gosec // G710: a same-origin path built from a configured context name, a parsed UUID, and re-encoded filter values.
+		return
+	}
+	removal := deletedRow{ID: id.String(), Notice: notice}
+	if hasNext {
+		view, loadErr := s.loadDetail(r, rc, next)
+		if loadErr == nil {
+			view.ListURL, view.FilterQuery = listURL, withQuery("", filterValues(filter))
+			removal.Detail = &view
+			w.Header().Set("HX-Push-Url", view.Base+view.FilterQuery)
+		} else {
+			s.logger.WarnContext(r.Context(), "load next memory after delete", "context", rc.Name, "next", next, "error", loadErr)
+		}
+	}
+	if removal.Detail == nil {
+		w.Header().Set("HX-Push-Url", listURL)
+	}
+	w.Header().Set("Vary", "HX-Request, HX-Current-URL")
+	s.renderStatus(w, http.StatusOK, "delete_response", removal)
+}
+
+// deletedRow answers a pane deletion: the next memory's pane, or the empty pane when Detail is nil.
+type deletedRow struct {
+	ID     string
+	Notice string
+	Error  string
+	Detail *detailView
+}
+
+// respondActionError re-renders the memory's pane around a failed action, the error shown as a toast.
+func (s *Server) respondActionError(w http.ResponseWriter, r *http.Request, rc requestContext, id uuid.UUID, err error) {
+	status, message := s.actionStatus(r, err)
+	view, loadErr := s.loadDetail(r, rc, id)
+	if loadErr != nil {
+		s.failResponse(w, r, rc, loadErr)
+		return
+	}
+	view.Error = message
+	s.respondDetail(w, r, rc, view, status)
+}
+
 // handleUpdate saves the editor. On any error the pane re-renders around the submitted values, including
 // the submitted version, so a stale form conflicts again instead of overwriting a newer save.
 func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request, rc requestContext, id uuid.UUID) {
@@ -285,8 +355,11 @@ func (s *Server) registerMemoryRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+base, s.inContext(s.withMemoryID(s.handleDetail)))
 	mux.HandleFunc("GET "+base+"/edit", s.inContext(s.withMemoryID(s.handleEdit)))
 	mux.HandleFunc("POST "+base+"/update", s.inContext(s.withMemoryID(s.handleUpdate)))
+	mux.HandleFunc("POST "+base+"/delete", s.inContext(s.withMemoryID(s.handleDelete)))
+	mux.HandleFunc("POST "+base+"/preview", s.inContext(s.withMemoryID(s.handlePreview)))
+	mux.HandleFunc("GET "+base+"/compare", s.inContext(s.withMemoryID(s.handleCompare)))
 	for name, do := range map[string]actionFunc{
-		"feedback": s.doFeedback, "delete": s.doDelete, "restore": s.doRestore, "activate": s.doActivate,
+		"feedback": s.doFeedback, "restore": s.doRestore, "activate": s.doActivate,
 		"link": s.doLink(false), "unlink": s.doLink(true), "supersede": s.doSupersede,
 	} {
 		mux.HandleFunc("POST "+base+"/"+name, s.inContext(s.withMemoryID(s.action(do))))

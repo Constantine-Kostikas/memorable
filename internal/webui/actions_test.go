@@ -2,8 +2,10 @@ package webui
 
 import (
 	"fmt"
+	"maps"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -77,7 +79,6 @@ func TestPaneActionsRefreshListRowOutOfBand(t *testing.T) {
 		form   url.Values
 		want   string
 	}{
-		{action: "/delete", form: url.Values{}, want: "chip-status-deleted"},
 		{action: "/restore", form: url.Values{}, want: "Port map"},
 		{action: "/activate", form: url.Values{}, want: "Port map"},
 	} {
@@ -210,14 +211,166 @@ func TestFeedbackAction(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), "Feedback recorded.")
 }
 
+func withNextMemory(next uuid.UUID) func(*detailMemories, uuid.UUID) {
+	return func(m *detailMemories, _ uuid.UUID) {
+		m.byID[next] = memory.Fetched{Ref: next.String(), Memory: memory.Memory{
+			ID: next, Title: "Next card", Content: "next body", Type: memory.TypeReference, Status: memory.StatusActive,
+			Scope: memory.ScopeGlobal, Version: 1,
+		}}
+	}
+}
+
+func deletedRowRemoval(id uuid.UUID) string {
+	return `<li id="row-` + id.String() + `" hx-swap-oob="delete"></li>`
+}
+
 func TestDeleteAction(t *testing.T) {
 	t.Parallel()
 	f := newDetailFixture(t, nil)
 
 	rec := f.post("/delete", url.Values{})
 
-	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, http.StatusSeeOther, rec.Code)
 	assert.Equal(t, []any{f.id}, f.mem.called("Delete")[0].Args)
+}
+
+func TestPaneDeleteOpensNextMemory(t *testing.T) {
+	t.Parallel()
+	next := uuid.New()
+	f := newDetailFixture(t, withNextMemory(next))
+
+	rec := f.post("/delete?type=project", url.Values{"next": {next.String()}}, withHeader("HX-Request", "true"))
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	body := rec.Body.String()
+	assert.True(t, strings.HasPrefix(body, `<section id="detail-pane" data-memory-href="/c/personal/memories/`+next.String()+`"`), body)
+	assert.Contains(t, body, `value="Next card"`)
+	assert.Contains(t, body, deletedRowRemoval(f.id))
+	assert.Regexp(t, `(?s)hx-swap-oob="beforeend:#toasts".*Memory deleted.`, body)
+	assert.Equal(t, "/c/personal/memories/"+next.String()+"?type=project", rec.Header().Get("HX-Push-Url"))
+	assert.Contains(t, body, `action="/c/personal/memories/`+next.String()+`/update?type=project"`, "the next pane keeps the list filter")
+}
+
+func TestPaneDeleteKeepsTheFilterShownInThePage(t *testing.T) {
+	t.Parallel()
+	next := uuid.New()
+	for name, tc := range map[string]struct {
+		form url.Values
+		want string
+	}{
+		"next memory": {form: url.Values{"next": {next.String()}}, want: "/c/personal/memories/" + next.String() + "?q=port&status=flagged&type=project"},
+		"empty pane":  {form: url.Values{}, want: "/c/personal/memories?q=port&status=flagged&type=project"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			f := newDetailFixture(t, withNextMemory(next))
+			page := "http://" + testHost + "/c/personal/memories?q=port&type=project&status=flagged"
+
+			rec := f.post("/delete", tc.form, withHeader("HX-Request", "true"), withHeader("HX-Current-URL", page))
+
+			require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+			assert.Equal(t, tc.want, rec.Header().Get("HX-Push-Url"), "the filter set after the pane loaded wins over the form's")
+		})
+	}
+}
+
+func TestPaneActionLinksFollowThePageFilter(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, nil)
+	page := "http://" + testHost + f.path("?type=project&q=port")
+
+	rec := f.post("/feedback?type=user", url.Values{"kind": {"useful"}}, withHeader("HX-Request", "true"), withHeader("HX-Current-URL", page))
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Contains(t, rec.Body.String(), `action="`+f.path("/delete?q=port&amp;type=project")+`"`)
+}
+
+func TestPaneIgnoresCurrentURLOutsideTheContextList(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, nil)
+
+	rec := f.post("/delete?type=project", url.Values{}, withHeader("HX-Request", "true"),
+		withHeader("HX-Current-URL", "http://"+testHost+"/c/personal/review?type=user"))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "/c/personal/memories?type=project", rec.Header().Get("HX-Push-Url"))
+}
+
+func TestPaneDeleteWithoutNextShowsEmptyPane(t *testing.T) {
+	t.Parallel()
+	for name, form := range map[string]url.Values{
+		"no next":        {},
+		"malformed next": {"next": {"not-a-uuid"}},
+		"missing next":   {"next": {uuid.NewString()}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			f := newDetailFixture(t, nil)
+			form := maps.Clone(form)
+
+			rec := f.post("/delete?type=project", form, withHeader("HX-Request", "true"))
+
+			require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+			body := rec.Body.String()
+			assert.True(t, strings.HasPrefix(body, `<section id="detail-pane" aria-label="Memory"`), body)
+			assert.Contains(t, body, "Select a memory")
+			assert.Contains(t, body, deletedRowRemoval(f.id))
+			assert.Contains(t, body, "Memory deleted.")
+			assert.Equal(t, "/c/personal/memories?type=project", rec.Header().Get("HX-Push-Url"))
+		})
+	}
+}
+
+func TestPaneDeleteFormAsksForTheNeighbor(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, nil)
+
+	rec := send(f.h, http.MethodGet, f.path(""), "", withCookie(f.c))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Regexp(t, `<form[^>]*action="`+f.path("/delete")+`"[^>]*data-delete-memory>`, rec.Body.String())
+	script, err := os.ReadFile("static/app.js")
+	require.NoError(t, err)
+	assert.Contains(t, string(script), "hasAttribute('data-delete-memory')", "app.js adds next to this form's request")
+}
+
+func TestDeleteWithoutHtmxRedirects(t *testing.T) {
+	t.Parallel()
+	next := uuid.New()
+	for name, tc := range map[string]struct {
+		form url.Values
+		want string
+	}{
+		"to the next memory": {form: url.Values{"next": {next.String()}}, want: "/c/personal/memories/" + next.String() + "?type=project"},
+		"to the list":        {form: url.Values{}, want: "/c/personal/memories?type=project"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			f := newDetailFixture(t, withNextMemory(next))
+
+			rec := f.post("/delete?type=project", tc.form)
+
+			require.Equal(t, http.StatusSeeOther, rec.Code, rec.Body.String())
+			assert.Equal(t, tc.want, rec.Header().Get("Location"))
+		})
+	}
+}
+
+func TestFailedPaneDeleteKeepsTheMemory(t *testing.T) {
+	t.Parallel()
+	next := uuid.New()
+	f := newDetailFixture(t, func(m *detailMemories, id uuid.UUID) {
+		withNextMemory(next)(m, id)
+		m.mutErr = fmt.Errorf("%w: profile", memory.ErrReadOnly)
+	})
+
+	rec := f.post("/delete", url.Values{"next": {next.String()}}, withHeader("HX-Request", "true"))
+
+	require.Equal(t, http.StatusUnprocessableEntity, rec.Code)
+	body := rec.Body.String()
+	assert.True(t, strings.HasPrefix(body, `<section id="detail-pane" data-memory-href="`+f.path("")+`"`), body)
+	assert.NotContains(t, body, `hx-swap-oob="delete"`)
+	assert.Empty(t, rec.Header().Get("HX-Push-Url"))
 }
 
 func TestRestoreAction(t *testing.T) {
@@ -445,12 +598,12 @@ func TestUpdateConflictKeepsSubmittedValues(t *testing.T) {
 	require.Equal(t, http.StatusConflict, rec.Code)
 	body := rec.Body.String()
 	assert.True(t, strings.HasPrefix(body, `<section id="detail-pane"`))
-	editor := editorForm(t, body)
+	editor := editorFields(t, body)
 	assert.Contains(t, editor, `value="Mine"`)
 	assert.Contains(t, editor, "typed text</textarea>")
 	assert.Contains(t, editor, `name="version" value="1"`, "the stale version stays so a re-save conflicts again")
 	assert.Contains(t, body, conflictMessage)
-	assert.Contains(t, body, `<a href="#versions" class="underline">Load latest version</a>`)
+	assert.Contains(t, body, `<a href="#history" class="underline">Load latest version</a>`)
 }
 
 func TestUpdateSecretKeepsSubmittedValues(t *testing.T) {
@@ -530,7 +683,7 @@ func TestFailedSaveKeepsExpiryOriginal(t *testing.T) {
 	rec := f.post("/update", updateForm(url.Values{"expires_at": {"2026-12-01"}, "expires_at_original": {"2026-12-01T15:30:00Z"}}),
 		withHeader("HX-Request", "true"))
 
-	editor := editorForm(t, rec.Body.String())
+	editor := editorFields(t, rec.Body.String())
 	assert.Contains(t, editor, `name="expires_at" value="2026-12-01"`)
 	assert.Contains(t, editor, `name="expires_at_original" value="2026-12-01T15:30:00Z"`)
 }
@@ -588,7 +741,7 @@ func TestFailedSaveRendersDirtyWithStoredBaseline(t *testing.T) {
 			rec := f.post("/update", updateForm(url.Values{"title": {"Mine"}, "content": {"typed text"}, "tags": {"mine"}}),
 				withHeader("HX-Request", "true"))
 
-			editor := editorForm(t, rec.Body.String())
+			editor := editorFields(t, rec.Body.String())
 			assert.Regexp(t, `<form id="memory-editor"[^>]*data-unsaved`, editor)
 			assert.Regexp(t, `name="title" value="Mine"[^>]*data-original="Port map"`, editor)
 			assert.Regexp(t, `name="tags" value="mine"[^>]*data-original="go, ops"`, editor)

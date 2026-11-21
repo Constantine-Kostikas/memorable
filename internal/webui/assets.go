@@ -32,7 +32,7 @@ type pageData struct {
 const pageMemories = "memories"
 
 func parseTemplates() (*template.Template, error) {
-	tmpl, err := template.New("").Funcs(template.FuncMap{"typeClass": typeClass}).ParseFS(assetFS, "templates/*.html")
+	tmpl, err := template.New("").Funcs(template.FuncMap{"typeClass": typeClass, "markdownPreview": markdownPreview}).ParseFS(assetFS, "templates/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("parse templates: %w", err)
 	}

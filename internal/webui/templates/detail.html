@@ -11,73 +11,61 @@
 {{.Form.Content}}</textarea>
   </label>{{end}}
   {{else}}
+  <div class="detail-layout">
+  <div class="detail-main min-w-0">
+  <header class="detail-header mb-3">
+    <div class="mb-1 flex items-center gap-2 text-meta text-ink-muted">
+      <span class="chip chip-warn" data-dirty-marker hidden>Unsaved changes</span>
+      {{if .Conflict}}<span>Your edit is based on version {{.Form.Version}}; the latest is version {{.Version}}</span>{{else if not .Editable}}<span>Read only</span>{{end}}
+      <button type="button" class="btn ml-auto px-2 py-0.5" data-expand-toggle aria-pressed="false" aria-keyshortcuts="F" hidden>Expand <kbd class="kbd">F</kbd></button>
+    </div>
+    <h1><label for="memory-title" class="sr-only">Title</label>
+      <input id="memory-title" type="text" name="title" value="{{.Form.Title}}" data-original="{{.Stored.Title}}" required class="field w-full text-page font-bold" form="memory-editor"{{if not .Editable}} disabled{{end}}>
+    </h1>
+    <p class="mt-2 flex flex-wrap gap-1 text-meta">
+      <span class="chip chip-type-{{typeClass .Type}}">{{.Type}}</span> <span class="chip chip-status-{{.Status}}">{{.Status}}</span>
+    </p>
+  </header>
+  <div role="tablist" aria-label="Memory sections" data-tabs class="tab-list mb-3 flex flex-wrap gap-x-5 border-b border-line text-body">
+    <a role="tab" href="#content" id="tab-content" aria-controls="content" class="tab">Content<span class="tab-dirty" data-dirty-marker hidden title="Unsaved changes"><span class="sr-only"> (unsaved changes)</span></span></a>
+    <a role="tab" href="#history" id="tab-history" aria-controls="history" class="tab">History <span class="tab-count">{{len .Versions}}</span></a>
+    <a role="tab" href="#links" id="tab-links" aria-controls="links" class="tab">Links <span class="tab-count">{{len .Links}}</span></a>
+    <a role="tab" href="#activity" id="tab-activity" aria-controls="activity" class="tab">Activity <span class="tab-count">{{len .Activity}}</span></a>
+  </div>
+  <section id="content" role="tabpanel" aria-labelledby="tab-content" data-tab-panel>
   <form id="memory-editor" data-editor data-title="{{.Title}}"{{if .Unsaved}} data-unsaved{{end}}{{if .Editable}} method="post" action="{{.Base}}/update{{.FilterQuery}}" hx-post="{{.Base}}/update{{.FilterQuery}}" hx-target="#detail-pane" hx-swap="outerHTML"{{end}}>
     <input type="hidden" name="csrf" value="{{.CSRF}}">
     <input type="hidden" name="version" value="{{.Form.Version}}">
-    <header class="mb-3">
-      <div class="mb-1 flex items-center gap-2 text-meta text-ink-muted">
-        <span class="chip chip-warn" data-dirty-marker hidden>Unsaved changes</span>
-        <span>{{if .Conflict}}Your edit is based on version {{.Form.Version}}; the latest is version {{.Version}}{{else if .Editable}}Editing version {{.Version}}{{else}}Read only: version {{.Version}}{{end}}</span>
-        <button type="button" class="btn ml-auto px-2 py-0.5" data-expand-toggle aria-pressed="false" aria-keyshortcuts="F" hidden>Expand <kbd class="kbd">F</kbd></button>
+      {{if .FormError}}<p role="alert" class="mb-3 notice-danger p-3">{{.FormError}}{{if .Conflict}} <a href="#history" class="underline">Load latest version</a> to compare, or <a href="{{.Base}}{{.FilterQuery}}" hx-get="{{.Base}}{{.FilterQuery}}" hx-target="#detail-pane" hx-swap="outerHTML" class="underline">discard your changes and reload</a>.{{end}}</p>{{end}}
+      <div class="mb-2 flex flex-wrap items-center gap-2" data-markdown-bar hidden>
+        <div role="group" aria-label="Content view" class="flex gap-1">
+          <button type="button" class="btn md-view px-2 py-0.5" data-markdown-view="write" aria-controls="memory-content" aria-pressed="{{if .Editable}}true{{else}}false{{end}}">{{if .Editable}}Write{{else}}Source{{end}}</button>
+          <button type="button" class="btn md-view px-2 py-0.5" data-markdown-view="preview" aria-controls="memory-preview" aria-pressed="{{if .Editable}}false{{else}}true{{end}}"{{if .Editable}} hx-post="{{.Base}}/preview" hx-include="#memory-content" hx-target="#memory-preview" hx-swap="innerHTML"{{end}}>Preview</button>
+        </div>
+        {{if .Editable}}<markdown-toolbar for="memory-content" aria-label="Formatting" class="ml-auto flex flex-wrap gap-1" data-markdown-toolbar>
+          <md-bold class="btn md-tool" title="Bold (Ctrl B)" aria-label="Bold" aria-keyshortcuts="Control+B Meta+B"><b>B</b></md-bold>
+          <md-italic class="btn md-tool" title="Italic (Ctrl I)" aria-label="Italic" aria-keyshortcuts="Control+I Meta+I"><i>I</i></md-italic>
+          <md-header level="2" class="btn md-tool" title="Heading" aria-label="Heading">H</md-header>
+          <md-code class="btn md-tool font-mono" title="Code (a code block when several lines are selected)" aria-label="Code">&lt;&gt;</md-code>
+          <md-link class="btn md-tool" title="Link" aria-label="Link">Link</md-link>
+          <md-unordered-list class="btn md-tool" title="Bulleted list" aria-label="Bulleted list">&bull; List</md-unordered-list>
+          <md-ordered-list class="btn md-tool" title="Numbered list" aria-label="Numbered list">1. List</md-ordered-list>
+          <md-task-list class="btn md-tool" title="Task list" aria-label="Task list">[ ] Tasks</md-task-list>
+          <md-quote class="btn md-tool" title="Quote" aria-label="Quote">&ldquo;</md-quote>
+        </markdown-toolbar>{{end}}
       </div>
-      <h1><label for="memory-title" class="sr-only">Title</label>
-        <input id="memory-title" type="text" name="title" value="{{.Form.Title}}" data-original="{{.Stored.Title}}" required class="field w-full text-page font-bold"{{if not .Editable}} disabled{{end}}>
-      </h1>
-      <p class="mt-2 text-meta text-ink-muted">
-        <span class="chip chip-type-{{typeClass .Type}}">{{.Type}}</span> <span class="chip chip-status-{{.Status}}">{{.Status}}</span> · <span>{{.Project}}</span>{{if .Slug}} · <span class="font-mono">{{.Slug}}</span>{{end}} · <span>version {{.Version}}</span> · <span>updated {{.UpdatedAt}}</span>
-      </p>
-      <p class="mt-1 text-meta text-ink-muted">Created {{.CreatedAt}}{{if .ExpiresAt}}, expires {{.ExpiresAt}}{{end}}. {{.Embedding}}</p>
-    </header>
-    <nav aria-label="Memory sections" data-section-nav class="section-nav mb-3 flex flex-wrap gap-x-4 gap-y-1 border-b border-line text-body">
-      <a href="#content" aria-current="true" class="pb-2 hover:underline">Content</a>
-      <a href="#versions" class="pb-2 hover:underline">Versions {{len .Versions}}</a>
-      <a href="#links" class="pb-2 hover:underline">Links {{len .Links}}</a>
-      <a href="#activity" class="pb-2 hover:underline">Activity</a>
-    </nav>
-    <section id="content" data-section-fold="content">
-      <h2 class="section-heading"><button type="button" class="section-toggle" data-section-toggle aria-expanded="true" aria-controls="content-body">Content</button></h2>
-      {{if .FormError}}<p role="alert" class="mb-3 notice-danger p-3">{{.FormError}}{{if .Conflict}} <a href="#versions" class="underline">Load latest version</a> to compare, or <a href="{{.Base}}{{.FilterQuery}}" hx-get="{{.Base}}{{.FilterQuery}}" hx-target="#detail-pane" hx-swap="outerHTML" class="underline">discard your changes and reload</a>.{{end}}</p>{{end}}
-      <div id="content-body" data-section-body>
-      <label for="memory-content" class="sr-only">Content</label>
-      <textarea id="memory-content" name="content" rows="14" data-original="{{.Stored.Content}}" required class="field sheet-ruled block w-full resize-y"{{if not .Editable}} disabled{{end}}>
+      <label for="memory-content" class="sr-only">Content (Markdown)</label>
+      <textarea id="memory-content" name="content" rows="14" data-original="{{.Stored.Content}}" required class="field sheet-ruled block w-full resize-y"{{if not .Editable}} disabled hidden{{end}}>
 {{.Form.Content}}</textarea>
-      <div class="mt-3 grid gap-3 min-[600px]:grid-cols-2" data-editor-meta>
-        <div class="flex flex-col gap-1 text-body" data-tags>
-          <label for="memory-tags" data-tags-label>Tags <span data-tags-hint>(comma-separated)</span></label>
-          <input type="text" name="tags" value="{{.Form.Tags}}" data-original="{{.Stored.Tags}}" id="memory-tags" data-tags-source class="field"{{if not .Editable}} disabled{{end}}>
-          <div class="tag-chips field flex flex-wrap items-center gap-1" data-tag-chips hidden>
-            <ul class="flex flex-wrap gap-1" data-tag-list aria-label="Tags"></ul>
-            <input type="text" id="memory-tag-entry" data-tag-entry autocomplete="off" placeholder="Add tag" aria-describedby="memory-tag-help" class="tag-entry min-w-24 flex-1">
-          </div>
-          <span id="memory-tag-help" class="sr-only">Enter or comma adds a tag; Backspace in an empty field removes the last one.</span>
-          <template data-tag-chip><li class="chip inline-flex items-center gap-1"><span data-tag-text></span><button type="button" class="tag-remove" data-tag-remove>&times;</button></li></template>
-        </div>
-        <label class="flex flex-col gap-1 text-body">Type
-          <select name="type" data-original="{{.Stored.Type}}" class="field"{{if not .Editable}} disabled{{end}}>
-            {{range .Types}}<option value="{{.}}"{{if eq . $.Form.Type}} selected{{end}}>{{.}}</option>{{end}}
-          </select>
-        </label>
-        <div class="flex flex-col gap-1 text-body">
-          <label for="memory-expires">Expires (UTC, empty means never)</label>
-          <div class="flex gap-2">
-            <input type="date" name="expires_at" value="{{.Form.ExpiresAt}}" data-original="{{.Stored.ExpiresAt}}" id="memory-expires" class="field min-w-0 flex-1"{{if not .Editable}} disabled{{end}}>
-            {{if .Editable}}<button type="button" class="btn" data-clear-expiry aria-controls="memory-expires" hidden>Never</button>{{end}}
-          </div>
-          <input type="hidden" name="expires_at_original" value="{{.Form.ExpiresAtOriginal}}">
-        </div>
-        <label class="flex items-center gap-2 self-end text-body">
-          <input type="checkbox" name="pinned" value="on" data-original="{{if .Stored.Pinned}}on{{end}}"{{if .Form.Pinned}} checked{{end}}{{if not .Editable}} disabled{{end}}> Pinned
-        </label>
-      </div>
-      </div>
-    </section>
+      <div id="memory-preview" role="region" aria-label="Rendered content" aria-live="polite" class="markdown-body rounded-md border border-line bg-sheet px-3 py-3"{{if .Editable}} hidden{{end}}>{{template "markdown_preview" (markdownPreview .Form.Content)}}</div>
   </form>
   <div class="mt-3 flex flex-wrap items-start gap-2" data-primary-actions>
     {{if .Editable}}<button type="submit" form="memory-editor" class="btn btn-primary" data-save aria-keyshortcuts="Control+S Meta+S">Save</button>
     <a href="{{.Base}}{{.FilterQuery}}" hx-get="{{.Base}}{{.FilterQuery}}" hx-target="#detail-pane" hx-swap="outerHTML" class="btn" data-discard>Discard</a>{{end}}
-    {{if not .ReadOnly}}<details class="more-actions relative">
-      <summary class="btn">More actions</summary>
-      <div class="absolute left-0 z-10 mt-1 flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-3 rounded-md border border-line bg-sheet p-3 shadow-md">
+    {{if not .ReadOnly}}<details class="more-actions relative ml-auto">
+      <summary class="btn" aria-label="More actions" title="More actions"><span aria-hidden="true">&middot;&middot;&middot;</span><span class="sr-only">More actions</span></summary>
+      <div class="absolute right-0 z-10 mt-1 flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-3 rounded-md border border-line bg-sheet p-3 shadow-md">
+        <p data-memory-info class="text-meta text-ink-muted">Version {{.Version}}. {{.Embedding}}</p>
         <form method="post" action="{{.Base}}/feedback{{.FilterQuery}}" hx-post="{{.Base}}/feedback{{.FilterQuery}}" hx-target="#detail-pane" hx-swap="outerHTML" class="flex flex-col gap-2">
           <input type="hidden" name="csrf" value="{{.CSRF}}">
           <label class="flex flex-col gap-1 text-body">Feedback
@@ -110,38 +98,45 @@
           <button type="submit" class="btn self-start">Supersede</button>
         </form>
         {{if .CanDelete}}<hr class="border-line">
-        <form method="post" action="{{.Base}}/delete{{.FilterQuery}}" hx-post="{{.Base}}/delete{{.FilterQuery}}" hx-target="#detail-pane" hx-swap="outerHTML" hx-confirm="Delete this memory?">
+        <form method="post" action="{{.Base}}/delete{{.FilterQuery}}" hx-post="{{.Base}}/delete{{.FilterQuery}}" hx-target="#detail-pane" hx-swap="outerHTML" hx-confirm="Delete this memory?" data-delete-memory>
           <input type="hidden" name="csrf" value="{{.CSRF}}">
           <button type="submit" class="btn btn-danger">Delete</button>
+        </form>{{end}}
+        {{if .CanPurge}}<hr class="border-line">
+        <form method="post" action="{{.Base}}/purge" class="flex flex-col gap-2">
+          <input type="hidden" name="csrf" value="{{.CSRF}}">
+          <label class="flex flex-col gap-1 text-body">Type <span class="font-mono">{{.Confirm}}</span> to purge permanently
+            <input type="text" name="confirm" required autocomplete="off" class="field">
+          </label>
+          <button type="submit" class="btn btn-danger self-start">Purge</button>
         </form>{{end}}
       </div>
     </details>{{end}}
   </div>
-  <section id="versions" class="mt-6" data-section-fold="versions">
-    <h2 class="section-heading"><button type="button" class="section-toggle" data-section-toggle aria-expanded="true" aria-controls="versions-body">Versions <span class="section-count"><span class="sr-only">(</span>{{len .Versions}}<span class="sr-only">)</span></span></button></h2>
-      <div id="versions-body" data-section-body>
-    {{range .Versions}}
-    <article class="mb-3 rounded-md border border-line bg-sheet p-3">
-      <h3 class="text-body font-bold">Version {{.Version}}{{if .Current}} (current){{end}}</h3>
-      <p class="text-meta text-ink-muted">{{.ChangeKind}} · {{.ChangedAt}} · {{.Type}}</p>
-      {{if .HasDiff}}
-        {{if .DiffNote}}<p class="mt-2 text-meta text-ink-muted">{{.DiffNote}}</p>{{else}}
-        <div class="mt-2 text-body"><pre class="whitespace-pre-wrap break-words font-sans">{{range .Diff}}{{if eq .Op "+"}}<span class="block diff-add">{{.Prefix}}{{.Text}}</span>{{else if eq .Op "-"}}<span class="block diff-del">{{.Prefix}}{{.Text}}</span>{{else}}<span class="block">{{.Prefix}}{{.Text}}</span>{{end}}{{end}}</pre></div>{{end}}
-      {{else}}
-        <div class="mt-2 text-body"><pre class="whitespace-pre-wrap break-words font-sans">{{.Content}}</pre></div>
-      {{end}}
-      {{if and (not .Current) (not $.ReadOnly)}}<form method="post" action="{{$.Base}}/restore{{$.FilterQuery}}" hx-post="{{$.Base}}/restore{{$.FilterQuery}}" hx-target="#detail-pane" hx-swap="outerHTML" class="mt-2">
-        <input type="hidden" name="csrf" value="{{$.CSRF}}">
-        <input type="hidden" name="version" value="{{.Version}}">
-        <button type="submit" class="btn px-2 py-0.5">Restore this version</button>
-      </form>{{end}}
-    </article>
-    {{else}}<p class="text-meta text-ink-muted">No versions recorded.</p>{{end}}
-      </div>
   </section>
-  <section id="links" class="mt-6" data-section-fold="links">
-    <h2 class="section-heading"><button type="button" class="section-toggle" data-section-toggle aria-expanded="true" aria-controls="links-body">Links <span class="section-count"><span class="sr-only">(</span>{{len .Links}}<span class="sr-only">)</span></span></button></h2>
-      <div id="links-body" data-section-body>
+  <section id="history" role="tabpanel" aria-labelledby="tab-history" data-tab-panel>
+    <h2 class="sr-only">History</h2>
+    {{with .Compare}}<form method="get" action="{{$.Base}}#history" hx-get="{{$.Base}}/compare" hx-trigger="change" hx-target="#version-diff" hx-swap="innerHTML" class="mb-3 flex flex-wrap items-center gap-2 text-body">
+      {{range $.FilterFields}}<input type="hidden" name="{{.Name}}" value="{{.Value}}">
+      {{end}}<span>Compare</span> {{template "compare_from" .}} <span>with</span> {{template "compare_to" .}}
+      <noscript><button type="submit" class="btn">Compare</button></noscript>
+    </form>
+    <div id="version-diff" aria-live="polite">{{template "compare_block" .}}</div>
+    {{else}}<p class="text-meta text-ink-muted">Only one version.</p>{{end}}
+    <h3 class="rail-label mt-5 mb-2">All versions</h3>
+    <ul class="divide-y divide-line rounded-md border border-line bg-sheet">
+      {{range .Versions}}<li class="flex items-center justify-between gap-2 px-3 py-2" data-version-row>
+        <span><b>v{{.Version}}</b>{{if .Current}} (current){{end}} <span class="text-meta text-ink-muted">{{.ChangeKind}} · {{template "time" .ChangedAt}} · {{.Type}}</span></span>
+        {{if and (not .Current) (not $.ReadOnly)}}<form method="post" action="{{$.Base}}/restore{{$.FilterQuery}}" hx-post="{{$.Base}}/restore{{$.FilterQuery}}" hx-target="#detail-pane" hx-swap="outerHTML">
+          <input type="hidden" name="csrf" value="{{$.CSRF}}">
+          <input type="hidden" name="version" value="{{.Version}}">
+          <button type="submit" class="btn px-2 py-0.5">Restore</button>
+        </form>{{end}}
+      </li>{{else}}<li class="px-3 py-2 text-meta text-ink-muted">No versions recorded.</li>{{end}}
+    </ul>
+  </section>
+  <section id="links" role="tabpanel" aria-labelledby="tab-links" data-tab-panel>
+    <h2 class="sr-only">Links</h2>
     <ul class="mb-3">
       {{range $i, $link := .Links}}<li class="mb-1 flex items-center gap-2 text-body">
         <span class="shrink-0">{{if .Outgoing}}{{.Kind}} to{{else}}{{.Kind}} from{{end}}</span>
@@ -180,28 +175,55 @@
       </label>
       <button type="submit" class="btn">Add link</button>
     </form>{{end}}
-      </div>
   </section>
-  <section id="activity" class="mt-6" data-section-fold="activity">
-    <h2 class="section-heading"><button type="button" class="section-toggle" data-section-toggle aria-expanded="true" aria-controls="activity-body">Activity <span class="section-count"><span class="sr-only">(</span>{{len .Activity}}<span class="sr-only">)</span></span></button></h2>
-      <div id="activity-body" data-section-body>
+  <section id="activity" role="tabpanel" aria-labelledby="tab-activity" data-tab-panel>
+    <h2 class="sr-only">Activity</h2>
     <ul>
-      {{range .Activity}}<li class="mb-1 text-body"><span class="font-bold">{{.Kind}}</span> · {{.When}} · {{.Summary}}</li>{{else}}<li class="text-meta text-ink-muted">No activity recorded.</li>{{end}}
+      {{range .Activity}}<li class="mb-1 text-body"><span class="font-bold">{{.Kind}}</span> · {{template "time" .When}} · {{.Summary}}</li>{{else}}<li class="text-meta text-ink-muted">No activity recorded.</li>{{end}}
     </ul>
-    {{if .CanPurge}}<div class="mt-6 rounded-md border border-danger p-3">
-      <h3 class="mb-2 font-bold text-danger">Danger zone</h3>
-      <form method="post" action="{{.Base}}/purge" class="flex flex-wrap items-end gap-2">
-        <input type="hidden" name="csrf" value="{{.CSRF}}">
-        <label class="flex flex-col text-body">Type <span class="font-mono">{{.Confirm}}</span> to purge permanently
-          <input type="text" name="confirm" required autocomplete="off" class="field">
-        </label>
-        <button type="submit" class="btn btn-danger">Purge</button>
-      </form>
-    </div>{{end}}
-      </div>
   </section>
+  </div>
+  <aside class="detail-rail" aria-label="Properties">
+      <div class="rail-fields" data-editor-meta>
+        <div class="flex flex-col gap-1 text-body" data-tags>
+          <label for="memory-tags" class="rail-label" data-tags-label>Tags <span data-tags-hint>(comma-separated)</span></label>
+          <input type="text" name="tags" value="{{.Form.Tags}}" data-original="{{.Stored.Tags}}" id="memory-tags" data-tags-source class="field" form="memory-editor"{{if not .Editable}} disabled{{end}}>
+          <div class="tag-chips field flex flex-wrap items-center gap-1" data-tag-chips hidden>
+            <ul class="flex flex-wrap gap-1" data-tag-list aria-label="Tags"></ul>
+            <input type="text" id="memory-tag-entry" data-tag-entry autocomplete="off" placeholder="Add tag" aria-describedby="memory-tag-help" class="tag-entry min-w-24 flex-1" form="memory-editor">
+          </div>
+          <span id="memory-tag-help" class="sr-only">Enter or comma adds a tag; Backspace in an empty field removes the last one.</span>
+          <template data-tag-chip><li class="chip inline-flex items-center gap-1"><span data-tag-text></span><button type="button" class="tag-remove" data-tag-remove>&times;</button></li></template>
+        </div>
+        <label class="flex flex-col gap-1 text-body"><span class="rail-label">Type</span>
+          <select name="type" data-original="{{.Stored.Type}}" class="field" form="memory-editor"{{if not .Editable}} disabled{{end}}>
+            {{range .Types}}<option value="{{.}}"{{if eq . $.Form.Type}} selected{{end}}>{{.}}</option>{{end}}
+          </select>
+        </label>
+        <div class="flex flex-col gap-1 text-body">
+          <label for="memory-expires" class="rail-label">Expires <span class="sr-only">(UTC, empty means never)</span></label>
+          <div class="flex gap-2">
+            <input type="date" name="expires_at" value="{{.Form.ExpiresAt}}" data-original="{{.Stored.ExpiresAt}}" id="memory-expires" class="field min-w-0 flex-1" form="memory-editor"{{if not .Editable}} disabled{{end}}>
+            {{if .Editable}}<button type="button" class="btn" data-clear-expiry aria-controls="memory-expires" hidden>Never</button>{{end}}
+          </div>
+          <input type="hidden" name="expires_at_original" value="{{.Form.ExpiresAtOriginal}}" form="memory-editor">
+        </div>
+        <label class="flex items-center gap-2 text-body">
+          <input type="checkbox" name="pinned" value="on" data-original="{{if .Stored.Pinned}}on{{end}}"{{if .Form.Pinned}} checked{{end}} form="memory-editor"{{if not .Editable}} disabled{{end}}> Pinned
+        </label>
+      </div>
+      <dl class="rail-facts">
+        <div><dt class="rail-label">Project</dt><dd>{{.Project}}</dd></div>
+        <div><dt class="rail-label">Updated</dt><dd>{{template "time" .UpdatedAt}}</dd></div>
+        <div><dt class="rail-label">Created</dt><dd>{{template "time" .CreatedAt}}</dd></div>
+        {{if .Slug}}<div><dt class="rail-label">Slug</dt><dd class="break-all font-mono text-meta">{{.Slug}}</dd></div>{{end}}
+      </dl>
+  </aside>
+  </div>
   {{end}}
 </section>
+{{define "time"}}<time datetime="{{.ISO}}" title="{{.Full}}">{{.Date}}</time>{{end}}
+{{define "markdown_preview"}}{{if .Empty}}<p class="text-ink-muted">Nothing to preview.</p>{{else}}{{.HTML}}{{end}}{{end}}
 {{define "detail_response"}}{{template "detail.html" .}}
 {{template "toasts_oob" .}}{{with .Row}}
 {{template "memory_row.html" .}}{{end}}{{end}}
