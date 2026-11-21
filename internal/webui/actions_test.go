@@ -598,12 +598,12 @@ func TestUpdateConflictKeepsSubmittedValues(t *testing.T) {
 	require.Equal(t, http.StatusConflict, rec.Code)
 	body := rec.Body.String()
 	assert.True(t, strings.HasPrefix(body, `<section id="detail-pane"`))
-	editor := editorForm(t, body)
+	editor := editorFields(t, body)
 	assert.Contains(t, editor, `value="Mine"`)
 	assert.Contains(t, editor, "typed text</textarea>")
 	assert.Contains(t, editor, `name="version" value="1"`, "the stale version stays so a re-save conflicts again")
 	assert.Contains(t, body, conflictMessage)
-	assert.Contains(t, body, `<a href="#versions" class="underline">Load latest version</a>`)
+	assert.Contains(t, body, `<a href="#history" class="underline">Load latest version</a>`)
 }
 
 func TestUpdateSecretKeepsSubmittedValues(t *testing.T) {

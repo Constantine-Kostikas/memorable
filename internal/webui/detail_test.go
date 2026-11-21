@@ -636,7 +636,9 @@ func editorForm(t *testing.T, body string) string {
 // editorFields is the editor form plus the rail, whose fields submit with it through form="memory-editor".
 func editorFields(t *testing.T, body string) string {
 	t.Helper()
-	return editorForm(t, body) + detailRail(t, body)
+	header := regexp.MustCompile(`(?s)<header class="detail-header.*?</header>`).FindString(body)
+	require.NotEmpty(t, header, "detail header")
+	return header + editorForm(t, body) + detailRail(t, body)
 }
 
 func TestDetailIsAnEditor(t *testing.T) {
@@ -655,7 +657,7 @@ func TestDetailIsAnEditor(t *testing.T) {
 	assert.Contains(t, editor, `data-editor`)
 	assert.Contains(t, editor, `data-title="Port map"`)
 	assert.Contains(t, editor, `action="`+f.path("/update")+`"`)
-	assert.Contains(t, editor, `name="title" value="Port map"`)
+	assert.Regexp(t, `name="title" value="Port map"[^>]*form="memory-editor"`, body)
 	assert.Contains(t, editor, "line one\n&lt;img src=x onerror=alert(1)&gt;</textarea>")
 	fields := editorFields(t, body)
 	assert.Contains(t, fields, `name="tags" value="go, ops"`)
@@ -666,23 +668,14 @@ func TestDetailIsAnEditor(t *testing.T) {
 	assert.Regexp(t, `name="pinned"[^>]*checked`, fields)
 	assert.Contains(t, editor, `name="version" value="2"`)
 	assert.Contains(t, editor, `name="csrf" value="`+f.s.session.csrf+`"`)
-	assert.Regexp(t, `<span[^>]*data-dirty-marker[^>]*hidden`, editor)
+	assert.Regexp(t, `<span[^>]*data-dirty-marker[^>]*hidden`, body)
 	assert.NotContains(t, editor[1:], "<form", "no form is nested in the editor")
 	assert.Regexp(t, `<button[^>]*form="memory-editor"[^>]*data-save`, body)
 	assert.Regexp(t, `<a href="`+regexp.QuoteMeta(f.path(""))+`"[^>]*data-discard>Discard</a>`, body)
-	nav := regexp.MustCompile(`(?s)<nav aria-label="Memory sections"[^>]*>.*?</nav>`).FindString(body)
-	require.NotEmpty(t, nav, "section navigation missing")
-	assert.NotContains(t, body, `role="tab`, "sections are in-page links, not tabs")
-	assert.Contains(t, nav, `<a href="#content" aria-current="true"`, "Content is current without JS")
-	assert.Equal(t, 1, strings.Count(nav, "aria-current"))
-	for _, section := range []string{"content", "versions", "links", "activity"} {
-		assert.Contains(t, nav, `<a href="#`+section+`"`, section)
-		assert.Contains(t, body, `id="`+section+`"`, section)
-	}
 	assert.Contains(t, fields, "(UTC, empty means never)")
 }
 
-func TestDetailSectionsFoldOpenWithoutJS(t *testing.T) {
+func TestDetailTabsRenderAllPanelsWithoutJS(t *testing.T) {
 	t.Parallel()
 	f := newDetailFixture(t, nil)
 
@@ -690,16 +683,25 @@ func TestDetailSectionsFoldOpenWithoutJS(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rec.Code)
 	body := rec.Body.String()
+	assert.Contains(t, body, `<div role="tablist" aria-label="Memory sections" data-tabs`)
+	for _, tab := range []string{"content", "history", "links", "activity"} {
+		assert.Regexp(t, `<a role="tab" href="#`+tab+`" id="tab-`+tab+`" aria-controls="`+tab+`"`, body, tab)
+		assert.Regexp(t, `<section id="`+tab+`" role="tabpanel" aria-labelledby="tab-`+tab+`"[^>]*data-tab-panel>`, body, tab)
+	}
+	assert.Regexp(t, `id="tab-history"[^>]*>History <span class="tab-count">2</span>`, body)
+	assert.Regexp(t, `id="tab-links"[^>]*>Links <span class="tab-count">1</span>`, body)
+	assert.NotContains(t, body, "data-section-fold")
+	assert.NotContains(t, body, "data-section-nav")
+	assert.NotRegexp(t, `data-tab-panel[^>]*hidden`, body)
+	content := regexp.MustCompile(`(?s)<section id="content" role="tabpanel".*?</section>`).FindString(body)
+	assert.Contains(t, content, "data-primary-actions", "Save and the menu belong to the Content tab")
 	script, err := os.ReadFile("static/app.js")
 	require.NoError(t, err)
-	sections := []string{"content", "versions", "links", "activity"}
-	assert.Contains(t, string(script), `var SECTIONS = ['`+strings.Join(sections, `', '`)+`'];`, "app.js folds the same sections")
-	for _, section := range sections {
-		assert.Regexp(t, `<section id="`+section+`"[^>]*data-section-fold="`+section+`"`, body, section)
-		assert.Regexp(t, `<h2 class="section-heading"><button type="button"[^>]*data-section-toggle aria-expanded="true" aria-controls="`+section+`-body">`, body, section)
-		assert.Contains(t, body, `<div id="`+section+`-body" data-section-body>`, section)
-	}
-	assert.Regexp(t, `aria-controls="links-body">Links <span class="section-count"><span class="sr-only">\(</span>\d+<span class="sr-only">\)</span></span>`, body)
+	assert.Contains(t, string(script), `var TABS = ['content', 'history', 'links', 'activity'];`)
+	assert.Contains(t, string(script), `versions: 'history'`)
+	assert.Contains(t, string(script), "'beforematch'")
+	assert.NotContains(t, string(script), "COLLAPSED_KEY")
+	assert.NotContains(t, string(script), "data-section-fold")
 }
 
 func TestPristineEditorMatchesItsOriginals(t *testing.T) {
@@ -774,7 +776,7 @@ func TestReadOnlyStatesDisableFields(t *testing.T) {
 
 			require.Equal(t, http.StatusOK, rec.Code)
 			body := rec.Body.String()
-			editor := editorForm(t, body)
+			editor := editorFields(t, body)
 			assert.Regexp(t, `<input[^>]*name="title"[^>]*disabled`, editor)
 			assert.Regexp(t, `<textarea[^>]*name="content"[^>]*disabled`, editor)
 			assert.NotContains(t, body, "data-save")
