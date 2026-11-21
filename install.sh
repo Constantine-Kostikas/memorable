@@ -4,7 +4,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/constantine-kostikas/memorable/main/install.sh | sh
 #
 # Environment:
-#   MEMORABLE_VERSION      release tag to install (default: newest release, pre-releases included)
+#   MEMORABLE_VERSION      release tag to install (default: newest stable release, else newest pre-release)
 #   MEMORABLE_INSTALL_DIR  target directory (default: ~/.local/bin)
 set -eu
 
@@ -62,15 +62,18 @@ highest_semver() {
 		for (i = 1; i <= n && i <= m; i++) if ((c = ident_cmp(x[i], y[i])) != 0) return c
 		return (n < m) ? -1 : (n > m)
 	}
-	/^v?[0-9]+\.[0-9]+\.[0-9]+/ { if (best == "" || semver_cmp($0, best) > 0) best = $0 }
-	END { print best }
+	/^v?[0-9]+\.[0-9]+\.[0-9]+/ {
+		if (best == "" || semver_cmp($0, best) > 0) best = $0
+		if ($0 !~ /-/ && (stable == "" || semver_cmp($0, stable) > 0)) stable = $0
+	}
+	END { print (stable != "" ? stable : best) }
 	'
 }
 
 tag="${MEMORABLE_VERSION:-}"
 if [ -z "$tag" ]; then
-	# The "latest release" endpoint skips pre-releases and the list is not in version order,
-	# so pick the highest semver tag.
+	# The list is not in version order, and the "latest release" endpoint skips pre-releases,
+	# so pick the highest stable tag, or the highest pre-release when there is no stable one.
 	tag=$(curl -fsSL "https://api.github.com/repos/$repo/releases?per_page=100" |
 		sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | highest_semver)
 	[ -n "$tag" ] || fail "could not find the newest release of $repo"
@@ -80,7 +83,8 @@ archive="memorable_${os}_${arch}.tar.gz"
 base="https://github.com/$repo/releases/download/$tag"
 
 tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT INT TERM
+trap 'rm -rf "$tmp"' EXIT
+trap 'exit 1' INT TERM
 
 echo "Downloading memorable $tag for $os/$arch"
 curl -fsSL -o "$tmp/$archive" "$base/$archive" || fail "download failed: $base/$archive"
