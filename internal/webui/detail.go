@@ -128,12 +128,12 @@ type detailView struct {
 	Compare     *compareView
 	// FilterFields are the list filter as hidden inputs, so the no-JS compare form keeps it.
 	FilterFields []filterField
-	Links       []linkView
-	Activity    []activityEntry
-	Notice      string
-	Error       string
-	FormError   string
-	Conflict    bool
+	Links        []linkView
+	Activity     []activityEntry
+	Notice       string
+	Error        string
+	FormError    string
+	Conflict     bool
 	// Row, set after a successful pane action, refreshes the memory's list row out of band.
 	Row *memoryRow
 	// listRow is the memory's list row as loaded; quarantined memories have none.
