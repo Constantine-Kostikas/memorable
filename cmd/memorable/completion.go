@@ -78,7 +78,7 @@ func registerCompletions(root *cobra.Command, d deps, flags *rootFlags) {
 	mustFlagCompletion(mustFind(root, "list"), "type", types)
 	mustFlagCompletion(mustFind(root, "profile", "add"), "type", types)
 	mustFlagCompletion(mustFind(root, "list"), "status", cobra.FixedCompletions(listStatusCompletions, cobra.ShellCompDirectiveNoFileComp))
-	mustFlagCompletion(mustFind(root, "password"), "role", cobra.FixedCompletions([]cobra.Completion{roleApp}, cobra.ShellCompDirectiveNoFileComp))
+	mustFlagCompletion(mustFind(root, "change-password"), "role", cobra.FixedCompletions([]cobra.Completion{roleAdmin, roleApp}, cobra.ShellCompDirectiveNoFileComp))
 
 	export := mustFind(root, "export")
 	mustFlagCompletion(export, "format", cobra.FixedCompletions([]cobra.Completion{"json", "md"}, cobra.ShellCompDirectiveNoFileComp))

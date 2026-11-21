@@ -148,6 +148,7 @@ func TestRulesDenyUI(t *testing.T) {
 	t.Parallel()
 	_, _, deny := Rules("/home/x/.config/memorable/credentials.json")
 	assert.Contains(t, deny, "Bash(memorable ui:*)")
+	assert.Contains(t, deny, "Bash(memorable change-password:*)")
 }
 
 func TestRules_AllowsTagVocabulary(t *testing.T) {
