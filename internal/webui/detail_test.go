@@ -271,7 +271,7 @@ func TestDetailTabs(t *testing.T) {
 	assert.Contains(t, body, "line one\n&lt;img src=x onerror=alert(1)&gt;</textarea>")
 	assert.NotContains(t, body, hostile)
 	assert.Contains(t, body, "&lt;img src=x onerror=alert(1)&gt;")
-	assert.Contains(t, body, "Version 1")
+	assert.Contains(t, body, `<b>v1</b>`)
 	assert.Contains(t, body, "- old line")
 	assert.Contains(t, body, "&#43; line two")
 	assert.Contains(t, body, "related")
@@ -953,4 +953,56 @@ func TestDetailDatesShowDateWithTimeOnHover(t *testing.T) {
 	assert.Contains(t, body, `<time datetime="2026-11-01T09:00:00Z" title="2026-11-01 09:00 UTC">2026-11-01</time>`)
 	assert.Contains(t, body, `<time datetime="2026-11-03T09:00:00Z" title="2026-11-03 09:00 UTC">2026-11-03</time>`)
 	assert.NotContains(t, body, "2026-11-02 09:00 UTC<")
+}
+
+func selectedOption(t *testing.T, body, id string) string {
+	t.Helper()
+	sel := regexp.MustCompile(`(?s)<select id="` + id + `".*?</select>`).FindString(body)
+	require.NotEmpty(t, sel, id)
+	return regexp.MustCompile(`<option value="(\d+)" selected>`).FindStringSubmatch(sel)[1]
+}
+
+func TestHistoryDefaultsToPreviousVersusCurrent(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, nil)
+
+	body := send(f.h, http.MethodGet, f.path(""), "", withCookie(f.c), withHeader("HX-Request", "true")).Body.String()
+
+	assert.Equal(t, "1", selectedOption(t, body, "compare-from"))
+	assert.Equal(t, "2", selectedOption(t, body, "compare-to"))
+	assert.Contains(t, body, "v2 · 2026-11-02 (current)")
+	assert.Contains(t, body, `hx-get="`+f.path("/compare")+`" hx-trigger="change" hx-target="#version-diff"`)
+	assert.Equal(t, 1, strings.Count(body, "- old line"), "only the comparison shows a diff")
+	assert.Regexp(t, `(?s)<li[^>]*data-version-row>.*?<b>v1</b>.*?>Restore</button>`, body)
+}
+
+func TestHistoryWithOneVersion(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, func(m *detailMemories, _ uuid.UUID) { m.history = m.history[:1] })
+
+	body := send(f.h, http.MethodGet, f.path(""), "", withCookie(f.c), withHeader("HX-Request", "true")).Body.String()
+
+	assert.Contains(t, body, "Only one version.")
+	assert.NotContains(t, body, `id="compare-from"`)
+}
+
+func TestHistoryCompareWithoutJSKeepsFilter(t *testing.T) {
+	t.Parallel()
+	f := newDetailFixture(t, nil)
+
+	rec := send(f.h, http.MethodGet, f.path("?from=2&to=1&q=port&tag=go"), "", withCookie(f.c))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	body := rec.Body.String()
+	form := regexp.MustCompile(`(?s)<form method="get" action="` + regexp.QuoteMeta(f.path("")) + `#history".*?</form>`).FindString(body)
+	require.NotEmpty(t, form, "compare form")
+	assert.Contains(t, form, `<input type="hidden" name="q" value="port">`)
+	assert.Contains(t, form, `<input type="hidden" name="tag" value="go">`)
+	assert.Contains(t, body, "- old line")
+	assert.Equal(t, "1", selectedOption(t, body, "compare-from"))
+
+	bad := send(f.h, http.MethodGet, f.path("?from=x&to=1"), "", withCookie(f.c))
+	require.Equal(t, http.StatusOK, bad.Code)
+	assert.Contains(t, bad.Body.String(), "Pick two different versions of this memory.")
+	assert.Equal(t, "2", selectedOption(t, bad.Body.String(), "compare-to"))
 }

@@ -116,23 +116,24 @@
   </section>
   <section id="history" role="tabpanel" aria-labelledby="tab-history" data-tab-panel>
     <h2 class="sr-only">History</h2>
-    {{range .Versions}}
-    <article class="mb-3 rounded-md border border-line bg-sheet p-3">
-      <h3 class="text-body font-bold">Version {{.Version}}{{if .Current}} (current){{end}}</h3>
-      <p class="text-meta text-ink-muted">{{.ChangeKind}} · {{template "time" .ChangedAt}} · {{.Type}}</p>
-      {{if .HasDiff}}
-        {{if .DiffNote}}<p class="mt-2 text-meta text-ink-muted">{{.DiffNote}}</p>{{else}}
-        <div class="mt-2 text-body"><pre class="whitespace-pre-wrap break-words font-sans">{{range .Diff}}{{if eq .Op "+"}}<span class="block diff-add">{{.Prefix}}{{.Text}}</span>{{else if eq .Op "-"}}<span class="block diff-del">{{.Prefix}}{{.Text}}</span>{{else}}<span class="block">{{.Prefix}}{{.Text}}</span>{{end}}{{end}}</pre></div>{{end}}
-      {{else}}
-        <div class="mt-2 text-body"><pre class="whitespace-pre-wrap break-words font-sans">{{.Content}}</pre></div>
-      {{end}}
-      {{if and (not .Current) (not $.ReadOnly)}}<form method="post" action="{{$.Base}}/restore{{$.FilterQuery}}" hx-post="{{$.Base}}/restore{{$.FilterQuery}}" hx-target="#detail-pane" hx-swap="outerHTML" class="mt-2">
-        <input type="hidden" name="csrf" value="{{$.CSRF}}">
-        <input type="hidden" name="version" value="{{.Version}}">
-        <button type="submit" class="btn px-2 py-0.5">Restore this version</button>
-      </form>{{end}}
-    </article>
-    {{else}}<p class="text-meta text-ink-muted">No versions recorded.</p>{{end}}
+    {{with .Compare}}<form method="get" action="{{$.Base}}#history" hx-get="{{$.Base}}/compare" hx-trigger="change" hx-target="#version-diff" hx-swap="innerHTML" class="mb-3 flex flex-wrap items-center gap-2 text-body">
+      {{range $.FilterFields}}<input type="hidden" name="{{.Name}}" value="{{.Value}}">
+      {{end}}<span>Compare</span> {{template "compare_from" .}} <span>with</span> {{template "compare_to" .}}
+      <noscript><button type="submit" class="btn">Compare</button></noscript>
+    </form>
+    <div id="version-diff" aria-live="polite">{{template "compare_block" .}}</div>
+    {{else}}<p class="text-meta text-ink-muted">Only one version.</p>{{end}}
+    <h3 class="rail-label mt-5 mb-2">All versions</h3>
+    <ul class="divide-y divide-line rounded-md border border-line bg-sheet">
+      {{range .Versions}}<li class="flex items-center justify-between gap-2 px-3 py-2" data-version-row>
+        <span><b>v{{.Version}}</b>{{if .Current}} (current){{end}} <span class="text-meta text-ink-muted">{{.ChangeKind}} · {{template "time" .ChangedAt}} · {{.Type}}</span></span>
+        {{if and (not .Current) (not $.ReadOnly)}}<form method="post" action="{{$.Base}}/restore{{$.FilterQuery}}" hx-post="{{$.Base}}/restore{{$.FilterQuery}}" hx-target="#detail-pane" hx-swap="outerHTML">
+          <input type="hidden" name="csrf" value="{{$.CSRF}}">
+          <input type="hidden" name="version" value="{{.Version}}">
+          <button type="submit" class="btn px-2 py-0.5">Restore</button>
+        </form>{{end}}
+      </li>{{else}}<li class="px-3 py-2 text-meta text-ink-muted">No versions recorded.</li>{{end}}
+    </ul>
   </section>
   <section id="links" role="tabpanel" aria-labelledby="tab-links" data-tab-panel>
     <h2 class="sr-only">Links</h2>

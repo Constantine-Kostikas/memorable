@@ -1,5 +1,7 @@
-{{define "compare_selects"}}<select id="compare-from" name="from" aria-label="Older version" class="field"{{if .OOB}} hx-swap-oob="true"{{end}}>{{range .Options}}<option value="{{.Version}}"{{if eq .Version $.From}} selected{{end}}>{{.Label}}</option>{{end}}</select>
-<select id="compare-to" name="to" aria-label="Newer version" class="field"{{if .OOB}} hx-swap-oob="true"{{end}}>{{range .Options}}<option value="{{.Version}}"{{if eq .Version $.To}} selected{{end}}>{{.Label}}</option>{{end}}</select>{{end}}
+{{define "compare_from"}}<select id="compare-from" name="from" aria-label="Older version" class="field"{{if .OOB}} hx-swap-oob="true"{{end}}>{{range .Options}}<option value="{{.Version}}"{{if eq .Version $.From}} selected{{end}}>{{.Label}}</option>{{end}}</select>{{end}}
+{{define "compare_to"}}<select id="compare-to" name="to" aria-label="Newer version" class="field"{{if .OOB}} hx-swap-oob="true"{{end}}>{{range .Options}}<option value="{{.Version}}"{{if eq .Version $.To}} selected{{end}}>{{.Label}}</option>{{end}}</select>{{end}}
+{{define "compare_selects"}}{{template "compare_from" .}}
+{{template "compare_to" .}}{{end}}
 {{define "compare_block"}}{{if .Message}}<p role="alert" class="notice-danger p-3">{{.Message}}</p>{{else}}
 <p class="text-meta text-ink-muted" data-compare-summary>{{.Summary}}</p>
 {{range .PropertyChanges}}<p class="text-meta text-ink-muted">{{.}}</p>{{end}}

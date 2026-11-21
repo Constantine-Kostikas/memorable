@@ -37,9 +37,6 @@ type versionView struct {
 	ChangeKind string
 	ChangedAt  timeView
 	Current    bool
-	HasDiff    bool
-	DiffNote   string
-	Diff       []diffLine
 }
 
 // linkView is one link from the open memory, labeled by the other memory's title. Hidden marks a
@@ -128,6 +125,9 @@ type detailView struct {
 	CanPurge    bool
 	Confirm     string
 	Versions    []versionView
+	Compare     *compareView
+	// FilterFields are the list filter as hidden inputs, so the no-JS compare form keeps it.
+	FilterFields []filterField
 	Links       []linkView
 	Activity    []activityEntry
 	Notice      string
@@ -225,6 +225,7 @@ func (s *Server) loadDetail(r *http.Request, rc requestContext, id uuid.UUID) (d
 		return view, fmt.Errorf("load activity: %w", err)
 	}
 	view.Versions = versionViews(history, m.Version)
+	view.Compare = detailCompare(history, m.Version, r)
 	view.Links = linkViews(rc.Name, id, fetched.Links, s.linkedMemories(r, rc, linkedIDs(id, fetched.Links)), s.cfg.Now())
 	view.Activity = activityEntries(activity)
 	return view, nil
@@ -279,24 +280,56 @@ func newTimeView(t time.Time) timeView {
 }
 
 func versionViews(history []memory.Version, current int) []versionView {
-	sorted := append([]memory.Version(nil), history...)
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Version < sorted[j].Version })
+	sorted := sortedVersions(history)
 	views := make([]versionView, 0, len(sorted))
-	for i, v := range sorted {
-		view := versionView{
+	for i := len(sorted) - 1; i >= 0; i-- {
+		v := sorted[i]
+		views = append(views, versionView{
 			Version: v.Version, Title: v.Title, Content: v.Content, Tags: v.Tags, Type: v.Type.String(),
 			ChangeKind: v.ChangeKind, ChangedAt: newTimeView(v.ChangedAt), Current: v.Version == current,
-		}
-		if i > 0 {
-			view.HasDiff = true
-			view.Diff, view.DiffNote = versionDiff(sorted[i-1], v)
-		}
-		views = append(views, view)
-	}
-	for i, j := 0, len(views)-1; i < j; i, j = i+1, j-1 {
-		views[i], views[j] = views[j], views[i]
+		})
 	}
 	return views
+}
+
+type filterField struct {
+	Name, Value string
+}
+
+func filterFields(v url.Values) []filterField {
+	keys := make([]string, 0, len(v))
+	for key := range v {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	var fields []filterField
+	for _, key := range keys {
+		for _, value := range v[key] {
+			fields = append(fields, filterField{Name: key, Value: value})
+		}
+	}
+	return fields
+}
+
+// detailCompare is the History tab's comparison: the from and to in the URL (the no-JS compare form),
+// else the previous version against the current one. Nil means fewer than two versions.
+func detailCompare(history []memory.Version, current int, r *http.Request) *compareView {
+	from, to, ok := defaultCompare(history)
+	if !ok {
+		return nil
+	}
+	query := r.URL.Query()
+	if r.Method == http.MethodGet && (query.Has("from") || query.Has("to")) {
+		view, err := compareFromQuery(history, current, r)
+		if err == nil {
+			return &view
+		}
+		view, _ = buildCompare(history, current, from, to)
+		view.Message = compareInputMessage
+		return &view
+	}
+	view, _ := buildCompare(history, current, from, to)
+	return &view
 }
 
 func versionDiff(prev, next memory.Version) ([]diffLine, string) {
@@ -488,6 +521,7 @@ func (s *Server) respondDetail(w http.ResponseWriter, r *http.Request, rc reques
 	}
 	view.ListURL = memoriesURL(rc.Name, filter, nil)
 	view.FilterQuery = withQuery("", filterValues(filter))
+	view.FilterFields = filterFields(filterValues(filter))
 	w.Header().Set("Vary", "HX-Request, HX-Current-URL")
 	if fragment {
 		if view.Row != nil {
