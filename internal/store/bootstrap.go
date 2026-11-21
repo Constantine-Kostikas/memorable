@@ -3,9 +3,11 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/constantine-kostikas/memorable/internal/config"
 )
@@ -59,15 +61,38 @@ func ensureAppRole(ctx context.Context, admin *pgx.Conn, role, password string) 
 	if exists {
 		verb = "ALTER"
 	}
+	return execRolePassword(ctx, admin, verb+" ROLE %I WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD %L", role, password)
+}
+
+// ErrRoleMissing reports that a role to alter does not exist.
+var ErrRoleMissing = errors.New("role does not exist")
+
+// SetRolePassword changes an existing role's password. Run it in a transaction to make the change
+// conditional on later steps succeeding.
+func SetRolePassword(ctx context.Context, admin pgx.Tx, role, password string) error {
+	var exists bool
+	if err := admin.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = $1)", role).Scan(&exists); err != nil {
+		return fmt.Errorf("checking role: %w", err)
+	}
+	if !exists {
+		return fmt.Errorf("%s: %w", role, ErrRoleMissing)
+	}
+	return execRolePassword(ctx, admin, "ALTER ROLE %I WITH PASSWORD %L", role, password)
+}
+
+type execQuerier interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+func execRolePassword(ctx context.Context, admin execQuerier, template, role, password string) error {
 	// format() quotes the identifier and the password literal server-side; DDL cannot take bind parameters.
 	var stmt string
-	if err := admin.QueryRow(ctx,
-		"SELECT format('"+verb+" ROLE %I WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD %L', $1::text, $2::text)",
-		role, password).Scan(&stmt); err != nil {
+	if err := admin.QueryRow(ctx, "SELECT format('"+template+"', $1::text, $2::text)", role, password).Scan(&stmt); err != nil {
 		return fmt.Errorf("building role statement: %w", err)
 	}
 	if _, err := admin.Exec(ctx, stmt); err != nil {
-		return fmt.Errorf("%s role %s: %w", verb, role, err)
+		return fmt.Errorf("setting role %s: %w", role, err)
 	}
 	return nil
 }
