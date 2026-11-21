@@ -15,6 +15,7 @@ var (
 	ErrQuarantined    = errors.New("memory is quarantined")
 	ErrReadOnly       = errors.New("context is read-only")
 	ErrUnavailable    = errors.New("dependency unavailable")
+	ErrAuthFailed     = errors.New("database rejected the app password")
 	ErrRateLimited    = errors.New("write rate limit reached")
 	ErrSchemaBehind   = errors.New("database schema is behind; run `memorable migrate`")
 	ErrNoContext      = scope.ErrNoContext
