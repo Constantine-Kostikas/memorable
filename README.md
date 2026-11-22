@@ -1,4 +1,6 @@
 # memorable
+[![M8ven Score](https://m8ven.ai/badge/mcp/constantine-kostikas-memorable-839xdh?v=42320f1ff41fe6a7f01f668e2553c9a2)](https://m8ven.ai/mcp/constantine-kostikas-memorable-839xdh?s=readme)
+
 
 Persistent, searchable memory for Claude Code.
 
