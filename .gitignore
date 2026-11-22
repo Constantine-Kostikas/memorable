@@ -9,6 +9,8 @@
 coverage.*
 
 # Tooling scratch
+/.superpowers/
+/docs/superpowers/
 /vendor/
 
 # Editors and OS
