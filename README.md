@@ -13,6 +13,8 @@ Claude Code forgets everything between sessions, and its built-in memory is Mark
 - **Local:** Postgres with pgvector in Docker and embeddings from Ollama, both on `127.0.0.1`.
 - **CLI and web UI** to search, review, and edit what Claude remembers.
 
+![Claude Code asked "how should we store money amounts?" calls memorable and answers from a saved project decision](site/assets/demo.gif)
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="site/assets/ui-dark.png">
   <img src="site/assets/ui-light.png" alt="memorable web UI: a search for 'refund rounding' showing the score breakdown for the top result, with the memory open for editing">
