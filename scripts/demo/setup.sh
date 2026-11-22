@@ -2,14 +2,18 @@
 # Builds an isolated memorable demo: its own Postgres container, config, and credentials,
 # seeded with fictional memories for a payments service. Your real install is not touched.
 #
-#   scripts/demo/setup.sh [dir]     (default dir: ./demo-env)
+#   scripts/demo/setup.sh [dir]     (default dir: /tmp/memorable-demo)
+#
+# Keep dir outside your home directory: Claude Code loads CLAUDE.md files from every
+# parent of the project, so a demo under ~ would pick up your real ~/.claude/CLAUDE.md.
 #   . <dir>/env.sh                  then run memorable, claude, or vhs from <dir>/home/code/payments-api
 #
 # Remove it afterward with: docker rm -f memorable-demo-pg && rm -rf <dir>
 set -eu
 
 root=$(cd "$(dirname "$0")" && pwd)
-dir=$(mkdir -p "${1:-demo-env}" && cd "${1:-demo-env}" && pwd)
+target=${1:-/tmp/memorable-demo}
+dir=$(mkdir -p "$target" && cd "$target" && pwd)
 port=5444
 password=demo-admin
 
