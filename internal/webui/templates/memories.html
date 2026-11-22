@@ -14,7 +14,7 @@
           <select name="project" class="field"
             hx-get="/c/{{.Context}}/memories" hx-trigger="change" hx-target="#memory-rows" hx-include="closest form" hx-push-url="true">
             <option value="">All projects</option>
-            {{range .Projects}}<option value="{{.}}"{{if eq . $.Filter.Project}} selected{{end}}>{{.}}</option>{{end}}
+            {{range .Projects}}<option value="{{.ID}}" title="{{.ID}}"{{if eq .ID $.Filter.Project}} selected{{end}}>{{.Name}}</option>{{end}}
           </select>
         </label>
         <label class="flex flex-col text-body">Type

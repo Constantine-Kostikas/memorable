@@ -2,12 +2,12 @@ package webui
 
 import (
 	"bytes"
+	"cmp"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"slices"
-	"sort"
 	"strings"
 	"time"
 
@@ -66,7 +66,7 @@ type memoryRow struct {
 type memoriesView struct {
 	Context           string
 	Filter            memoryFilter
-	Projects          []string
+	Projects          []projectOption
 	Types             []string
 	Statuses          []string
 	Rows              []memoryRow
@@ -166,7 +166,13 @@ func (s *Server) searchRows(r *http.Request, rc requestContext, view *memoriesVi
 }
 
 // projectOptions lists the context's projects for the filter; a stats failure only drops the choices.
-func (s *Server) projectOptions(r *http.Request, rc requestContext, selected string) []string {
+// projectOption is a project filter choice: the stored project ID and the shorter name shown for it.
+type projectOption struct {
+	ID   string
+	Name string
+}
+
+func (s *Server) projectOptions(r *http.Request, rc requestContext, selected string) []projectOption {
 	var projects []string
 	stats, err := rc.Backend.Store.Stats(r.Context())
 	if err != nil {
@@ -180,8 +186,36 @@ func (s *Server) projectOptions(r *http.Request, rc requestContext, selected str
 	if selected != "" && !slices.Contains(projects, selected) {
 		projects = append(projects, selected)
 	}
-	sort.Strings(projects)
-	return projects
+	return namedProjectOptions(projects)
+}
+
+// namedProjectOptions labels each project ID with its last path segment, sorted by that name.
+// IDs whose last segment is shared with another project keep the full ID so they stay distinguishable.
+func namedProjectOptions(ids []string) []projectOption {
+	counts := make(map[string]int, len(ids))
+	for _, id := range ids {
+		counts[projectName(id)]++
+	}
+	options := make([]projectOption, 0, len(ids))
+	for _, id := range ids {
+		name := projectName(id)
+		if counts[name] > 1 {
+			name = id
+		}
+		options = append(options, projectOption{ID: id, Name: name})
+	}
+	slices.SortFunc(options, func(a, b projectOption) int {
+		return cmp.Or(strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)), strings.Compare(a.ID, b.ID))
+	})
+	return options
+}
+
+func projectName(id string) string {
+	trimmed := strings.TrimRight(id, "/")
+	if i := strings.LastIndex(trimmed, "/"); i >= 0 && i < len(trimmed)-1 {
+		return trimmed[i+1:]
+	}
+	return id
 }
 
 func parseMemoryFilter(q url.Values) (memoryFilter, *uuid.UUID, error) {

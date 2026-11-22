@@ -491,3 +491,23 @@ func TestTagFilterIsCombobox(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(script), "data-lookup-mode")
 }
+
+func TestNamedProjectOptions(t *testing.T) {
+	t.Parallel()
+
+	got := namedProjectOptions([]string{
+		"github.com/acme/zeta",
+		"/home/dev/scratch",
+		"github.com/acme/api",
+		"gitlab.com/other/api",
+		"github.com/acme/Beta",
+	})
+
+	assert.Equal(t, []projectOption{
+		{ID: "github.com/acme/Beta", Name: "Beta"},
+		{ID: "github.com/acme/api", Name: "github.com/acme/api"},
+		{ID: "gitlab.com/other/api", Name: "gitlab.com/other/api"},
+		{ID: "/home/dev/scratch", Name: "scratch"},
+		{ID: "github.com/acme/zeta", Name: "zeta"},
+	}, got)
+}
