@@ -475,8 +475,6 @@ make test-eval          # search quality against a local Ollama
 make lint vuln sec      # static checks
 ```
 
-The design is in [`docs/design.md`](docs/design.md).
-
 ## License
 
 [MIT](LICENSE)
