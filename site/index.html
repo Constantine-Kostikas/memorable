@@ -71,8 +71,8 @@ button,.btn{font:700 .95rem var(--sans);cursor:pointer;border-radius:8px}
 .chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px}
 .chips button{background:transparent;color:var(--console-ink);border:1px solid #2c414c;padding:7px 12px;font-weight:400;font-size:.9rem;text-align:left}
 .chips button:hover{border-color:var(--console-dim)}
-.chips button[aria-pressed=true]{background:var(--mark);color:var(--mark-ink);border-color:var(--mark);font-weight:700}
-.screen{margin:0;min-height:15.5rem;font:.84rem/1.65 var(--mono);white-space:pre-wrap;word-break:break-word;border-top:1px solid #243843;padding-top:16px}
+.chips button[aria-pressed=true]{background:var(--mark);color:var(--mark-ink);border-color:var(--mark)}
+.screen{margin:0;font:.84rem/1.65 var(--mono);white-space:pre-wrap;word-break:break-word;border-top:1px solid #243843;padding-top:16px}
 .screen .you{color:#fff}
 .screen .caret{display:inline-block;width:.55em;height:1.1em;background:var(--console-ink);vertical-align:text-bottom;margin-left:1px;animation:blink 1s steps(1) infinite}
 @keyframes blink{50%{opacity:0}}
@@ -220,14 +220,28 @@ footer{padding:36px 0 56px;color:var(--quiet);font-size:.92rem;border-top:1px so
     .replace(/^- (\d+%)/gm, '- <mark>$1</mark>')
     .replace(/(slug=)([\w/-]+)/g, '$1<span class="slug">$2</span>')
     .replace(/^(Possibly relevant.*|&lt;\/?memory-recall.*)$/gm, '<span class="dim">$1</span>');
+  const result = d => d.output ? paint(d.output)
+    : '<span class="dim">Nothing reached the 70% threshold, so Claude sees only your prompt.</span>';
+  const finished = d => '<span class="you">&gt; ' + esc(d.prompt) + '</span>\n\n' + result(d);
+  function reserveHeight() {
+    const probe = screen.cloneNode(false);
+    probe.removeAttribute('id');
+    probe.setAttribute('aria-hidden', 'true');
+    probe.style.cssText = 'position:absolute;visibility:hidden;min-height:0;width:' + screen.getBoundingClientRect().width + 'px';
+    screen.parentNode.appendChild(probe);
+    const heights = data.map(d => {
+      probe.innerHTML = finished(d);
+      return Math.ceil(probe.getBoundingClientRect().height);
+    });
+    screen.style.minHeight = Math.max(...heights) + 'px';
+    probe.remove();
+  }
   let run = 0;
   async function show(i) {
     const id = ++run;
     [...chips.children].forEach((b, j) => b.setAttribute('aria-pressed', String(i === j)));
     const d = data[i];
-    const result = d.output ? paint(d.output)
-      : '<span class="dim">Nothing reached the 70% threshold, so Claude sees only your prompt.</span>';
-    if (calm) { screen.innerHTML = '<span class="you">&gt; ' + esc(d.prompt) + '</span>\n\n' + result; return; }
+    if (calm) { screen.innerHTML = finished(d); return; }
     for (let n = 0; n <= d.prompt.length; n++) {
       if (id !== run) return;
       screen.innerHTML = '<span class="you">&gt; ' + esc(d.prompt.slice(0, n)) + '</span><span class="caret"></span>';
@@ -235,13 +249,16 @@ footer{padding:36px 0 56px;color:var(--quiet);font-size:.92rem;border-top:1px so
     }
     await new Promise(r => setTimeout(r, 220));
     if (id !== run) return;
-    screen.innerHTML = '<span class="you">&gt; ' + esc(d.prompt) + '</span>\n\n<span class="fade">' + result + '</span>';
+    screen.innerHTML = '<span class="you">&gt; ' + esc(d.prompt) + '</span>\n\n<span class="fade">' + result(d) + '</span>';
   }
   data.forEach((d, i) => {
     const b = document.createElement('button');
     b.type = 'button'; b.textContent = d.prompt; b.onclick = () => show(i);
     chips.appendChild(b);
   });
+  reserveHeight();
+  addEventListener('resize', reserveHeight);
+  document.fonts.ready.then(reserveHeight);
   show(0);
   document.querySelectorAll('[data-copy]').forEach(b => b.addEventListener('click', async () => {
     await navigator.clipboard.writeText(document.getElementById(b.dataset.copy).textContent);
