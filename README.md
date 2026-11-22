@@ -2,9 +2,9 @@
 [![M8ven Score](https://m8ven.ai/badge/mcp/constantine-kostikas-memorable-839xdh?v=42320f1ff41fe6a7f01f668e2553c9a2)](https://m8ven.ai/mcp/constantine-kostikas-memorable-839xdh?s=readme)
 
 
-Persistent, searchable memory for Claude Code.
+Persistent, searchable memory for Claude Code. **[Website and live demo](https://constantine-kostikas.github.io/memorable/)**
 
-Claude Code forgets everything between sessions, and its built-in memory is Markdown files with no search. memorable gives it a real memory store: Claude saves decisions, preferences, and project facts as it works, and finds them again later.
+Claude Code forgets everything between sessions, and its built-in memory is Markdown files with no search index. memorable gives it a real memory store: Claude saves decisions, preferences, and project facts as it works, and finds them again later.
 
 - **Proactive recall:** relevant memories appear on their own at session start and with each prompt.
 - **Good search:** semantic plus keyword ranking, readable slugs like `infra/db-port`, tags, and links between memories.
@@ -12,6 +12,19 @@ Claude Code forgets everything between sessions, and its built-in memory is Mark
 - **Safe by default:** secrets are rejected, prompt injection is quarantined, and every change is versioned.
 - **Local:** Postgres with pgvector in Docker and embeddings from Ollama, both on `127.0.0.1`.
 - **CLI and web UI** to search, review, and edit what Claude remembers.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="site/assets/ui-dark.png">
+  <img src="site/assets/ui-light.png" alt="memorable web UI: a search for 'refund rounding' showing the score breakdown for the top result, with the memory open for editing">
+</picture>
+
+What Claude sees when you type "the refund total is off by a cent, can you look into it?":
+
+```
+<memory-recall search_id="..." count="1">
+- 79% id=... slug=decisions/money-as-integer-cents | Store money as integer cents, never floats: Decided 2026-10-02: all amounts are int64 minor units (cents) with an ISO 4217 currency column. Floats caused a 1-cent rounding bug in refunds (incident INC-212)...
+</memory-recall>
+```
 
 ## Quick start
 
@@ -23,6 +36,7 @@ memorable setup
 Then start a new Claude Code session. See [Requirements](#requirements) first.
 
 - [Quick start](#quick-start)
+- [Why memorable](#why-memorable)
 - [Requirements](#requirements)
 - [Install](#install)
 - [Set up](#set-up)
@@ -37,6 +51,26 @@ Then start a new Claude Code session. See [Requirements](#requirements) first.
 - [Security](#security)
 - [Development](#development)
 - [License](#license)
+
+## Why memorable
+
+There are good alternatives, and the right one depends on what you want Claude to remember.
+
+| | Claude Code built-in memory | [claude-mem](https://github.com/thedotmack/claude-mem) | memorable |
+|---|---|---|---|
+| Stores | Markdown notes per project | Compressed summaries of session activity | Individual facts, decisions, and preferences |
+| Finding them | An index file loaded at session start; Claude reads the files | An index of relevant observations at session start, plus keyword and semantic search tools | Hybrid semantic and keyword search, plus per-prompt recall with a relevance score |
+| Storage | Files under `~/.claude` | SQLite, with Chroma for semantic search | Postgres with pgvector |
+| Scope | Per project | Per project | Contexts by directory, projects within them, and a shared profile |
+| Safety | Plain files you can edit | `<private>` tags keep content out of storage | Versioning, soft deletes, secret scanning, prompt injection quarantine |
+| Setup | None | `npx` installer or plugin (Node, Bun, and uv) | One binary and `memorable setup` (Docker and Ollama) |
+
+Pick memorable when:
+
+- You work across many projects and want facts found by meaning, not by file name.
+- You want recall to be selective: most prompts get no pointers, and the ones that do come with a calibrated relevance score.
+- You want to review and edit what Claude saved, see every version, and keep secrets and injected instructions out.
+- You are fine running Docker and Ollama locally. If you are not, the built-in memory is the lighter choice.
 
 ## Requirements
 

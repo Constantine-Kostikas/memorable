@@ -18,3 +18,6 @@ coverage.*
 .vscode/
 *.swp
 .DS_Store
+
+# Demo environment from scripts/demo/setup.sh
+/demo-env/

@@ -1,0 +1,196 @@
+{
+  "format": "memorable-export",
+  "version": 1,
+  "context": "work",
+  "exported_at": "2026-11-22T00:00:00Z",
+  "memories": [
+    {
+      "id": "00000000-0000-0000-0000-000000000000",
+      "slug": "infra/db-port",
+      "project": "payments-api",
+      "type": "project",
+      "title": "Local Postgres listens on port 5433",
+      "content": "The payments-api dev database runs in Docker on 127.0.0.1:5433, not 5432, because 5432 is taken by the shared analytics Postgres. DATABASE_URL in .env.example reflects this.",
+      "tags": [
+        "infra",
+        "postgres"
+      ],
+      "source": "user_stated",
+      "status": "active",
+      "pinned": true,
+      "created_at": "2026-11-01T00:00:00Z",
+      "updated_at": "2026-11-01T00:00:00Z",
+      "versions": [],
+      "links": []
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000001",
+      "slug": "decisions/money-as-integer-cents",
+      "project": "payments-api",
+      "type": "project",
+      "title": "Store money as integer cents, never floats",
+      "content": "Decided 2026-10-02: all amounts are int64 minor units (cents) with an ISO 4217 currency column. Floats caused a 1-cent rounding bug in refunds (incident INC-212). Use the money package for formatting.",
+      "tags": [
+        "decision",
+        "money"
+      ],
+      "source": "user_stated",
+      "status": "active",
+      "pinned": true,
+      "created_at": "2026-11-01T00:00:00Z",
+      "updated_at": "2026-11-01T00:00:00Z",
+      "versions": [],
+      "links": []
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000002",
+      "slug": "decisions/idempotency-keys",
+      "project": "payments-api",
+      "type": "project",
+      "title": "Every POST to /charges requires an Idempotency-Key",
+      "content": "Clients must send an Idempotency-Key header on POST /charges and POST /refunds. Keys are stored for 24 hours in the idempotency_keys table; a replay returns the original response with status 200. Reason: mobile clients retry on flaky networks and created duplicate charges.",
+      "tags": [
+        "decision",
+        "api"
+      ],
+      "source": "user_stated",
+      "status": "active",
+      "pinned": false,
+      "created_at": "2026-11-01T00:00:00Z",
+      "updated_at": "2026-11-01T00:00:00Z",
+      "versions": [],
+      "links": []
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000003",
+      "slug": "testing/stripe-webhooks",
+      "project": "payments-api",
+      "type": "project",
+      "title": "Test Stripe webhooks with stripe listen, not ngrok",
+      "content": "Run `stripe listen --forward-to localhost:8080/webhooks/stripe` and copy the whsec_ signing secret it prints into .env as STRIPE_WEBHOOK_SECRET. ngrok URLs changed on every restart and broke the dashboard config.",
+      "tags": [
+        "testing",
+        "stripe"
+      ],
+      "source": "user_stated",
+      "status": "active",
+      "pinned": false,
+      "created_at": "2026-11-01T00:00:00Z",
+      "updated_at": "2026-11-01T00:00:00Z",
+      "versions": [],
+      "links": []
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000004",
+      "slug": "conventions/error-codes",
+      "project": "payments-api",
+      "type": "project",
+      "title": "API errors use snake_case codes from errors.go",
+      "content": "Return errors as {\"error\": {\"code\": \"card_declined\", \"message\": \"...\"}}. Codes are defined once in internal/apierr/errors.go; never invent a code inline. The mobile app switches on code, so renaming one is a breaking change.",
+      "tags": [
+        "conventions",
+        "api"
+      ],
+      "source": "user_stated",
+      "status": "active",
+      "pinned": false,
+      "created_at": "2026-11-01T00:00:00Z",
+      "updated_at": "2026-11-01T00:00:00Z",
+      "versions": [],
+      "links": []
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000005",
+      "slug": "deploy/migrations-before-rollout",
+      "project": "payments-api",
+      "type": "project",
+      "title": "Run migrations as a separate job before the rollout",
+      "content": "Deploys run `make migrate` as a Kubernetes Job before the Deployment rolls. Migrations must be backward compatible with the previous release (expand, then contract). The 2026-09 outage came from dropping a column in the same release that stopped reading it.",
+      "tags": [
+        "deploy",
+        "postgres"
+      ],
+      "source": "user_stated",
+      "status": "active",
+      "pinned": false,
+      "created_at": "2026-11-01T00:00:00Z",
+      "updated_at": "2026-11-01T00:00:00Z",
+      "versions": [],
+      "links": []
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000006",
+      "slug": "preferences/table-driven-tests",
+      "project": "",
+      "type": "feedback",
+      "title": "Prefer table-driven tests with t.Run subtests",
+      "content": "Write Go tests as table-driven cases with named t.Run subtests and testify's require for fatal checks. Keep fixtures in testdata/. Stated by the user after a review of the refunds package.",
+      "tags": [
+        "testing",
+        "go"
+      ],
+      "source": "user_stated",
+      "status": "active",
+      "pinned": false,
+      "created_at": "2026-11-01T00:00:00Z",
+      "updated_at": "2026-11-01T00:00:00Z",
+      "versions": [],
+      "links": []
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000007",
+      "slug": "preferences/commit-style",
+      "project": "",
+      "type": "feedback",
+      "title": "Conventional commits, imperative mood, no ticket in subject",
+      "content": "Commit subjects follow Conventional Commits (feat, fix, docs, refactor) in the imperative mood. Ticket ids go in the body, not the subject.",
+      "tags": [
+        "git"
+      ],
+      "source": "user_stated",
+      "status": "active",
+      "pinned": false,
+      "created_at": "2026-11-01T00:00:00Z",
+      "updated_at": "2026-11-01T00:00:00Z",
+      "versions": [],
+      "links": []
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000008",
+      "slug": "reference/runbook",
+      "project": "payments-api",
+      "type": "reference",
+      "title": "On-call runbook lives in Notion under Payments / Runbooks",
+      "content": "The on-call runbook for payments-api (stuck payouts, webhook backlog, Stripe outages) is in Notion: Payments / Runbooks. Grafana dashboard: Payments Overview.",
+      "tags": [
+        "oncall"
+      ],
+      "source": "user_stated",
+      "status": "active",
+      "pinned": false,
+      "created_at": "2026-11-01T00:00:00Z",
+      "updated_at": "2026-11-01T00:00:00Z",
+      "versions": [],
+      "links": []
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000009",
+      "slug": "infra/redis-rate-limits",
+      "project": "payments-api",
+      "type": "project",
+      "title": "Rate limits use Redis sliding windows, 100 req/min per key",
+      "content": "Per-API-key rate limiting is a Redis sliding window (ZSET per key), 100 requests per minute, configured in config/ratelimit.yaml. Bypass with the internal service token only.",
+      "tags": [
+        "infra",
+        "redis"
+      ],
+      "source": "user_stated",
+      "status": "active",
+      "pinned": false,
+      "created_at": "2026-11-01T00:00:00Z",
+      "updated_at": "2026-11-01T00:00:00Z",
+      "versions": [],
+      "links": []
+    }
+  ]
+}
